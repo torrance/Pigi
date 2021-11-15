@@ -1,0 +1,7 @@
+name = "Pigi"
+uuid = "437d0509-7920-4caf-a015-e73a8b9621cb"
+authors = ["Torrance Hodgson <torrance@pravic.xyz>"]
+version = "0.1.0"
+
+[compat]
+julia = "1.6"
