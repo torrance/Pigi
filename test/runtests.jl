@@ -1,6 +1,6 @@
 using Pigi
+using StaticArrays
 using Test
 
-@testset "Pigi.jl" begin
-    # Write your tests here.
-end
+include("uvdatum.jl")
+include("measurementset.jl")
