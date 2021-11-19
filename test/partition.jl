@@ -8,8 +8,7 @@
     end
 
     # Set special seed UVDatum at start
-    uvdata[1].u = 20
-    uvdata[1].v = 20
+    uvdata[1] = Pigi.UVDatum{Float64}(0, 0, 20, 20, 0, [0 0; 0 0], [0 0; 0 0])
 
     gridspec = Pigi.GridSpec(100, 100, scaleuv=1)
     subgridspec = Pigi.GridSpec(64, 64, scaleuv=1)

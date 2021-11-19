@@ -17,8 +17,14 @@ function GridSpec(Nx, Ny, scale::Quantity)
     return GridSpec(Nx, Ny, sin(scale), 1 / (sin(scale) * Nx))
 end
 
-function GridSpec(Nx, Ny; scaleuv)
-    return GridSpec(Nx, Ny, 1 / (Nx * scaleuv), scaleuv)
+function GridSpec(Nx, Ny; scaleuv=nothing, scalelm=nothing)
+    @assert !(scaleuv == nothing && scalelm == nothing)
+    @assert scaleuv !== nothing || scalelm !== nothing
+    if scalelm !== nothing
+        return GridSpec(Nx, Ny, scalelm, 1 / (Nx * scalelm))
+    else
+        return GridSpec(Nx, Ny, 1 / (Nx * scaleuv), scaleuv)
+    end
 end
 
 @inline function lambda2px(ulambda, vlambda, gridspec::GridSpec)
