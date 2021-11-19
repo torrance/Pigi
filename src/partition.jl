@@ -1,9 +1,9 @@
 struct Subgrid{T}
     u0px::Int  # pixel location of 'central' pixel, defined by FFT convention
     v0px::Int
-    u0::Float64 # Central pixel value in lambda
-    v0::Float64
-    w0::Float64
+    u0::T # Central pixel value in lambda
+    v0::T
+    w0::T
     subgridspec::GridSpec
     Aleft::Matrix{SMatrix{2, 2, Complex{T}, 4}}
     Aright::Matrix{SMatrix{2, 2, Complex{T}, 4}}
@@ -23,7 +23,7 @@ function partition(
     padding::Int,
     wstep::Int,
 ) where T
-    # Partition the subgrids into w layers to help reduce the search space during paritioning.
+    # Partition the subgrids into w layers to help reduce the search space during partitioning.
     wlayers = Dict{Int, Vector{Subgrid{T}}}()
     radius = subgridspec.Nx ÷ 2 - padding
 
@@ -45,8 +45,8 @@ function partition(
         for subgrid in subgrids
             # The +0.5 in this condition accounts for the off-center central pixel.
             if (
-                -radius <= upx - subgrid.u0px + 0.5 <= radius &&
-                -radius <= vpx - subgrid.v0px + 0.5 <= radius
+                -radius <= upx - subgrid.u0px + T(0.5) <= radius &&
+                -radius <= vpx - subgrid.v0px + T(0.5) <= radius
             )
                 push!(subgrid.data, uvdatum)
                 found = true
@@ -62,10 +62,16 @@ function partition(
         v0px = round(Int, vpx)
         u0, v0 = px2lambda(u0px, v0px, gridspec)
 
+        data = UVDatum{T}[uvdatum]
+        sizehint!(data, 1000)
         push!(subgrids, Subgrid{T}(
-            u0px, v0px, u0, v0, w0, subgridspec, Aleft, Aright, UVDatum{T}[uvdatum]
+            u0px, v0px, u0, v0, w0, subgridspec, Aleft, Aright, data
         ))
     end
 
-    return [subgrid for subgrids in values(wlayers) for subgrid in subgrids]
+    subgrids = [subgrid for subgrids in values(wlayers) for subgrid in subgrids]
+    occupancy = [length(subgrid.data) for subgrid in subgrids]
+    println("Subgrids: $(length(subgrids)) Min/mean/median/max occupancy: $(minimum(occupancy))/$(mean(occupancy))/$(median(occupancy))/$(maximum(occupancy))")
+
+    return subgrids
 end
