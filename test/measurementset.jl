@@ -20,4 +20,5 @@ end
     @test length(uvdata) == mset.nrows * length(mset.freqs)
     @test !all(all(isnan.(u.data)) for u in uvdata)
     @test !all(all(isnan.(u.weights)) for u in uvdata)
+    @test allunique((u.row, u.chan) for u in uvdata)
 end

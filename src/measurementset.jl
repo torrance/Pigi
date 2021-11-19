@@ -123,24 +123,26 @@ function read(mset::MeasurementSet; precision::Type=Float64, datacol=nothing)
                 startrow=startrow, nrow=nbatch, blc=(chanstart, -1), trc=(chanstop, -1)
             ), (3, 2, 1))
 
-            _msetread(ch, mset.lambdas, uvw, flagrow, weight, flag, weightspectrum, data, precision)
+            _msetread(ch, startrow, mset.lambdas, uvw, flagrow, weight, flag, weightspectrum, data, precision)
         end
     end
 
     return ch
 end
 
-function _msetread(ch, lambdas, uvw, flagrow, weight, flag, weightspectrum, data, _::Type{T}) where T
-    uvdatum = UVDatum{T}(
-        0, 0, 0, 0, 0, SMatrix{2, 2, T, 4}(0, 0, 0, 0), SMatrix{2, 2, T, 4}(0, 0, 0, 0)
-    )
+function _msetread(ch, startrow, lambdas, uvw, flagrow, weight, flag, weightspectrum, data, ::Type{T}) where T
+    # uvdatum = UVDatum{T}(
+    #     0, 0, 0, 0, 0, SMatrix{2, 2, T, 4}(0, 0, 0, 0), SMatrix{2, 2, T, 4}(0, 0, 0, 0)
+    # )
+    tmpdata = zero(MMatrix{2, 2, Complex{T}, 4})
+    tmpweights = zero(MMatrix{2, 2, T, 4})
 
     for row in axes(data, 3), chan in axes(data, 2)
-        uvdatum.row = row
-        uvdatum.chan = chan
-        uvdatum.u = uvw[1, row] / lambdas[chan]
-        uvdatum.v = -uvw[2, row] / lambdas[chan]
-        uvdatum.w = uvw[3, row] / lambdas[chan]
+        # uvdatum.row = startrow + row
+        # uvdatum.chan = chan
+        u = uvw[1, row] / lambdas[chan]
+        v = -uvw[2, row] / lambdas[chan]
+        w = uvw[3, row] / lambdas[chan]
 
         # We use (pol, idx) pair to convert from row-major (4,) data/weight data
         # into column-major (2, 2) shape.
@@ -153,15 +155,19 @@ function _msetread(ch, lambdas, uvw, flagrow, weight, flag, weightspectrum, data
                 weightspectrum[pol, chan, row]
             )
             if !isfinite(vw) || !isfinite(d)
-                uvdatum.data[idx] = 0
-                uvdatum.weights[idx] = 0
+                tmpdata[idx] = 0
+                tmpweights[idx] = 0
             else
-                uvdatum.data[idx] = d
-                uvdatum.weights[idx] = vw
+                tmpdata[idx] = d
+                tmpweights[idx] = vw
             end
         end
 
-        put!(ch, uvdatum)
+        # uvdatum.data = tmpdata
+        # uvdatum.weights = tmpweights
+
+        # put!(ch, uvdatum)
+        put!(ch, UVDatum{T}(startrow + row, chan, u, v, w, tmpweights, tmpdata))
     end
 end
 
