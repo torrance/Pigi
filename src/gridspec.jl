@@ -18,7 +18,7 @@ function GridSpec(Nx, Ny, scale::Quantity)
 end
 
 function GridSpec(Nx, Ny; scaleuv=nothing, scalelm=nothing)
-    @assert !(scaleuv == nothing && scalelm == nothing)
+    @assert !(scaleuv === nothing && scalelm === nothing)
     @assert scaleuv !== nothing || scalelm !== nothing
     if scalelm !== nothing
         return GridSpec(Nx, Ny, scalelm, 1 / (Nx * scalelm))
