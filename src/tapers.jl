@@ -28,6 +28,6 @@ function removetaper!(img, gridspec, taper)
     Threads.@threads for lm in CartesianIndices(img)
         lpx, mpx = Tuple(lm)
         l, m = px2sky(lpx, mpx, gridspec)
-        img[lm] = img[lm] * taper(l, m)
+        img[lm] /= taper(l, m)
     end
 end
