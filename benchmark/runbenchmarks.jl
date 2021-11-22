@@ -79,7 +79,7 @@ begin
         0, 0, 0, 0, 0, subgridspec, Aleft, Aright, uvdata
     )
 
-    b = @benchmark Pigi.gridder($subgrid) evals=1 samples=5 seconds=60
+    b = @benchmark Pigi.gridder($subgrid) evals=1 samples=10 seconds=60
     show(stdout, MIME"text/plain"(), b)
     println()
 end
