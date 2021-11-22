@@ -1,4 +1,4 @@
-@testset "Gridder" begin
+@testset "Gridder on uniform grid (no w-terms)" begin
     precision = Float64
 
     subgridspec = Pigi.GridSpec(128, 128, scaleuv=1.2)
@@ -30,10 +30,7 @@
 
     idggrid = Pigi.gridder(subgrid)
 
-    @test maximum(abs.(visgrid[1, :, :] .- idggrid[1, :, :])) < 1e-12
-    @test maximum(abs.(visgrid[2, :, :] .- idggrid[2, :, :])) < 1e-12
-    @test maximum(abs.(visgrid[3, :, :] .- idggrid[3, :, :])) < 1e-12
-    @test maximum(abs.(visgrid[4, :, :] .- idggrid[4, :, :])) < 1e-12
+    @test maximum(abs.(visgrid[:, :, :] .- idggrid[:, :, :])) < 1e-12
 
     # plt.subplot(2, 2, 1)
     # plt.imshow(abs.(visgrid[1, :, :] .- idggrid[1, :, :]))
@@ -46,6 +43,134 @@
     # plt.colorbar()
     # plt.subplot(2, 2, 4)
     # plt.imshow(abs.(visgrid[4, :, :] .- idggrid[4, :, :]))
+    # plt.colorbar()
+    # plt.show()
+end
+
+@testset "Gridder on non-uniform grid (no w-terms)" begin
+    precision = Float64
+    N = 1000
+
+    subgridspec = Pigi.GridSpec(128, 128, scaleuv=1.2)
+    padding = 15
+
+    center = (128 - 2 * padding) ÷ 2 + 1
+    uvs = subgridspec.scaleuv * ((128 - 2 * padding) * rand(2, N) .- [center center;]')
+    data = rand(SMatrix{2, 2, Complex{precision}, 4}, N)
+    uvdata = Array{Pigi.UVDatum{precision}, 1}(undef, N)
+    for i in eachindex(uvdata)
+        u, v = uvs[:, i]
+        uvdata[i] = Pigi.UVDatum(1, 1, u, v, zero(precision), @SMatrix(precision[1 1; 1 1]), data[i])
+    end
+    println("Gridding $(length(uvdata)) uvdatum")
+
+    # We use a Gaussian taper, since we know its analytic Fourier representation
+    sigmalm = 10 * subgridspec.scalelm
+    taper = (l, m) -> exp(-(l^2 + m^2) / (2 * sigmalm^2))
+    Taper = (rpx) -> 2π * sigmalm^2 * subgridspec.scaleuv^2 * exp(
+        -2π^2 * sigmalm^2 * subgridspec.scaleuv^2 * rpx^2
+    )
+
+    # Creating expected gridded array, using direct convolution sampling
+    expected = zeros(SMatrix{2, 2, Complex{precision}, 4}, 128, 128)
+    convolutionalsample!(expected, subgridspec, uvdata, Taper, padding)
+    expected = reinterpret(reshape, Complex{precision}, expected)
+
+    # Now run IDG gridding
+    Aleft = ones(SMatrix{2, 2, Complex{precision}, 4}, 128, 128)
+    Aright = ones(SMatrix{2, 2, Complex{precision}, 4}, 128, 128)
+
+    lms = fftfreq(subgridspec.Nx, 1 / subgridspec.scaleuv)
+    for (mpx, m) in enumerate(lms), (lpx, l) in enumerate(lms)
+        Aleft[lpx, mpx] *= sqrt(taper(l, m))
+        Aright[lpx, mpx] *= sqrt(taper(l, m))
+    end
+
+    subgrid = Pigi.Subgrid{precision}(
+        0, 0, 0, 0, 0, subgridspec, Aleft, Aright, uvdata
+    )
+    idggrid = Pigi.gridder(subgrid)
+
+    @test maximum(abs.(expected .- idggrid)) < 1e-10
+
+    # plt.subplot(1, 3, 1)
+    # plt.imshow(abs.(expected[1, :, :]))
+    # plt.colorbar()
+    # plt.subplot(1, 3, 2)
+    # plt.imshow(abs.(idggrid[1, :, :]))
+    # plt.colorbar()
+    # plt.subplot(1, 3, 3)
+    # plt.imshow(abs.(expected[1, :, :] .- idggrid[1, :, :]))
+    # plt.colorbar()
+    # plt.show()
+end
+
+@testset "Gridder with non-unifrom grid (with w-terms)" begin
+    precision = Float64
+
+    subgridspec = Pigi.GridSpec(128, 128, 6u"arcminute")
+
+    padding = 15
+    N = 128
+
+    # Source locations in radians, wrt to phase center, with x degree FOV
+    sources = deg2rad.(
+        rand(Float64, 2, 50) * 10 .- 5
+    )
+    sources[:, 1] .= 0
+
+    println("Predicting UVDatum...")
+    uvdata = Pigi.UVDatum[]
+    for (u, v, w) in eachcol(rand(Float64, 3, 1000))
+        u = subgridspec.scaleuv * (u * (N - 2 * padding) .- ((N - 2 * padding) ÷ 2 + 1))
+        v = subgridspec.scaleuv * (v * (N - 2 * padding) .- ((N - 2 * padding) ÷ 2 + 1))
+        w = w * 25 - 12.6
+
+        val = zero(SMatrix{2, 2, Complex{precision}, 4})
+        for (ra, dec) in eachcol(sources)
+            l, m = sin(ra), sin(dec)
+            val += @SMatrix([1 0; 0 1]) * exp(-2π * 1im * (u * l + v * m + w * Pigi.ndash(l, m)))
+        end
+        push!(uvdata, Pigi.UVDatum(0, 0, u, v, w, @SMatrix(precision[1 1; 1 1]), val))
+    end
+    println("Done.")
+
+    taper = Pigi.mkkbtaper(subgridspec)
+
+    # Calculate expected output
+    expected = zeros(SMatrix{2, 2, Complex{precision}, 4}, subgridspec.Nx, subgridspec.Ny)
+    @time idft!(expected, uvdata, subgridspec, length(uvdata))
+    expected = reinterpret(reshape, Complex{precision}, expected)
+    for mpx in axes(expected, 3), lpx in axes(expected, 2)
+        l, m = Pigi.px2sky(lpx, mpx, subgridspec)
+        expected[:, lpx, mpx] *= taper(l, m)
+    end
+
+    # Now run IDG gridding
+    Aleft = ones(SMatrix{2, 2, Complex{precision}, 4}, subgridspec.Nx, subgridspec.Ny)
+    Aright = ones(SMatrix{2, 2, Complex{precision}, 4}, subgridspec.Nx, subgridspec.Ny)
+
+    lms = fftfreq(subgridspec.Nx, 1 / subgridspec.scaleuv)
+    for (mpx, m) in enumerate(lms), (lpx, l) in enumerate(lms)
+        Aleft[lpx, mpx] *= sqrt(taper(l, m))
+        Aright[lpx, mpx] *= sqrt(taper(l, m))
+    end
+
+    subgrid = Pigi.Subgrid{precision}(
+        0, 0, 0, 0, 0, subgridspec, Aleft, Aright, uvdata
+    )
+    idggrid = fftshift(ifft(fftshift(Pigi.gridder(subgrid), (2, 3)), (2, 3)), (2, 3)) * subgridspec.Nx * subgridspec.Ny / length(uvdata)
+
+    @test maximum(abs.(expected .- idggrid)) < 1e-14
+
+    # plt.subplot(1, 3, 1)
+    # plt.imshow(real.(expected[1, :, :]))
+    # plt.colorbar()
+    # plt.subplot(1, 3, 2)
+    # plt.imshow(real.(idggrid[1, :, :]))
+    # plt.colorbar()
+    # plt.subplot(1, 3, 3)
+    # plt.imshow(real.(expected[1, :, :] .- idggrid[1, :, :]))
     # plt.colorbar()
     # plt.show()
 end
