@@ -19,7 +19,7 @@ function dift!(grid::Matrix{SMatrix{2, 2, Complex{T}, 4}}, subgrid::Subgrid{T}) 
                 (uvdatum.v - subgrid.v0) * m +
                 (uvdatum.w - subgrid.w0) * ndash(l, m)
             )
-            grid[lpx, mpx] = grid[lpx, mpx] + uvdatum.weights .* uvdatum.data * exp(phase)
+            grid[lpx, mpx] += uvdatum.weights .* uvdatum.data * exp(phase)
         end
         grid[lpx, mpx] = (
             subgrid.Aleft[lpx, mpx] * grid[lpx, mpx] * adjoint(subgrid.Aright[lpx, mpx])
