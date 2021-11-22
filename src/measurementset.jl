@@ -131,15 +131,10 @@ function read(mset::MeasurementSet; precision::Type=Float64, datacol=nothing)
 end
 
 function _msetread(ch, startrow, lambdas, uvw, flagrow, weight, flag, weightspectrum, data, ::Type{T}) where T
-    # uvdatum = UVDatum{T}(
-    #     0, 0, 0, 0, 0, SMatrix{2, 2, T, 4}(0, 0, 0, 0), SMatrix{2, 2, T, 4}(0, 0, 0, 0)
-    # )
     tmpdata = zero(MMatrix{2, 2, Complex{T}, 4})
     tmpweights = zero(MMatrix{2, 2, T, 4})
 
     for row in axes(data, 3), chan in axes(data, 2)
-        # uvdatum.row = startrow + row
-        # uvdatum.chan = chan
         u = uvw[1, row] / lambdas[chan]
         v = -uvw[2, row] / lambdas[chan]
         w = uvw[3, row] / lambdas[chan]
@@ -163,10 +158,6 @@ function _msetread(ch, startrow, lambdas, uvw, flagrow, weight, flag, weightspec
             end
         end
 
-        # uvdatum.data = tmpdata
-        # uvdatum.weights = tmpweights
-
-        # put!(ch, uvdatum)
         put!(ch, UVDatum{T}(startrow + row, chan, u, v, w, tmpweights, tmpdata))
     end
 end
