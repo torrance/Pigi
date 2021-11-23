@@ -75,3 +75,23 @@ function partition(
 
     return subgrids
 end
+
+function addsubgrid!(
+    mastergrid::Matrix{SMatrix{2, 2, T, 4}},
+    grid::Matrix{SMatrix{2, 2, T, 4}},
+    subgrid::Subgrid
+) where {T}
+    u0px = subgrid.u0px
+    v0px = subgrid.v0px
+    width = subgrid.subgridspec.Nx ÷ 2
+
+    for (j, vpx) in enumerate(v0px - width:v0px + width - 1)
+        if 1 <= vpx <= size(mastergrid)[2]
+            for (i, upx) in enumerate(u0px - width:u0px + width - 1)
+                if 1 <= upx <= size(mastergrid)[1]
+                    mastergrid[upx, vpx] += grid[i, j]
+                end
+            end
+        end
+    end
+end
