@@ -15,4 +15,5 @@ module Pigi
     include("partition.jl")
     include("gridder.jl")
     include("tapers.jl")
+    include("weights.jl")
 end
