@@ -15,7 +15,7 @@
     padding = 8
     wstep = 1
 
-    subgrids = Pigi.partition(uvdata, gridspec, subgridspec, padding, wstep)
+    subgrids = Pigi.partition(uvdata, gridspec, subgridspec, padding, wstep, (l, m) -> 1)
     subgrid = subgrids[1]
 
     @test subgrid.u0px == 71

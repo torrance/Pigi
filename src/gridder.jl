@@ -2,11 +2,11 @@ function gridder(subgrid::Subgrid{T}) where T
     grid = zeros(
         SMatrix{2, 2, Complex{T}, 4}, subgrid.subgridspec.Nx, subgrid.subgridspec.Ny
     )
-    @time dift!(grid, subgrid)
-    grid = reinterpret(reshape, Complex{T}, grid)
-    fft!(grid, (2, 3))
+    dift!(grid, subgrid)
+    gridflat = reinterpret(reshape, Complex{T}, grid)
+    fft!(gridflat, (2, 3))
     grid ./= (subgrid.subgridspec.Nx * subgrid.subgridspec.Ny)
-    return fftshift(grid, (2, 3))
+    return fftshift(grid)
 end
 
 function dift!(grid::Matrix{SMatrix{2, 2, Complex{T}, 4}}, subgrid::Subgrid{T}) where T

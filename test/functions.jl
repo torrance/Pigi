@@ -16,7 +16,7 @@ function convolutionalsample!(grid, gridspec, uvdata, kernel, width; uoffset=0, 
     end
 end
 
-function idft!(dft, uvdata, gridspec, normfactor)
+function idft!(dft::Matrix{SMatrix{2, 2, Complex{T}, 4}}, uvdata::Vector{Pigi.UVDatum{T}}, gridspec::Pigi.GridSpec, normfactor::T) where T
     rowscomplete = 0
     Threads.@threads for lmpx in CartesianIndices(dft)
         lpx, mpx = Tuple(lmpx)
@@ -26,11 +26,13 @@ function idft!(dft, uvdata, gridspec, normfactor)
         end
 
         l, m = Pigi.px2sky(lpx, mpx, gridspec)
+        n = Pigi.ndash(l, m)
 
         val = zero(SMatrix{2, 2, ComplexF64, 4})
         for uvdatum in uvdata
+#            val += uvdatum.data
             val += uvdatum.data * exp(
-                2π * 1im * (uvdatum.u * l + uvdatum.v * m + uvdatum.w * Pigi.ndash(l, m))
+                2π * 1im * (uvdatum.u * l + uvdatum.v * m + uvdatum.w * n)
             )
         end
         dft[lpx, mpx] = val / normfactor

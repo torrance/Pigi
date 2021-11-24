@@ -29,6 +29,7 @@
     )
 
     idggrid = Pigi.gridder(subgrid)
+    idggrid = reinterpret(reshape, Complex{precision}, idggrid)
 
     @test maximum(abs.(visgrid[:, :, :] .- idggrid[:, :, :])) < 1e-12
 
@@ -90,6 +91,7 @@ end
         0, 0, 0, 0, 0, subgridspec, Aleft, Aright, uvdata
     )
     idggrid = Pigi.gridder(subgrid)
+    idggrid = reinterpret(reshape, Complex{precision}, idggrid)
 
     @test maximum(abs.(expected .- idggrid)) < 1e-10
 
@@ -120,7 +122,7 @@ end
     sources[:, 1] .= 0
 
     println("Predicting UVDatum...")
-    uvdata = Pigi.UVDatum[]
+    uvdata = Pigi.UVDatum{precision}[]
     for (u, v, w) in eachcol(rand(Float64, 3, 1000))
         u = subgridspec.scaleuv * (u * (N - 2 * padding) .- ((N - 2 * padding) ÷ 2 + 1))
         v = subgridspec.scaleuv * (v * (N - 2 * padding) .- ((N - 2 * padding) ÷ 2 + 1))
@@ -131,7 +133,7 @@ end
             l, m = sin(ra), sin(dec)
             val += @SMatrix([1 0; 0 1]) * exp(-2π * 1im * (u * l + v * m + w * Pigi.ndash(l, m)))
         end
-        push!(uvdata, Pigi.UVDatum(0, 0, u, v, w, @SMatrix(precision[1 1; 1 1]), val))
+        push!(uvdata, Pigi.UVDatum{precision}(0, 0, u, v, w, @SMatrix(precision[1 1; 1 1]), val))
     end
     println("Done.")
 
@@ -139,7 +141,7 @@ end
 
     # Calculate expected output
     expected = zeros(SMatrix{2, 2, Complex{precision}, 4}, subgridspec.Nx, subgridspec.Ny)
-    @time idft!(expected, uvdata, subgridspec, length(uvdata))
+    @time idft!(expected, uvdata, subgridspec, precision(length(uvdata)))
     expected = reinterpret(reshape, Complex{precision}, expected)
     for mpx in axes(expected, 3), lpx in axes(expected, 2)
         l, m = Pigi.px2sky(lpx, mpx, subgridspec)
@@ -159,7 +161,9 @@ end
     subgrid = Pigi.Subgrid{precision}(
         0, 0, 0, 0, 0, subgridspec, Aleft, Aright, uvdata
     )
-    idggrid = fftshift(ifft(fftshift(Pigi.gridder(subgrid), (2, 3)), (2, 3)), (2, 3)) * subgridspec.Nx * subgridspec.Ny / length(uvdata)
+    idggrid = Pigi.gridder(subgrid)
+    idggrid = reinterpret(reshape, Complex{precision}, idggrid)
+    idggrid = fftshift(ifft(fftshift(idggrid, (2, 3)), (2, 3)), (2, 3)) * subgridspec.Nx * subgridspec.Ny / length(uvdata)
 
     @test maximum(abs.(expected .- idggrid)) < 1e-14
 
