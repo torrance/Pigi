@@ -47,7 +47,7 @@ function Natural(uvdata::Vector{UVDatum{T}}, gridspec::GridSpec) where T
 end
 
 function (w::Natural{T})(::UVDatum{T}) where T
-    return SMatrix{2, 2, T, 4}(1, 1, 1, 1)
+    return SMatrix{2, 2, T, 4}(1, 1, 1, 1) ./ w.normfactor
 end
 
 struct Uniform{T <: AbstractFloat} <: ImageWeight
@@ -58,8 +58,16 @@ end
 
 function Uniform(uvdata::Vector{UVDatum{T}}, gridspec::GridSpec) where T
     griddedweights = makegriddedweights(uvdata, gridspec)
-    imageweights = map(W_k -> 1 ./ W_k, griddedweights)
-    normfactor = sum(imageweights .* griddedweights)
+
+    imageweights = map(griddedweights) do W_k
+        SMatrix{2, 2, T, 4}(
+            W_k[1] > 0 ? 1 / W_k[1] : 0,
+            W_k[2] > 0 ? 1 / W_k[2] : 0,
+            W_k[3] > 0 ? 1 / W_k[3] : 0,
+            W_k[4] > 0 ? 1 / W_k[4] : 0,
+        )
+    end
+    normfactor = sum(x -> x[1] .* x[2], zip(imageweights, griddedweights))
     return Uniform{T}(imageweights, gridspec, normfactor)
 end
 
@@ -67,7 +75,7 @@ function (w::Uniform{T})(uvdatum::UVDatum{T}) where T
     upx, vpx = lambda2px(Int, uvdatum.u, uvdatum.v, w.gridspec)
 
     if checkbounds(Bool, w.imageweights, upx, vpx)
-        return w.imageweights[upx, vpx]
+        return w.imageweights[upx, vpx] ./ w.normfactor
     else
         return SMatrix{2, 2, T, 4}(0, 0, 0, 0)
     end
@@ -86,7 +94,7 @@ function Briggs(uvdata::Vector{UVDatum{T}}, gridspec::GridSpec, robust) where T
     f2 = (5 * 10^-robust)^2 ./ (sum(x -> x.^2, griddedweights) ./ sum(griddedweights))
     imageweights = map(W_k -> 1 ./ (1 .+ W_k .* f2), griddedweights)
 
-    normfactor = sum(imageweights .* griddedweights)
+    normfactor = sum(x -> x[1] .* x[2], zip(imageweights, griddedweights))
 
     return Briggs{T}(imageweights, gridspec, normfactor)
 end
@@ -95,7 +103,7 @@ function (w::Briggs{T})(uvdatum::UVDatum{T}) where T
     upx, vpx = lambda2px(Int, uvdatum.u, uvdatum.w, w.gridspec)
 
     if checkbounds(Bool, w.imageweights, upx, vpx)
-        return w.imageweights[upx, vpx]
+        return w.imageweights[upx, vpx] ./ w.normfactor
     else
         return SMatrix{2, 2, T, 4}(0, 0, 0, 0)
     end
@@ -115,4 +123,24 @@ function makegriddedweights(uvdata::Vector{UVDatum{T}}, gridspec::GridSpec) wher
     end
 
     return griddedweights
+end
+
+function applyweights!(subgrids::Vector{Subgrid{T}}, weighter::ImageWeight) where T
+    for subgrid in subgrids
+        applyweights!(subgrid.data, weighter)
+    end
+end
+
+function applyweights!(uvdata::Vector{UVDatum{T}}, weighter::ImageWeight) where T
+    for (i, uvd) in enumerate(uvdata)
+        uvdata[i] = UVDatum{T}(
+            uvd.row,
+            uvd.chan,
+            uvd.u,
+            uvd.v,
+            uvd.w,
+            uvd.weights .* weighter(uvd),
+            uvd.data,
+        )
+    end
 end

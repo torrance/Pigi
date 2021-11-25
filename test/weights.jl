@@ -6,7 +6,7 @@
 
     expectednatural = zeros(128, 128)
 
-    for _ in 1:1000
+    for _ in 1:10_000
         upx, vpx = rand(2) * 128
         u, v = Pigi.px2lambda(upx, vpx, gridspec)
         push!(uvdata, Pigi.UVDatum{precision}(
@@ -19,39 +19,47 @@
             expectednatural[upx, vpx] += uvdata[end].weights[1, 1]
         end
     end
+    expectednatural ./= sum(expectednatural)
 
     weighter = Pigi.Natural(uvdata, gridspec)
+    weighteduvdata = deepcopy(uvdata)
+    Pigi.applyweights!(weighteduvdata, weighter)
+
     naturalgrid = zeros(128, 128)
-    for uvdatum in uvdata
+    for uvdatum in weighteduvdata
         upx, vpx = Pigi.lambda2px(Int, uvdatum.u, uvdatum.v, gridspec)
         if checkbounds(Bool, naturalgrid, upx, vpx)
-            weight = uvdatum.weights .* weighter(uvdatum)
-            naturalgrid[upx, vpx] += weight[1, 1]
+            naturalgrid[upx, vpx] += uvdatum.weights[1, 1]
         end
     end
 
     @test all(x -> isapprox(x[1], x[2]), zip(naturalgrid, expectednatural))
 
     weighter = Pigi.Uniform(uvdata, gridspec)
+    weighteduvdata = deepcopy(uvdata)
+    Pigi.applyweights!(weighteduvdata, weighter)
+
     uniformgrid = zeros(128, 128)
-    for uvdatum in uvdata
+    for uvdatum in weighteduvdata
         upx, vpx = Pigi.lambda2px(Int, uvdatum.u, uvdatum.v, gridspec)
         if checkbounds(Bool, uniformgrid, upx, vpx)
-            weight = uvdatum.weights .* weighter(uvdatum)
-            uniformgrid[upx, vpx] += weight[1, 1]
+            uniformgrid[upx, vpx] += uvdatum.weights[1, 1]
         end
     end
 
     # Unform weighting should be all ones (or empty cells)
-    @test all(x -> x == 0 || x ≈ 1, uniformgrid)
+    norm = sum(x -> x == 0 ? 0 : 1, uniformgrid)
+    @test all(x -> x == 0 || x ≈ 1 / norm, uniformgrid)
 
     weighter = Pigi.Briggs(uvdata, gridspec, 4)
+    weighteduvdata = deepcopy(uvdata)
+    Pigi.applyweights!(weighteduvdata, weighter)
+
     briggsgrid = zeros(128, 128)
-    for uvdatum in uvdata
+    for uvdatum in weighteduvdata
         upx, vpx = Pigi.lambda2px(Int, uvdatum.u, uvdatum.v, gridspec)
         if checkbounds(Bool, briggsgrid, upx, vpx)
-            weight = uvdatum.weights .* weighter(uvdatum)
-            briggsgrid[upx, vpx] += weight[1, 1]
+            briggsgrid[upx, vpx] += uvdatum.weights[1, 1]
         end
     end
 
