@@ -48,6 +48,10 @@ end
 2021/11/09 : Nimbus
     Time (mean ± σ): 4.568 s ± 16.015 ms GC (mean ± σ): 0.00% ± 0.00%
     Memory estimate: 2.00 MiB, allocs estimate: 54
+2021/11/25 : Nimbus
+    Time (mean ± σ): 4.271 s ± 14.215 ms GC (mean ± σ): 0.00% ± 0.00%
+    Memory estimate: 2.00 MiB, allocs estimate: 27
+    Note: enabled @SIMD
 =#
 begin
     precision = Float64

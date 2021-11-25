@@ -13,7 +13,7 @@ function dift!(grid::Matrix{SMatrix{2, 2, Complex{T}, 4}}, subgrid::Subgrid{T}) 
     lms = fftfreq(subgrid.subgridspec.Nx, T(1 / subgrid.subgridspec.scaleuv))::Frequencies{T}
 
     for (mpx, m) in enumerate(lms), (lpx, l) in enumerate(lms)
-        for uvdatum in subgrid.data
+        @simd for uvdatum in subgrid.data
             phase = 2π * 1im * (
                 (uvdatum.u - subgrid.u0) * l +
                 (uvdatum.v - subgrid.v0) * m +
