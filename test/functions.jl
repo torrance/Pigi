@@ -38,3 +38,27 @@ function idft!(dft::Matrix{SMatrix{2, 2, Complex{T}, 4}}, uvdata::Vector{Pigi.UV
         dft[lpx, mpx] = val / normfactor
     end
 end
+
+function dft!(uvdata::Vector{Pigi.UVDatum{T}}, img::Matrix{SMatrix{2, 2, Complex{T}, 4}}, gridspec::Pigi.GridSpec) where T
+    idxs = findall(x -> !iszero(x), img)
+    for (i, uvdatum) in enumerate(uvdata)
+        data = SMatrix{2, 2, Complex{T}, 4}(0, 0, 0, 0)
+        for idx in idxs
+            lpx, mpx = Tuple(idx)
+            l, m = Pigi.px2sky(lpx, mpx, gridspec)
+            data += img[lpx, mpx] * exp(
+                -2π * 1im * (uvdatum.u * l + uvdatum.v * m + uvdatum.w * Pigi.ndash(l, m))
+            )
+        end
+
+        uvdata[i] = Pigi.UVDatum{T}(
+            uvdatum.row,
+            uvdatum.chan,
+            uvdatum.u,
+            uvdatum.v,
+            uvdatum.w,
+            uvdatum.weights,
+            data,
+        )
+    end
+end

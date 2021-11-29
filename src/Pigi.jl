@@ -14,7 +14,9 @@ module Pigi
     include("measurementset.jl")
     include("partition.jl")
     include("gridder.jl")
+    include("degridder.jl")
     include("tapers.jl")
     include("weights.jl")
     include("invert.jl")
+    include("predict.jl")
 end

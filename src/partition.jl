@@ -102,3 +102,23 @@ function addsubgrid!(
         end
     end
 end
+
+function extractsubgrid(mastergrid::Matrix{SMatrix{2, 2, T, 4}}, subgrid::Subgrid) where {T}
+    grid = zeros(SMatrix{2, 2, T, 4}, subgrid.subgridspec.Nx, subgrid.subgridspec.Ny)
+
+    u0px = subgrid.u0px
+    v0px = subgrid.v0px
+    width = subgrid.subgridspec.Nx ÷ 2
+
+    for (j, vpx) in enumerate(v0px - width:v0px + width - 1)
+        if 1 <= vpx <= size(mastergrid)[2]
+            for (i, upx) in enumerate(u0px - width:u0px + width - 1)
+                if 1 <= upx <= size(mastergrid)[1]
+                    grid[i, j] = mastergrid[upx, vpx]
+                end
+            end
+        end
+    end
+
+    return grid
+end
