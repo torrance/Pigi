@@ -51,7 +51,7 @@
     Pigi.removetaper!(img, gridspec, taper)
 
     img = reinterpret(reshape, Complex{precision}, img)
-    @test maximum(abs.(img .- expected)) < 1e-9
+    @test maximum(abs.(img .- expected)) < 1e-8
 
     # plt.subplot(1, 3, 1)
     # plt.imshow(real.(img[1, :, :]))
