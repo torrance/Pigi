@@ -39,7 +39,7 @@ begin
     padding = 8
     wstep = 10
 
-    b = @benchmark Pigi.partition($uvdata, $gridspec, $subgridspec, $padding, $wstep) evals=1 samples=5 seconds=60
+    b = @benchmark Pigi.partition($uvdata, $gridspec, $subgridspec, $padding, $wstep, (l, m) -> 1) evals=1 samples=5 seconds=60
     show(stdout, MIME"text/plain"(), b)
     println()
 end
@@ -84,6 +84,37 @@ begin
     )
 
     b = @benchmark Pigi.gridder($subgrid) evals=1 samples=10 seconds=60
+    show(stdout, MIME"text/plain"(), b)
+    println()
+end
+
+#=
+2021/11/30 : Nimbus
+    Time (mean ± σ): 5.601 s ± 18.682 ms GC (mean ± σ): 0.00% ± 0.00%
+    Memory estimate: 1.00 MiB, allocs estimate: 29
+=#
+begin
+    precision = Float64
+    subgridspec = Pigi.GridSpec(128, 128, scaleuv=1)
+
+    Aleft = Aright = ones(SMatrix{2, 2, Complex{precision}, 4}, 128, 128)
+
+    uvdata = Pigi.UVDatum{precision}[]
+    for (upx, vpx) in eachcol(rand(2, 10000))
+        upx, vpx = upx * 100 + 14, vpx * 100 + 14
+        u, v = Pigi.px2lambda(upx, vpx, subgridspec)
+        push!(uvdata, Pigi.UVDatum{precision}(
+            0, 0, u, v, 0, [1 1; 1 1], [0 0; 0 0]
+        ))
+    end
+    println("Degridding $(length(uvdata)) uvdatum")
+
+    subgrid = Pigi.Subgrid{precision}(
+        0, 0, 0, 0, 0, subgridspec, Aleft, Aright, uvdata
+    )
+
+    grid = rand(SMatrix{2, 2, Complex{precision}, 4}, 128, 128)
+    b = @benchmark Pigi.degridder!($subgrid, $grid) evals=1 samples=10 seconds=60
     show(stdout, MIME"text/plain"(), b)
     println()
 end
