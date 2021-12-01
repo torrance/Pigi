@@ -1,3 +1,4 @@
+using DSP: conv
 using FFTW
 using Pigi
 using PyPlot: PyPlot as plt
@@ -15,3 +16,4 @@ include("gridder.jl")
 include("weights.jl")
 include("invert.jl")
 include("predict.jl")
+include("clean.jl")
