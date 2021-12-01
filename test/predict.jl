@@ -10,7 +10,7 @@
     skymap[501, 501] = [1 0; 0 1]
 
     # Create uvw sample points
-    uvws = rand(3, 20000) .* [1000 1000 500;]' .- [500 500 250;]'
+    uvws = rand(3, 5000) .* [1000 1000 500;]' .- [500 500 250;]'
     uvdata = Pigi.UVDatum{precision}[]
     for (u, v, w) in eachcol(uvws)
         push!(uvdata, Pigi.UVDatum{precision}(0, 0, u, v, w, [1 1; 1 1], [0 0; 0 0]))
@@ -32,7 +32,7 @@
     uvdatadft = deepcopy(uvdata)
     @time dft!(uvdatadft, skymap, gridspec)
 
-    @test all(x -> sum(abs.(x[1].data - x[2].data)) < 1e-6, zip(uvdata, uvdatadft))
+    @test all(x -> sum(abs.(x[1].data - x[2].data)) < 1e-7, zip(uvdata, uvdatadft))
 
     # # Plot images
     # expected = similar(skymap)
