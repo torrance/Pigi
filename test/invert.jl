@@ -45,10 +45,9 @@
     taper = Pigi.mkkbtaper(paddedgridspec)
     subgrids = Pigi.partition(uvdata, paddedgridspec, subgridspec, padding, wstep, taper)
     Pigi.applyweights!(subgrids, weighter)
-    img = Pigi.invert(subgrids, paddedgridspec)
+    img = Pigi.invert(subgrids, paddedgridspec, taper)
 
     img = img[1 + masterpadding:end - masterpadding, 1 + masterpadding:end - masterpadding]
-    Pigi.removetaper!(img, gridspec, taper)
 
     img = reinterpret(reshape, Complex{precision}, img)
     @test maximum(abs.(img .- expected)) < 1e-8
