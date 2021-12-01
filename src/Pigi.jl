@@ -1,5 +1,6 @@
 module Pigi
     using FFTW
+    using MappedArrays
     using PyCall
     using SpecialFunctions: besseli
     using StaticArrays
@@ -19,4 +20,5 @@ module Pigi
     include("weights.jl")
     include("invert.jl")
     include("predict.jl")
+    include("clean.jl")
 end
