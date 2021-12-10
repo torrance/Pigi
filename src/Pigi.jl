@@ -1,5 +1,6 @@
 module Pigi
     using FFTW
+    using LsqFit: curve_fit, coef
     using MappedArrays
     using PyCall
     using SpecialFunctions: besseli
@@ -21,4 +22,5 @@ module Pigi
     include("invert.jl")
     include("predict.jl")
     include("clean.jl")
+    include("psf.jl")
 end
