@@ -1,8 +1,10 @@
-function clean!(img, psf; gain=0.1, threshold=0, niter::Int=typemax(Int))
+function clean!(img, psf; gain=0.1, mgain=0.8, niter::Int=typemax(Int))
     components = similar(img)
     fill!(components, 0)
 
     absimg = mappedarray(abs, img)
+
+    threshold = (1 - mgain) * maximum(absimg)
 
     n0, m0 = size(psf) .÷ 2 .+ 1
 
