@@ -35,7 +35,7 @@ function psfclip(psf, threshold)
         end
     end
 
-    r0 = ceil(Int, sqrt(r02))
+    r0 = ceil(Int, sqrt(r02) * 4)  # 4 is a magic number to ensure we get plenty of sidelobes
     r0 = r0 <= x0 - 1 ? r0 : x0 - 1
     return psf[x0 - r0:x0 + r0 - 1, y0 - r0:y0 + r0 - 1]
 end
