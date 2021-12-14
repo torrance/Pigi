@@ -1,7 +1,7 @@
-@views function gaussian(xys, (A, xsigma, ysigma, pa))
+@views function gaussian(xys, (xsigma, ysigma, pa))
     xs = @. xys[:, :, 1] * cos(pa) - xys[:, :, 2] * sin(pa)
     ys = @. xys[:, :, 1] * sin(pa) .+ xys[:, :, 2] * cos(pa)
-    zs = @. A * exp.(-xs^2 / (2 * xsigma^2) - ys^2 / (2 * ysigma^2))
+    zs = @. exp.(-xs^2 / (2 * xsigma^2) - ys^2 / (2 * ysigma^2))
     return reshape(zs, :)
 end
 
@@ -16,7 +16,7 @@ function psffit(psf)
         end
     end
 
-    params = coef(curve_fit(gaussian, xys, reshape(psf, :), Float64[1, 5, 5, 0]))
+    params = coef(curve_fit(gaussian, xys, reshape(psf, :), Float64[5, 5, 0]))
 
     fitted = reshape(gaussian(xys, params), size(psf))
     return params, fitted
