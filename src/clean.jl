@@ -1,10 +1,11 @@
-function clean!(img, psf; gain=0.1, mgain=0.8, niter::Int=typemax(Int))
+function clean!(img, psf; gain=0.1, mgain=0.8, threshold=0, niter::Int=typemax(Int))
     components = similar(img)
     fill!(components, 0)
 
     absimg = mappedarray(abs, img)
 
-    threshold = (1 - mgain) * maximum(absimg)
+    threshold = maximum([(1 - mgain) * maximum(absimg), threshold])
+    println("Cleaning to threshold: $(threshold)")
 
     n0, m0 = size(psf) .÷ 2 .+ 1
 
@@ -18,6 +19,7 @@ function clean!(img, psf; gain=0.1, mgain=0.8, niter::Int=typemax(Int))
         timemax += time_ns() - start
 
         if absval < threshold
+            println("Threshold limit reached ($(absval) < $(threshold))")
             break
         end
         val = img[idx]

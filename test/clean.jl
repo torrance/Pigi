@@ -13,7 +13,7 @@
 
     img = conv(expectedcomponentmap, psf)[1 + 32:end - 31, 1 + 32:end - 31]
 
-    componentmap, iter = Pigi.clean!(copy(img), psf, mgain=0.99)
+    componentmap, iter = Pigi.clean!(copy(img), psf, mgain=1, threshold=1e-2)
 
     restored = conv(componentmap, psf)[1 + 32:end - 31, 1 + 32:end - 31]
     diff = img .- restored
