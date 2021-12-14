@@ -1,1 +1,1 @@
-JULIA_LOAD_PATH="${PWD}:${PWD}/benchmark:@stdlib" julia --threads=auto benchmark/runbenchmarks.jl
+JULIA_LOAD_PATH="${PWD}:${PWD}/benchmark:@stdlib" julia --threads=1 benchmark/runbenchmarks.jl
