@@ -2,7 +2,8 @@ function predict!(
     subgrids::Vector{Subgrid{T}},
     img::Matrix{SMatrix{2, 2, Complex{T}, 4}},
     gridspec::GridSpec,
-    taper
+    taper;
+    degridop=degridop_replace
 ) where {T}
     # To avoid unnecessary fftshifts, we now move to 'standard ordering' and
     # do a final fftshift on each wlayer.
@@ -34,12 +35,17 @@ function predict!(
     imgflat = reinterpret(reshape, Complex{T}, img)
     plan = plan_fft!(imgflat, (2, 3))
 
+    mastergrid = Array{SMatrix{2, 2, Complex{T}, 4}, 2}(undef, gridspec.Nx, gridspec.Ny)
+    mastergridshifted = Array{SMatrix{2, 2, Complex{T}, 4}, 2}(undef, gridspec.Nx, gridspec.Ny)
+
     gridded = Threads.Atomic{Int}(0)
-    Threads.@threads for w0 in unique(subgrid.w0 for subgrid in subgrids)
-        mastergrid = zeros(SMatrix{2, 2, Complex{T}, 4}, gridspec.Nx, gridspec.Ny)
+    for w0 in unique(subgrid.w0 for subgrid in subgrids)
+        fill!(mastergrid, zero(SMatrix{2, 2, Complex{T}, 4}))
 
         # Apply w-layer (de)correction
-        for (mpx, m) in enumerate(ms), (lpx, l) in enumerate(ls)
+        Threads.@threads for idx in CartesianIndices(mastergrid)
+            lpx, mpx = Tuple(idx)
+            l, m = ls[lpx], ms[mpx]
             mastergrid[lpx, mpx] = img[lpx, mpx] * exp(-2π * 1im * w0 * ndash(l, m))
         end
 
@@ -48,12 +54,12 @@ function predict!(
         plan * mastergridflat  # inplace
 
         # Revert back to zero centering the power
-        mastergrid = fftshift(mastergrid)
+        circshift!(mastergridshifted, mastergrid, size(mastergrid) .÷ 2)
 
         for subgrid in subgrids
             if subgrid.w0 == w0
-                visgrid = Pigi.extractsubgrid(mastergrid, subgrid)
-                Pigi.degridder!(subgrid, visgrid)
+                visgrid = Pigi.extractsubgrid(mastergridshifted, subgrid)
+                Pigi.degridder!(subgrid, visgrid, degridop)
                 Threads.atomic_add!(gridded, 1)
                 print("\rDegridded $(gridded[])/$(length(subgrids)) subgrids...")
             end

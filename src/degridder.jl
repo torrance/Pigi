@@ -12,7 +12,9 @@ end
 function dft!(subgrid::Subgrid{T}, grid::Matrix{SMatrix{2, 2, Complex{T}, 4}}) where T
     lms = fftfreq(subgrid.subgridspec.Nx, 1 / subgrid.subgridspec.scaleuv)
 
-    for (i, uvdatum) in enumerate(subgrid.data)
+    Threads.@threads for i in eachindex(subgrid.data)
+        uvdatum = subgrid.data[i]
+
         data = SMatrix{2, 2, Complex{T}, 4}(0, 0, 0, 0)
         for (mpx, m) in enumerate(lms), (lpx, l) in enumerate(lms)
             phase = -2π * 1im * (
