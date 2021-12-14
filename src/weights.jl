@@ -100,7 +100,7 @@ function Briggs(uvdata::Vector{UVDatum{T}}, gridspec::GridSpec, robust) where T
 end
 
 function (w::Briggs{T})(uvdatum::UVDatum{T}) where T
-    upx, vpx = lambda2px(Int, uvdatum.u, uvdatum.w, w.gridspec)
+    upx, vpx = lambda2px(Int, uvdatum.u, uvdatum.v, w.gridspec)
 
     if checkbounds(Bool, w.imageweights, upx, vpx)
         return w.imageweights[upx, vpx] ./ w.normfactor

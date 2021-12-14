@@ -7,7 +7,7 @@
     expectednatural = zeros(128, 128)
 
     for _ in 1:10_000
-        upx, vpx = rand(2) * 128
+        upx, vpx = rand(2) * 100 .+ 14
         u, v = Pigi.px2lambda(upx, vpx, gridspec)
         push!(uvdata, Pigi.UVDatum{precision}(
             0, 0, u, v, 0, rand(SMatrix{2, 2, Float64, 4}), [1 1; 1 1]
@@ -51,7 +51,7 @@
     norm = sum(x -> x == 0 ? 0 : 1, uniformgrid)
     @test all(x -> x == 0 || x ≈ 1 / norm, uniformgrid)
 
-    weighter = Pigi.Briggs(uvdata, gridspec, 4)
+    weighter = Pigi.Briggs(uvdata, gridspec, 2)
     weighteduvdata = deepcopy(uvdata)
     Pigi.applyweights!(weighteduvdata, weighter)
 
@@ -65,4 +65,15 @@
 
     # High briggs numbers should tend towards uniform weighting
     @test all(x -> isapprox(x[1], x[2], atol=1e-5), zip(naturalgrid, briggsgrid))
+
+    weighter = Pigi.Briggs(uvdata, gridspec, 0)
+    weighteduvdata = deepcopy(uvdata)
+    Pigi.applyweights!(weighteduvdata, weighter)
+
+    Aleft = Aright = ones(SMatrix{2, 2, Complex{precision}, 4}, 128, 128)
+    subgrid = Pigi.Subgrid{precision}(65, 65, 0, 0, 0, gridspec, Aleft, Aright, weighteduvdata)
+    uvgrid = Pigi.gridder(subgrid, makepsf=true)
+
+    xx = map(uv -> real(uv[1]), uvgrid)
+    @test real.(fftshift(bfft(ifftshift(xx))))[65, 65] ≈ 1
 end
