@@ -18,7 +18,10 @@ end
 function dift!(grid::Matrix{SMatrix{2, 2, Complex{T}, 4}}, subgrid::Subgrid{T}) where T
     lms = fftfreq(subgrid.subgridspec.Nx, T(1 / subgrid.subgridspec.scaleuv))::Frequencies{T}
 
-    for (mpx, m) in enumerate(lms), (lpx, l) in enumerate(lms)
+    Threads.@threads for idx in CartesianIndices(grid)
+        lpx, mpx = Tuple(idx)
+        l, m = lms[lpx], lms[mpx]
+
         @simd for uvdatum in subgrid.data
             phase = 2π * 1im * (
                 (uvdatum.u - subgrid.u0) * l +
@@ -36,7 +39,10 @@ end
 function diftpsf!(grid::Matrix{SMatrix{2, 2, Complex{T}, 4}}, subgrid::Subgrid{T}) where T
     lms = fftfreq(subgrid.subgridspec.Nx, T(1 / subgrid.subgridspec.scaleuv))::Frequencies{T}
 
-    for (mpx, m) in enumerate(lms), (lpx, l) in enumerate(lms)
+    Threads.@threads for idx in CartesianIndices(grid)
+        lpx, mpx = Tuple(idx)
+        l, m = lms[lpx], lms[mpx]
+
         @simd for uvdatum in subgrid.data
             phase = 2π * 1im * (
                 (uvdatum.u - subgrid.u0) * l +
