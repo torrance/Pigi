@@ -125,9 +125,9 @@ function makegriddedweights(uvdata::Vector{UVDatum{T}}, gridspec::GridSpec) wher
     return griddedweights
 end
 
-function applyweights!(subgrids::Vector{Subgrid{T}}, weighter::ImageWeight) where T
-    for subgrid in subgrids
-        applyweights!(subgrid.data, weighter)
+function applyweights!(workunits::Vector{WorkUnit{T}}, weighter::ImageWeight) where T
+    for workunit in workunits
+        applyweights!(workunit.data, weighter)
     end
 end
 

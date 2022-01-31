@@ -1,4 +1,4 @@
-function invert(subgrids::Vector{Subgrid{T}}, gridspec::GridSpec, taper; makepsf=false) where T
+function invert(workunits::Vector{WorkUnit{T}}, gridspec::GridSpec, taper; makepsf=false) where T
     # Create the fftplan just once, for a slight performance win.
     # We use img as a proxy for the planning, since it has the same shape and type
     # as the mastergrids.
@@ -15,16 +15,16 @@ function invert(subgrids::Vector{Subgrid{T}}, gridspec::GridSpec, taper; makepsf
     mastergrid = Array{SMatrix{2, 2, Complex{T}, 4}, 2}(undef, gridspec.Nx, gridspec.Ny)
 
     gridded = Threads.Atomic{Int}(0)
-    for w0 in unique(subgrid.w0 for subgrid in subgrids)
+    for w0 in unique(workunit.w0 for workunit in workunits)
         fill!(mastergrid, zero(SMatrix{2, 2, Complex{T}, 4}))
 
-        for subgrid in subgrids
-            if subgrid.w0 == w0
-                grid = gridder(subgrid, makepsf=makepsf)
-                addsubgrid!(mastergrid, grid, subgrid)
+        for workunit in workunits
+            if workunit.w0 == w0
+                grid = gridder(workunit, makepsf=makepsf)
+                addsubgrid!(mastergrid, grid, workunit)
 
                 Threads.atomic_add!(gridded, 1)
-                print("\rGridded $(gridded[])/$(length(subgrids)) subgrids...")
+                print("\rGridded $(gridded[])/$(length(workunits)) workunits...")
             end
         end
 

@@ -1,5 +1,5 @@
 function predict!(
-    subgrids::Vector{Subgrid{T}},
+    workunits::Vector{WorkUnit{T}},
     img::Matrix{SMatrix{2, 2, Complex{T}, 4}},
     gridspec::GridSpec,
     taper;
@@ -39,7 +39,7 @@ function predict!(
     mastergridshifted = Array{SMatrix{2, 2, Complex{T}, 4}, 2}(undef, gridspec.Nx, gridspec.Ny)
 
     gridded = Threads.Atomic{Int}(0)
-    for w0 in unique(subgrid.w0 for subgrid in subgrids)
+    for w0 in unique(workunit.w0 for workunit in workunits)
         fill!(mastergrid, zero(SMatrix{2, 2, Complex{T}, 4}))
 
         # Apply w-layer (de)correction
@@ -56,12 +56,12 @@ function predict!(
         # Revert back to zero centering the power
         circshift!(mastergridshifted, mastergrid, size(mastergrid) .÷ 2)
 
-        for subgrid in subgrids
-            if subgrid.w0 == w0
-                visgrid = Pigi.extractsubgrid(mastergridshifted, subgrid)
-                Pigi.degridder!(subgrid, visgrid, degridop)
+        for workunit in workunits
+            if workunit.w0 == w0
+                visgrid = Pigi.extractsubgrid(mastergridshifted, workunit)
+                Pigi.degridder!(workunit, visgrid, degridop)
                 Threads.atomic_add!(gridded, 1)
-                print("\rDegridded $(gridded[])/$(length(subgrids)) subgrids...")
+                print("\rDegridded $(gridded[])/$(length(workunits)) workunits...")
             end
         end
     end

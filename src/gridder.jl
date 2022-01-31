@@ -1,58 +1,58 @@
-function gridder(subgrid::Subgrid{T}; makepsf::Bool=false) where T
-    grid = zeros(
-        SMatrix{2, 2, Complex{T}, 4}, subgrid.subgridspec.Nx, subgrid.subgridspec.Ny
+function gridder(workunit::WorkUnit{T}; makepsf::Bool=false) where T
+    subgrid = zeros(
+        SMatrix{2, 2, Complex{T}, 4}, workunit.subgridspec.Nx, workunit.subgridspec.Ny
     )
 
     if makepsf
-        diftpsf!(grid, subgrid)
+        diftpsf!(subgrid, workunit)
     else
-        dift!(grid, subgrid)
+        dift!(subgrid, workunit)
     end
 
-    gridflat = reinterpret(reshape, Complex{T}, grid)
-    fft!(gridflat, (2, 3))
-    grid ./= (subgrid.subgridspec.Nx * subgrid.subgridspec.Ny)
-    return fftshift(grid)
+    subgridflat = reinterpret(reshape, Complex{T}, subgrid)
+    fft!(subgridflat, (2, 3))
+    subgrid ./= (workunit.subgridspec.Nx * workunit.subgridspec.Ny)
+    return fftshift(subgrid)
 end
 
-function dift!(grid::Matrix{SMatrix{2, 2, Complex{T}, 4}}, subgrid::Subgrid{T}) where T
-    lms = fftfreq(subgrid.subgridspec.Nx, T(1 / subgrid.subgridspec.scaleuv))::Frequencies{T}
+function dift!(subgrid::Matrix{SMatrix{2, 2, Complex{T}, 4}}, workunit::WorkUnit{T}) where T
+    lms = fftfreq(workunit.subgridspec.Nx, T(1 / workunit.subgridspec.scaleuv))::Frequencies{T}
 
-    Threads.@threads for idx in CartesianIndices(grid)
+    Threads.@threads for idx in CartesianIndices(subgrid)
         lpx, mpx = Tuple(idx)
         l, m = lms[lpx], lms[mpx]
 
-        @simd for uvdatum in subgrid.data
+        @simd for uvdatum in workunit.data
             phase = 2π * 1im * (
-                (uvdatum.u - subgrid.u0) * l +
-                (uvdatum.v - subgrid.v0) * m +
-                (uvdatum.w - subgrid.w0) * ndash(l, m)
+                (uvdatum.u - workunit.u0) * l +
+                (uvdatum.v - workunit.v0) * m +
+                (uvdatum.w - workunit.w0) * ndash(l, m)
             )
-            grid[lpx, mpx] += uvdatum.weights .* uvdatum.data * exp(phase)
+            subgrid[lpx, mpx] += uvdatum.weights .* uvdatum.data * exp(phase)
         end
-        grid[lpx, mpx] = (
-            subgrid.Aleft[lpx, mpx] * grid[lpx, mpx] * adjoint(subgrid.Aright[lpx, mpx])
+        subgrid[lpx, mpx] = (
+            workunit.Aleft[lpx, mpx] * subgrid[lpx, mpx] * adjoint(workunit.Aright[lpx, mpx])
         )
     end
 end
 
-function diftpsf!(grid::Matrix{SMatrix{2, 2, Complex{T}, 4}}, subgrid::Subgrid{T}) where T
-    lms = fftfreq(subgrid.subgridspec.Nx, T(1 / subgrid.subgridspec.scaleuv))::Frequencies{T}
+function diftpsf!(subgrid::Matrix{SMatrix{2, 2, Complex{T}, 4}}, workunit::WorkUnit{T}) where T
+    lms = fftfreq(workunit.subgridspec.Nx, T(1 / workunit.subgridspec.scaleuv))::Frequencies{T}
 
-    Threads.@threads for idx in CartesianIndices(grid)
+    Threads.@threads for idx in CartesianIndices(subgrid)
         lpx, mpx = Tuple(idx)
         l, m = lms[lpx], lms[mpx]
 
-        @simd for uvdatum in subgrid.data
+        @simd for uvdatum in workunit.data
             phase = 2π * 1im * (
-                (uvdatum.u - subgrid.u0) * l +
-                (uvdatum.v - subgrid.v0) * m +
-                (uvdatum.w - subgrid.w0) * ndash(l, m)
+                (uvdatum.u - workunit.u0) * l +
+                (uvdatum.v - workunit.v0) * m +
+                (uvdatum.w - workunit.w0) * ndash(l, m)
             )
-            grid[lpx, mpx] += uvdatum.weights * exp(phase)
+            subgrid[lpx, mpx] += uvdatum.weights * exp(phase)
         end
-        grid[lpx, mpx] = (
-            subgrid.Aleft[lpx, mpx] * grid[lpx, mpx] * adjoint(subgrid.Aright[lpx, mpx])
+        subgrid[lpx, mpx] = (
+            workunit.Aleft[lpx, mpx] * subgrid[lpx, mpx] * adjoint(workunit.Aright[lpx, mpx])
         )
     end
 end

@@ -79,11 +79,11 @@ begin
 
     taper = Pigi.mkkbtaper(subgridspec)
 
-    subgrid = Pigi.Subgrid{precision}(
+    workunit = Pigi.WorkUnit{precision}(
         0, 0, 0, 0, 0, subgridspec, Aleft, Aright, uvdata
     )
 
-    b = @benchmark Pigi.gridder($subgrid) evals=1 samples=10 seconds=60
+    b = @benchmark Pigi.gridder($workunit) evals=1 samples=10 seconds=60
     show(stdout, MIME"text/plain"(), b)
     println()
 end
@@ -109,12 +109,12 @@ begin
     end
     println("Degridding $(length(uvdata)) uvdatum")
 
-    subgrid = Pigi.Subgrid{precision}(
+    workunit = Pigi.WorkUnit{precision}(
         0, 0, 0, 0, 0, subgridspec, Aleft, Aright, uvdata
     )
 
     grid = rand(SMatrix{2, 2, Complex{precision}, 4}, 128, 128)
-    b = @benchmark Pigi.degridder!($subgrid, $grid, Pigi.degridop_replace) evals=1 samples=10 seconds=60
+    b = @benchmark Pigi.degridder!($workunit, $grid, Pigi.degridop_replace) evals=1 samples=10 seconds=60
     show(stdout, MIME"text/plain"(), b)
     println()
 end

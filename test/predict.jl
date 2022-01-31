@@ -20,12 +20,12 @@
     taper = Pigi.mkkbtaper(gridspec)
     padding = 15
     subgridspec = Pigi.GridSpec(64, 64, scaleuv=gridspec.scaleuv)
-    subgrids = Pigi.partition(uvdata, gridspec, subgridspec, padding, 25, taper)
-    @time Pigi.predict!(subgrids, skymap, gridspec, taper)
+    workunits = Pigi.partition(uvdata, gridspec, subgridspec, padding, 25, taper)
+    @time Pigi.predict!(workunits, skymap, gridspec, taper)
 
     uvdata = Pigi.UVDatum{precision}[]
-    for subgrid in subgrids
-        append!(uvdata, subgrid.data)
+    for workunit in workunits
+        append!(uvdata, workunit.data)
     end
 
     # Predict using direct FT

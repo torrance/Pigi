@@ -1,4 +1,4 @@
-struct Subgrid{T}
+struct WorkUnit{T}
     u0px::Int  # pixel location of 'central' pixel, defined by FFT convention
     v0px::Int
     u0::T # Central pixel value in lambda
@@ -24,8 +24,8 @@ function partition(
     wstep::Int,
     taper,
 ) where T
-    # Partition the subgrids into w layers to help reduce the search space during partitioning.
-    wlayers = Dict{Int, Vector{Subgrid{T}}}()
+    # Partition the workunits into w layers to help reduce the search space during partitioning.
+    wlayers = Dict{Int, Vector{WorkUnit{T}}}()
     radius = subgridspec.Nx ÷ 2 - padding
 
     # At a future point, there will be multiple of these Aterm screens that will be
@@ -43,19 +43,19 @@ function partition(
         upx, vpx = lambda2px(uvdatum.u, uvdatum.v, gridspec)
         w0 = wstep * round(Int, uvdatum.w / wstep)
 
-        subgrids = get!(wlayers, w0) do
-            Subgrid{T}[]
+        workunits = get!(wlayers, w0) do
+            WorkUnit{T}[]
         end
 
-        # Search through existing subgrids to see if our UVDatum fits somewhere already.
+        # Search through existing workunits to see if our UVDatum fits somewhere already.
         found = false
-        for subgrid in subgrids
+        for workunit in workunits
             # The +0.5 in this condition accounts for the off-center central pixel.
             if (
-                -radius <= upx - subgrid.u0px + T(0.5) <= radius &&
-                -radius <= vpx - subgrid.v0px + T(0.5) <= radius
+                -radius <= upx - workunit.u0px + T(0.5) <= radius &&
+                -radius <= vpx - workunit.v0px + T(0.5) <= radius
             )
-                push!(subgrid.data, uvdatum)
+                push!(workunit.data, uvdatum)
                 found = true
                 break
             end
@@ -64,61 +64,61 @@ function partition(
             continue
         end
 
-        # If we made it here, we need to create a new subgrid for our UVDatum.
+        # If we made it here, we need to create a new workunit for our UVDatum.
         u0px = round(Int, upx)
         v0px = round(Int, vpx)
         u0, v0 = px2lambda(u0px, v0px, gridspec)
 
         data = UVDatum{T}[uvdatum]
         sizehint!(data, 1000)
-        push!(subgrids, Subgrid{T}(
+        push!(workunits, WorkUnit{T}(
             u0px, v0px, u0, v0, w0, subgridspec, Aleft, Aright, data
         ))
     end
 
-    subgrids = [subgrid for subgrids in values(wlayers) for subgrid in subgrids]
-    occupancy = [length(subgrid.data) for subgrid in subgrids]
-    println("Subgrids: $(length(subgrids)) Min/mean/median/max occupancy: $(minimum(occupancy))/$(mean(occupancy))/$(median(occupancy))/$(maximum(occupancy))")
+    workunits = [workunit for workunits in values(wlayers) for workunit in workunits]
+    occupancy = [length(workunit.data) for workunit in workunits]
+    println("WorkUnits: $(length(workunits)) Min/mean/median/max occupancy: $(minimum(occupancy))/$(mean(occupancy))/$(median(occupancy))/$(maximum(occupancy))")
 
-    return subgrids
+    return workunits
 end
 
 function addsubgrid!(
     mastergrid::Matrix{SMatrix{2, 2, T, 4}},
-    grid::Matrix{SMatrix{2, 2, T, 4}},
-    subgrid::Subgrid
+    subgrid::Matrix{SMatrix{2, 2, T, 4}},
+    workunit::WorkUnit
 ) where {T}
-    u0px = subgrid.u0px
-    v0px = subgrid.v0px
-    width = subgrid.subgridspec.Nx ÷ 2
+    u0px = workunit.u0px
+    v0px = workunit.v0px
+    width = workunit.subgridspec.Nx ÷ 2
 
     for (j, vpx) in enumerate(v0px - width:v0px + width - 1)
         if 1 <= vpx <= size(mastergrid)[2]
             for (i, upx) in enumerate(u0px - width:u0px + width - 1)
                 if 1 <= upx <= size(mastergrid)[1]
-                    mastergrid[upx, vpx] += grid[i, j]
+                    mastergrid[upx, vpx] += subgrid[i, j]
                 end
             end
         end
     end
 end
 
-function extractsubgrid(mastergrid::Matrix{SMatrix{2, 2, T, 4}}, subgrid::Subgrid) where {T}
-    grid = zeros(SMatrix{2, 2, T, 4}, subgrid.subgridspec.Nx, subgrid.subgridspec.Ny)
+function extractsubgrid(mastergrid::Matrix{SMatrix{2, 2, T, 4}}, workunit::WorkUnit) where {T}
+    subgrid = zeros(SMatrix{2, 2, T, 4}, workunit.subgridspec.Nx, workunit.subgridspec.Ny)
 
-    u0px = subgrid.u0px
-    v0px = subgrid.v0px
-    width = subgrid.subgridspec.Nx ÷ 2
+    u0px = workunit.u0px
+    v0px = workunit.v0px
+    width = workunit.subgridspec.Nx ÷ 2
 
     for (j, vpx) in enumerate(v0px - width:v0px + width - 1)
         if 1 <= vpx <= size(mastergrid)[2]
             for (i, upx) in enumerate(u0px - width:u0px + width - 1)
                 if 1 <= upx <= size(mastergrid)[1]
-                    grid[i, j] = mastergrid[upx, vpx]
+                    subgrid[i, j] = mastergrid[upx, vpx]
                 end
             end
         end
     end
 
-    return grid
+    return subgrid
 end
