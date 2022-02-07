@@ -1,4 +1,5 @@
 module Pigi
+    using CUDA
     using FFTW
     using LsqFit: curve_fit, coef
     using MappedArrays
@@ -23,4 +24,5 @@ module Pigi
     include("predict.jl")
     include("clean.jl")
     include("psf.jl")
+    include("gpugridder.jl")
 end

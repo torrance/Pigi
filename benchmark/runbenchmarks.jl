@@ -118,3 +118,43 @@ begin
     show(stdout, MIME"text/plain"(), b)
     println()
 end
+
+#=
+2022/02/07 : Nimbus
+    Time (mean ± σ): 24.062 s ± 1.728 s GC (mean ± σ): 0.05% ± 0.06%
+    Memory estimate: 885.26 MiB, allocs estimate: 354185
+=#
+begin
+    println("Reading mset...")
+    path = "../testdata/1215555160/1215555160.ms"
+    mset = Pigi.MeasurementSet(path, chanstart=1, chanstop=96)
+    println("Mset opened...")
+    uvdata = collect(Pigi.read(mset, precision=Float32))
+    println(typeof(uvdata))
+    println("Done.")
+
+    scalelm = sin(deg2rad(15 / 3600))
+    gridspec = Pigi.GridSpec(4000, 4000, scalelm=scalelm)
+    subgridspec = Pigi.GridSpec(64, 64, scaleuv=gridspec.scaleuv)
+    padding = 8
+    wstep = 10
+
+    println("Partitioning data...")
+    workunits = Pigi.partition(uvdata, gridspec, subgridspec, padding, wstep, (l, m) -> 1)
+    println("Done.")
+
+    # Compile CUDA kernel
+    println("Compiling CUDA kernel...")
+    Pigi.gpugridder(workunits[1])
+    println("Done.")
+
+    b = @benchmark begin
+        Base.@sync for (i, workunit) in enumerate($workunits)
+            Base.@async Pigi.gpugridder(workunit)
+            print("\rGridded $(i)/$(length($workunits))")
+        end
+        println("")
+    end evals=1 samples=5 seconds=120
+    show(stdout, MIME"text/plain"(), b)
+    println()
+end
