@@ -10,6 +10,10 @@ println("Running benchmarks...")
 2021/11/09 : Nimbus
     Time (mean ± σ): 15.936 s ± 134.312 ms GC (mean ± σ): 0.00% ± 0.00%
     Memory estimate: 9.06 MiB, allocs estimate: 86217
+2022/02/07 Nimbus
+    Time (mean ± σ): 15.375 s ± 279.428 ms GC (mean ± σ): 0.00% ± 0.00%
+    Memory estimate: 12.41 MiB, allocs estimate: 85526
+    Note: upgrade to Julia 1.7.1
 =#
 begin
     path = "../testdata/1215555160/1215555160.ms"
@@ -23,6 +27,10 @@ end
 2021/11/09 : Nimbus
     Time (mean ± σ): 12.186 s ± 2.400 s GC (mean ± σ): 6.05% ± 2.37%
     Memory estimate: 19.24 GiB, allocs estimate: 27066
+2021/02/07 : Nimbus
+    Time (mean ± σ): 12.762 s ± 2.191 s GC (mean ± σ): 10.07% ± 3.68%
+    Memory estimate: 22.30 GiB, allocs estimate: 23394
+    Note: upgrade to Julia 1.7.1
 =#
 begin
     println("Reading mset...")
@@ -52,6 +60,10 @@ end
     Time (mean ± σ): 4.271 s ± 14.215 ms GC (mean ± σ): 0.00% ± 0.00%
     Memory estimate: 2.00 MiB, allocs estimate: 27
     Note: enabled @SIMD
+2022/02/07 : Nimbus
+    Time (mean ± σ): 4.483 s ± 7.480 ms GC (mean ± σ): 0.00% ± 0.00%
+    Memory estimate: 2.00 MiB, allocs estimate: 33
+    Note: upgrade to Julia 1.7.1
 =#
 begin
     precision = Float64
@@ -92,6 +104,10 @@ end
 2021/11/30 : Nimbus
     Time (mean ± σ): 5.601 s ± 18.682 ms GC (mean ± σ): 0.00% ± 0.00%
     Memory estimate: 1.00 MiB, allocs estimate: 29
+2022/02/07 : Nimbus
+    Time (mean ± σ): 5.664 s ± 10.579 ms GC (mean ± σ): 0.00% ± 0.00%
+    Memory estimate: 1.00 MiB, allocs estimate: 37
+    Note: upgrade to Julia 1.7.1
 =#
 begin
     precision = Float64
