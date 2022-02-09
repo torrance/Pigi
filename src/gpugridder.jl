@@ -3,14 +3,27 @@ function gpugridder(workunit::WorkUnit{T}; makepsf::Bool=false) where T
         SMatrix{2, 2, Complex{T}, 4}, workunit.subgridspec.Nx, workunit.subgridspec.Ny
     )
 
-    nblocks = ceil(Int, length(workunit.data) / 256)
     if makepsf
-        @cuda blocks=nblocks threads=256 gpudiftpsf!(
+        kernel = @cuda launch=false gpudiftpsf!(
             subgrid, workunit.u0, workunit.v0, workunit.w0, CuArray(workunit.data), CuArray(workunit.Aleft), CuArray(workunit.Aright), workunit.subgridspec
         )
+        config = launch_configuration(kernel.fun)
+        nthreads = min(length(subgrid), config.threads)
+        nblocks = cld(length(subgrid), nthreads)
+        kernel(
+            subgrid, workunit.u0, workunit.v0, workunit.w0, CuArray(workunit.data), CuArray(workunit.Aleft), CuArray(workunit.Aright), workunit.subgridspec;
+            threads=nthreads, blocks=nblocks
+        )
     else
-        @cuda blocks=nblocks threads=256 gpudift!(
+        kernel = @cuda launch=false gpudift!(
             subgrid, workunit.u0, workunit.v0, workunit.w0, CuArray(workunit.data), CuArray(workunit.Aleft), CuArray(workunit.Aright), workunit.subgridspec
+        )
+        config = launch_configuration(kernel.fun)
+        nthreads = min(length(subgrid), config.threads)
+        nblocks = cld(length(subgrid), nthreads)
+        kernel(
+            subgrid, workunit.u0, workunit.v0, workunit.w0, CuArray(workunit.data), CuArray(workunit.Aleft), CuArray(workunit.Aright), workunit.subgridspec;
+            threads=nthreads, blocks=nblocks
         )
     end
 
@@ -26,8 +39,6 @@ function gpudift!(subgrid::CuDeviceMatrix{SMatrix{2, 2, Complex{T}, 4}}, u0, v0,
     stride = gridDim().x * blockDim().x
 
     lms = fftfreq(subgridspec.Nx, T(1 / subgridspec.scaleuv))::Frequencies{T}
-
-    uvdatum = uvdata[1]
 
     for idx in gpuidx:stride:length(subgrid)
         lpx, mpx = Tuple(CartesianIndices(subgrid)[idx])
@@ -54,8 +65,6 @@ function gpudiftpsf!(subgrid::CuDeviceMatrix{SMatrix{2, 2, Complex{T}, 4}}, u0, 
     stride = gridDim().x * blockDim().x
 
     lms = fftfreq(subgridspec.Nx, T(1 / subgridspec.scaleuv))::Frequencies{T}
-
-    uvdatum = uvdata[1]
 
     for idx in gpuidx:stride:length(subgrid)
         lpx, mpx = Tuple(CartesianIndices(subgrid)[idx])
