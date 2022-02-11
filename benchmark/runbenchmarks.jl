@@ -183,3 +183,46 @@ begin
     show(stdout, MIME"text/plain"(), b)
     println()
 end
+
+#=
+2022/02/11 : Nimbus
+    Time (mean ± σ): 4.801 s ± 964.457 ms GC (mean ± σ): 0.13% ± 0.21%
+    Memory estimate: 454.40 MiB, allocs estimate: 373964
+=#
+begin
+    println("Reading mset...")
+    path = "../testdata/1215555160/1215555160.ms"
+    mset = Pigi.MeasurementSet(path, chanstart=1, chanstop=96)
+    println("Mset opened...")
+    uvdata = collect(Pigi.read(mset, precision=Float32))
+    println(typeof(uvdata))
+    println("Done.")
+
+    scalelm = sin(deg2rad(15 / 3600))
+    gridspec = Pigi.GridSpec(4000, 4000, scalelm=scalelm)
+    subgridspec = Pigi.GridSpec(64, 64, scaleuv=gridspec.scaleuv)
+    padding = 8
+    wstep = 10
+
+    println("Partitioning data...")
+    workunits = Pigi.partition(uvdata, gridspec, subgridspec, padding, wstep, (l, m) -> 1)
+    println("Done.")
+
+    # Create random visgrid
+    visgrid = rand(SMatrix{2, 2, ComplexF32, 4}, 64, 64)
+
+    # Compile CUDA kernel
+    println("Compiling CUDA kernel...")
+    Pigi.gpudegridder!(workunits[1], visgrid, Pigi.degridop_replace)
+    println("Done.")
+
+    b = @benchmark begin
+        CUDA.@profile CUDA.NVTX.@range "Degridding" Base.@sync for (i, workunit) in enumerate($workunits)
+            Base.@async Pigi.gpudegridder!(workunit, visgrid, Pigi.degridop_replace)
+            print("\rDegridded $(i)/$(length($workunits))")
+        end
+        println("")
+    end evals=1 samples=5 seconds=120
+    show(stdout, MIME"text/plain"(), b)
+    println()
+end

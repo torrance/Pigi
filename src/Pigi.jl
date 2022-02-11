@@ -25,4 +25,5 @@ module Pigi
     include("clean.jl")
     include("psf.jl")
     include("gpugridder.jl")
+    include("gpudegridder.jl")
 end
