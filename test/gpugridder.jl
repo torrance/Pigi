@@ -21,11 +21,11 @@
 
     gpusubgrid = Pigi.gpugridder(workunit, makepsf=true)
     cpusubgrid = Pigi.gridder(workunit, makepsf=true)
-    @test all(isapprox(x, y, atol=1e-5) for (x, y) in zip(gpusubgrid, cpusubgrid))
+    @test all(isapprox(x, y, atol=1e-8) for (x, y) in zip(gpusubgrid, cpusubgrid))
 
     gpusubgrid = Pigi.gpugridder(workunit)
     cpusubgrid = Pigi.gridder(workunit)
-    @test all(isapprox(x, y, atol=1e-5) for (x, y) in zip(gpusubgrid, cpusubgrid))
+    @test all(isapprox(x, y, atol=1e-8) for (x, y) in zip(gpusubgrid, cpusubgrid))
 
     # gpusubgrid = [real(x[1]) for x in gpusubgrid]
     # cpusubgrid = [real(x[1]) for x in cpusubgrid]

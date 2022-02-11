@@ -1,4 +1,5 @@
 using BenchmarkTools
+using CUDA
 using Pigi
 using Profile
 using InteractiveUtils: @code_warntype
@@ -139,6 +140,10 @@ end
 2022/02/07 : Nimbus
     Time (mean ± σ): 24.062 s ± 1.728 s GC (mean ± σ): 0.05% ± 0.06%
     Memory estimate: 885.26 MiB, allocs estimate: 354185
+2022/02/11 : Nimus
+    Time (mean ± σ): 12.147 s ± 900.924 ms GC (mean ± σ): 0.07% ± 0.14%
+    Memory estimate: 883.59 MiB, allocs estimate: 332030
+    Note: subgrid cell per block, kernel performs block-local reduction over uvdata
 =#
 begin
     println("Reading mset...")
@@ -165,9 +170,13 @@ begin
     println("Done.")
 
     b = @benchmark begin
-        Base.@sync for (i, workunit) in enumerate($workunits)
-            Base.@async Pigi.gpugridder(workunit)
-            print("\rGridded $(i)/$(length($workunits))")
+        gridded = 0
+        CUDA.@profile CUDA.NVTX.@range "Gridding" Base.@sync for workunit in $workunits
+            Base.@async begin
+                Pigi.gpugridder(workunit)
+                gridded += 1
+                print("\rGridded $(gridded)/$(length($workunits))")
+            end
         end
         println("")
     end evals=1 samples=5 seconds=120
