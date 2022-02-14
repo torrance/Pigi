@@ -3,63 +3,69 @@ function gpugridder(workunit::WorkUnit{T}; makepsf::Bool=false) where T
         SMatrix{2, 2, Complex{T}, 4}, workunit.subgridspec.Nx, workunit.subgridspec.Ny
     )
 
-    uvdata = CuArray(workunit.data)
-    Aleft = CuArray(workunit.Aleft)
-    Aright = CuArray(workunit.Aright)
+    # TODO: Switch memory layout of workunit.data to StructArrays to avoid this fussin' and a feudin'.
+    us = CuArray([x.u for x in workunit.data])
+    vs = CuArray([x.v for x in workunit.data])
+    ws = CuArray([x.w for x in workunit.data])
+    weights = CuArray([x.weights for x in workunit.data])
+    data = CuArray([x.data for x in workunit.data])
 
     if makepsf
         kernel = @cuda launch=false gpudiftpsf!(
-            subgrid, workunit.u0, workunit.v0, workunit.w0, uvdata, Aleft, Aright, workunit.subgridspec
+            subgrid, workunit.u0, workunit.v0, workunit.w0, us, vs, ws, weights, data, workunit.subgridspec
         )
         config = launch_configuration(kernel.fun)
-        nthreads = min(length(uvdata), config.threads)
-        nblocks = length(subgrid)
+        nthreads = min(length(workunit.data), config.threads)
         kernel(
-            subgrid, workunit.u0, workunit.v0, workunit.w0, uvdata, Aleft, Aright, workunit.subgridspec;
-            threads=nthreads, blocks=nblocks, shmem=sizeof(SMatrix{2, 2, Complex{T}, 4}) * nthreads
+            subgrid, workunit.u0, workunit.v0, workunit.w0, us, vs, ws, weights, data, workunit.subgridspec;
+            threads=(nthreads, 1, 1),
+            blocks=(1, workunit.subgridspec.Nx, workunit.subgridspec.Ny),
+            shmem=sizeof(SMatrix{2, 2, Complex{T}, 4}) * nthreads
         )
     else
         kernel = @cuda launch=false gpudift!(
-            subgrid, workunit.u0, workunit.v0, workunit.w0, uvdata, Aleft, Aright, workunit.subgridspec
+            subgrid, workunit.u0, workunit.v0, workunit.w0, us, vs, ws, weights, data, workunit.subgridspec
         )
         config = launch_configuration(kernel.fun)
-        nthreads = min(length(uvdata), config.threads)
-        nblocks = length(subgrid)
+        nthreads = min(length(workunit.data), config.threads)
         kernel(
-            subgrid, workunit.u0, workunit.v0, workunit.w0, uvdata, Aleft, Aright, workunit.subgridspec;
-            threads=nthreads, blocks=nblocks, shmem=sizeof(SMatrix{2, 2, Complex{T}, 4}) * nthreads
+            subgrid, workunit.u0, workunit.v0, workunit.w0, us, vs, ws, weights, data, workunit.subgridspec;
+            threads=(nthreads, 1, 1),
+            blocks=(1, workunit.subgridspec.Nx, workunit.subgridspec.Ny),
+            shmem=sizeof(SMatrix{2, 2, Complex{T}, 4}) * nthreads
         )
     end
 
-    CUDA.unsafe_free!(uvdata)
-    CUDA.unsafe_free!(Aleft)
-    CUDA.unsafe_free!(Aright)
+    subgrid = Array(subgrid)
+
+    for i in eachindex(workunit.Aleft, subgrid, workunit.Aright)
+        subgrid[i] = workunit.Aleft[i] * subgrid[i] * adjoint(workunit.Aright[i])
+    end
 
     subgridflat = reinterpret(reshape, Complex{T}, subgrid)
     fft!(subgridflat, (2, 3))
     subgrid ./= (workunit.subgridspec.Nx * workunit.subgridspec.Ny)
 
-    return fftshift(Array(subgrid))
+    return fftshift(subgrid)
 end
 
-function gpudift!(subgrid::CuDeviceMatrix{SMatrix{2, 2, Complex{T}, 4}}, u0, v0, w0, uvdata, Aleft, Aright, subgridspec) where T
+function gpudift!(subgrid::CuDeviceMatrix{SMatrix{2, 2, Complex{T}, 4}}, u0, v0, w0, us, vs, ws, weights, data, subgridspec) where T
     shm = CUDA.CuDynamicSharedArray(SMatrix{2, 2, Complex{T}, 4}, blockDim().x)
-    shm[threadIdx().x] = SMatrix{2, 2, Complex{T}, 4}(0, 0, 0, 0)
 
     lms = fftfreq(subgridspec.Nx, T(1 / subgridspec.scaleuv))::Frequencies{T}
-    lpx, mpx = Tuple(CartesianIndices(subgrid)[blockIdx().x])
+    lpx, mpx = blockIdx().y, blockIdx().z
     l, m = lms[lpx], lms[mpx]
 
-    for i in threadIdx().x:blockDim().x:length(uvdata)
-        uvdatum = uvdata[i]
-
+    cell = SMatrix{2, 2, Complex{T}, 4}(0, 0, 0, 0)
+    for i in threadIdx().x:blockDim().x:length(data)
         phase = 2π * 1im * (
-            (uvdatum.u - u0) * l +
-            (uvdatum.v - v0) * m +
-            (uvdatum.w - w0) * ndash(l, m)
+            (us[i] - u0) * l +
+            (vs[i] - v0) * m +
+            (ws[i] - w0) * ndash(l, m)
         )
-        shm[threadIdx().x] += uvdatum.weights .* uvdatum.data * exp(phase)
+        cell += weights[i] .* data[i] * exp(phase)
     end
+    shm[threadIdx().x] = cell
     CUDA.sync_threads()
 
     # Perform sum reduction over shared memory using interleaved addressing
@@ -74,30 +80,29 @@ function gpudift!(subgrid::CuDeviceMatrix{SMatrix{2, 2, Complex{T}, 4}}, u0, v0,
     end
 
     if threadIdx().x == 1
-        subgrid[lpx, mpx] = Aleft[lpx, mpx] * shm[1] * adjoint(Aright[lpx, mpx])
+        subgrid[lpx, mpx] = shm[1]
     end
 
     return nothing
 end
 
-function gpudiftpsf!(subgrid::CuDeviceMatrix{SMatrix{2, 2, Complex{T}, 4}}, u0, v0, w0, uvdata, Aleft, Aright, subgridspec) where T
+function gpudiftpsf!(subgrid::CuDeviceMatrix{SMatrix{2, 2, Complex{T}, 4}}, u0, v0, w0, us, vs, ws, weights, data, subgridspec) where T
     shm = CUDA.CuDynamicSharedArray(SMatrix{2, 2, Complex{T}, 4}, blockDim().x)
-    shm[threadIdx().x] = SMatrix{2, 2, Complex{T}, 4}(0, 0, 0, 0)
 
     lms = fftfreq(subgridspec.Nx, T(1 / subgridspec.scaleuv))::Frequencies{T}
-    lpx, mpx = Tuple(CartesianIndices(subgrid)[blockIdx().x])
+    lpx, mpx = blockIdx().y, blockIdx().z
     l, m = lms[lpx], lms[mpx]
 
-    for i in threadIdx().x:blockDim().x:length(uvdata)
-        uvdatum = uvdata[i]
-
+    cell = SMatrix{2, 2, Complex{T}, 4}(0, 0, 0, 0)
+    for i in threadIdx().x:blockDim().x:length(data)
         phase = 2π * 1im * (
-            (uvdatum.u - u0) * l +
-            (uvdatum.v - v0) * m +
-            (uvdatum.w - w0) * ndash(l, m)
+            (us[i] - u0) * l +
+            (vs[i] - v0) * m +
+            (ws[i] - w0) * ndash(l, m)
         )
-        shm[threadIdx().x] += uvdatum.weights * exp(phase)
+        cell += weights[i] * exp(phase)
     end
+    shm[threadIdx().x] = cell
     CUDA.sync_threads()
 
     # Perform sum reduction over shared memory using interleaved addressing
@@ -112,7 +117,7 @@ function gpudiftpsf!(subgrid::CuDeviceMatrix{SMatrix{2, 2, Complex{T}, 4}}, u0, 
     end
 
     if threadIdx().x == 1
-        subgrid[lpx, mpx] = Aleft[lpx, mpx] * shm[1] * adjoint(Aright[lpx, mpx])
+        subgrid[lpx, mpx] = shm[1]
     end
 
     return nothing

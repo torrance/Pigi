@@ -144,6 +144,10 @@ end
     Time (mean ± σ): 12.147 s ± 900.924 ms GC (mean ± σ): 0.07% ± 0.14%
     Memory estimate: 883.59 MiB, allocs estimate: 332030
     Note: subgrid cell per block, kernel performs block-local reduction over uvdata
+2022/02/14 : Nimbus
+    Time (mean ± σ): 6.608 s ± 725.974 ms GC (mean ± σ): 0.55% ± 0.30%
+    Memory estimate: 2.10 GiB, allocs estimate: 488955
+    Note: iterate over uvdatum fields as separate arrays; perform fft on CPU
 =#
 begin
     println("Reading mset...")
