@@ -1,5 +1,4 @@
-@testset "Simple inversion" begin
-    precision = Float64
+@testset "Simple inversion" for (precision, atol) in [(Float32, 1e-5), (Float64, 1e-8)]
     gridspec = Pigi.GridSpec(1000, 1000, scalelm=1u"arcminute")
 
     padding = 15
@@ -50,7 +49,7 @@
     img = img[1 + masterpadding:end - masterpadding, 1 + masterpadding:end - masterpadding]
 
     img = reinterpret(reshape, Complex{precision}, img)
-    @test maximum(abs.(img .- expected)) < 1e-8
+    @test maximum(abs(x - y) for (x, y) in zip(img, expected)) < atol
 
     # plt.subplot(1, 3, 1)
     # plt.imshow(real.(img[1, :, :]))
