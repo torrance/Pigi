@@ -1,31 +1,31 @@
-@testset begin "GPU Gridding"
+@testset "GPU Gridding" for (precision, atol) in [(Float32, 1e-5), (Float64, 1e-8)]
     subgridspec = Pigi.GridSpec(96, 96, scaleuv=1)
 
     taper = Pigi.mkkbtaper(subgridspec)
-    Aleft = Aright = ones(SMatrix{2, 2, ComplexF64, 4}, subgridspec.Nx, subgridspec.Ny)
+    Aleft = Aright = ones(SMatrix{2, 2, Complex{precision}, 4}, subgridspec.Nx, subgridspec.Ny)
     lms = fftfreq(subgridspec.Nx, 1 / subgridspec.scaleuv)
     for (mpx, m) in enumerate(lms), (lpx, l) in enumerate(lms)
         Aleft[lpx, mpx] *= sqrt(taper(l, m))
     end
 
-    uvdata = Pigi.UVDatum{Float64}[]
+    uvdata = Pigi.UVDatum{precision}[]
     for u in -20:20, v in -20:20
-        push!(uvdata, Pigi.UVDatum(
-            0, 0, Float64(u), Float64(v), 0., SMatrix{2, 2, Float64, 4}(1, 1, 1, 1), rand(SMatrix{2, 2, ComplexF64, 4})
+        push!(uvdata, Pigi.UVDatum{precision}(
+            0, 0, precision(u), precision(v), precision(0), SMatrix{2, 2, precision, 4}(1, 1, 1, 1), rand(SMatrix{2, 2, Complex{precision}, 4})
         ))
     end
 
-    workunit = Pigi.WorkUnit{Float64}(
+    workunit = Pigi.WorkUnit{precision}(
         0, 0, 0, 0, 0, subgridspec, Aleft, Aright, uvdata
     )
 
     gpusubgrid = Pigi.gpugridder(workunit, makepsf=true)
     cpusubgrid = Pigi.gridder(workunit, makepsf=true)
-    @test all(isapprox(x, y, atol=1e-8) for (x, y) in zip(gpusubgrid, cpusubgrid))
+    @test all(isapprox(x, y; atol) for (x, y) in zip(gpusubgrid, cpusubgrid))
 
     gpusubgrid = Pigi.gpugridder(workunit)
     cpusubgrid = Pigi.gridder(workunit)
-    @test all(isapprox(x, y, atol=1e-8) for (x, y) in zip(gpusubgrid, cpusubgrid))
+    @test all(isapprox(x, y; atol) for (x, y) in zip(gpusubgrid, cpusubgrid))
 
     # gpusubgrid = [real(x[1]) for x in gpusubgrid]
     # cpusubgrid = [real(x[1]) for x in cpusubgrid]
