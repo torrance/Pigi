@@ -1,3 +1,4 @@
+using CUDA
 using DSP: conv
 using FFTW
 using Pigi
