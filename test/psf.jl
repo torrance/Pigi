@@ -34,7 +34,7 @@
 
     params, fitted = Pigi.psffit(psfclipped)
 
-    @test all(x -> abs(x[1] - x[2]) < 0.01, zip(fitted, psfclipped))
+    @test all(x -> abs(x[1] - x[2]) < 0.012, zip(fitted, psfclipped))
 
     # plt.subplot(1, 3, 1)
     # plt.imshow(psfclipped)
