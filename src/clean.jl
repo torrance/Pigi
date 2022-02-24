@@ -46,38 +46,47 @@ end
 
 function findabsmax(domain::CuArray{T}) where T
     P = typeof(abs(zero(T)))
-    result = CuVector{@NamedTuple{idx::Int, val::T, absval::P}}(undef, 1)
+    resultd = CuVector{@NamedTuple{idx::Int, val::T, absval::P}}(undef, 0)
 
-    kernel = @cuda launch=false _findabsmax(result, domain)
+    kernel = @cuda launch=false _findabsmax(resultd, domain)
     config = launch_configuration(kernel.fun)
-    nthreads = min(length(domain), config.threads)
+    threads = min(length(domain), config.threads)
+    blocks = cld(length(domain), 2 * threads)
+    resultd = CuVector{@NamedTuple{idx::Int, val::T, absval::P}}(undef, blocks)
     kernel(
-        result, domain;
-        threads=nthreads,
-        blocks=1,
-        shmem=sizeof(@NamedTuple{idx::Int, val::T, absval::P}) * nthreads
+        resultd, domain; threads, blocks,
+        shmem=sizeof(@NamedTuple{idx::Int, val::T, absval::P}) * threads
     )
-    return only(Array(result))
+
+    result = Array(resultd)
+    return result[argmax(x.absval for x in result)]
 end
 
 function _findabsmax(result::CuDeviceVector{@NamedTuple{idx::Int, val::T, absval::P}}, domain::CuDeviceArray{T}) where {T, P}
     shm = CUDA.CuDynamicSharedArray(@NamedTuple{idx::Int, val::T, absval::P}, blockDim().x)
 
-    idx = threadIdx().x
-    stride = blockDim().x
+    idx1 = (blockIdx().x - 1) * blockDim().x + threadIdx().x
+    idx2 = gridDim().x * blockDim().x + (blockIdx().x - 1) * blockDim().x + threadIdx().x
 
-    val = domain[idx]
-    absval = abs(val)
-    maxidxval = (idx=idx, val=val, absval=absval)
+    if idx1 > length(domain)
+        return nothing
+    end
 
-    for idx in idx + stride:stride:length(domain)
-        val = domain[idx]
-        absval = abs(val)
-        if absval > maxidxval.absval
-            maxidxval = (idx=idx, val=val, absval=absval)
+    if idx2 > length(domain)
+        val1 = domain[idx1]
+        shm[threadIdx().x] = (idx=idx1, val=val1, absval=abs(val1))
+    else
+        val1 = domain[idx1]
+        val2 = domain[idx2]
+        absval1 = abs(val1)
+        absval2 = abs(val2)
+
+        if absval1 > absval2
+            shm[threadIdx().x] = (idx=idx1, val=val1, absval=absval1)
+        else
+            shm[threadIdx().x] = (idx=idx2, val=val2, absval=absval2)
         end
     end
-    shm[idx] = maxidxval
 
     CUDA.sync_threads()
 
@@ -96,7 +105,7 @@ function _findabsmax(result::CuDeviceVector{@NamedTuple{idx::Int, val::T, absval
         CUDA.sync_threads()
     end
 
-    result[1] = shm[1]
+    result[blockIdx().x] = shm[1]
     return nothing
 end
 

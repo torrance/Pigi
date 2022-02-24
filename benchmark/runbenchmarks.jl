@@ -240,6 +240,14 @@ end
     Time (mean ± σ): 4.510 s ± 44.600 ms GC (mean ± σ): 0.18% ± 0.36%
     Memory estimate: 488.65 MiB, allocs estimate: 6391
     Note: initial GPU implementation of findabsmax() and subtactpsf()
+2022/02/24 : Nimbus
+    Time (mean ± σ): 867.602 ms ± 25.458 ms GC (mean ± σ): 0.93% ± 1.79%
+    Memory estimate: 560.19 MiB, allocs estimate: 6791
+    Note: multi-block reduction
+2022/02/24 : Nimbus
+    Time (mean ± σ): 3.618 s ± 56.215 ms GC (mean ± σ): 0.42% ± 0.28%
+    Memory estimate: 1.18 GiB, allocs estimate: 69001
+    Note: increased benchmark niter=100 -> niter=1000
 =#
 begin
     expectedcomponentmap = zeros(Float64, 8000, 8000)
@@ -258,7 +266,7 @@ begin
     img = conv(expectedcomponentmap, psf)[1 + 32:end - 31, 1 + 32:end - 31]
 
     b = @benchmark begin
-        componentmap, iter = Pigi.clean!(img, psf, mgain=1, threshold=0, niter=100)
+        componentmap, iter = Pigi.clean!($img, $psf, mgain=1, threshold=0, niter=1000)
     end evals=1 samples=5 seconds=180
     show(stdout, MIME"text/plain"(), b)
     println()
