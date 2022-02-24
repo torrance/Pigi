@@ -236,6 +236,10 @@ end
 2022/02/24 : Nimbus
     Time (mean ± σ): 25.431 s ± 24.692 ms GC (mean ± σ): 0.03% ± 0.06%
     Memory estimate: 488.29 MiB, allocs estimate: 86
+2022/02/24 : Nimbus
+    Time (mean ± σ): 4.510 s ± 44.600 ms GC (mean ± σ): 0.18% ± 0.36%
+    Memory estimate: 488.65 MiB, allocs estimate: 6391
+    Note: initial GPU implementation of findabsmax() and subtactpsf()
 =#
 begin
     expectedcomponentmap = zeros(Float64, 8000, 8000)
