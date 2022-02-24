@@ -59,6 +59,7 @@ function findabsmax(domain::CuArray{T}) where T
     )
 
     result = Array(resultd)
+    CUDA.unsafe_free!(resultd)
     return result[argmax(x.absval for x in result)]
 end
 
@@ -69,10 +70,8 @@ function _findabsmax(result::CuDeviceVector{@NamedTuple{idx::Int, val::T, absval
     idx2 = gridDim().x * blockDim().x + (blockIdx().x - 1) * blockDim().x + threadIdx().x
 
     if idx1 > length(domain)
-        return nothing
-    end
-
-    if idx2 > length(domain)
+        shm[threadIdx().x] = (idx=-1, val=-1, absval=-1)
+    elseif idx2 > length(domain)
         val1 = domain[idx1]
         shm[threadIdx().x] = (idx=idx1, val=val1, absval=abs(val1))
     else
