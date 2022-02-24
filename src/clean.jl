@@ -120,7 +120,12 @@ function subtractpsf(img, psf, xpeak, ypeak, f)
 end
 
 function _subtractpsf(img, psf, xpeak, ypeak, f, n0, m0)
-    mpx, npx = Tuple(CartesianIndices(psf)[(blockIdx().x - 1) * blockDim().x + threadIdx().x])
+    idx = (blockIdx().x - 1) * blockDim().x + threadIdx().x
+    if idx > length(psf)
+        return nothing
+    end
+
+    mpx, npx = Tuple(CartesianIndices(psf)[idx])
     xpx = xpeak + mpx - m0
     ypx = ypeak + npx - n0
 
