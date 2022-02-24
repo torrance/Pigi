@@ -6,9 +6,10 @@
     end
 
     psf = map(CartesianIndices((-32:31, -32:31))) do idx
-        sigma = 5
+        sigmax = 5
+        sigmay = 10
         x, y = Tuple(idx)
-        return exp(-(x^2 + y^2) / (2 * sigma^2))
+        return exp(-x^2 / (2 * sigmax^2) - y^2 / (2 * sigmay^2))
     end
 
     img = conv(expectedcomponentmap, psf)[1 + 32:end - 31, 1 + 32:end - 31]
