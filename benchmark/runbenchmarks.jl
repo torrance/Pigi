@@ -1,8 +1,9 @@
 using BenchmarkTools
 using CUDA
+using DSP: conv
+using InteractiveUtils: @code_warntype
 using Pigi
 using Profile
-using InteractiveUtils: @code_warntype
 using StaticArrays
 
 println("Running benchmarks...")
@@ -227,6 +228,34 @@ begin
         end
         println("")
     end evals=1 samples=5 seconds=120
+    show(stdout, MIME"text/plain"(), b)
+    println()
+end
+
+#=
+2022/02/24 : Nimbus
+    Time (mean ± σ): 25.431 s ± 24.692 ms GC (mean ± σ): 0.03% ± 0.06%
+    Memory estimate: 488.29 MiB, allocs estimate: 86
+=#
+begin
+    expectedcomponentmap = zeros(Float64, 8000, 8000)
+
+    for (xpx, ypx) in eachcol(rand(1:8000, 2, 1000))
+        expectedcomponentmap[xpx, ypx] += rand()
+    end
+
+    psf = map(CartesianIndices((-32:31, -32:31))) do idx
+        sigmax = 5
+        sigmay = 10
+        x, y = Tuple(idx)
+        return exp(-x^2 / (2 * sigmax^2) - y^2 / (2 * sigmay^2))
+    end
+
+    img = conv(expectedcomponentmap, psf)[1 + 32:end - 31, 1 + 32:end - 31]
+
+    b = @benchmark begin
+        componentmap, iter = Pigi.clean!(img, psf, mgain=1, threshold=0, niter=100)
+    end evals=1 samples=5 seconds=180
     show(stdout, MIME"text/plain"(), b)
     println()
 end
