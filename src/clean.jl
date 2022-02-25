@@ -18,12 +18,12 @@ function clean!(img, psf; gain=0.1, mgain=0.8, threshold=0, niter::Int=typemax(I
         timemax += time_ns() - start
 
         if absval < threshold
-            println("Threshold limit reached ($(absval) < $(threshold))")
+            println("\nThreshold limit reached ($(absval) < $(threshold))")
             break
         end
 
         if iter == 1 || mod(iter, 100) == 0
-            println("Clean iteration $(iter) found peak $(val) at $(idx)")
+            print("\rClean iteration $(iter) found peak $(val) at $(idx)")
         end
 
        # Add the component to the component map
@@ -46,24 +46,37 @@ end
 
 function findabsmax(domain::CuArray{T}) where T
     P = typeof(abs(zero(T)))
-    resultd = CuVector{@NamedTuple{idx::Int, val::T, absval::P}}(undef, 0)
+    buffer = CuVector{@NamedTuple{idx::Int, val::T, absval::P}}(undef, 0)
+    resultd = CuVector{@NamedTuple{idx::Int, val::T, absval::P}}(undef, 1)
 
-    kernel = @cuda launch=false _findabsmax(resultd, domain)
+    kernel = @cuda launch=false _findabsmax(domain, buffer)
     config = launch_configuration(kernel.fun)
     threads = min(length(domain), config.threads)
     blocks = cld(length(domain), 2 * threads)
-    resultd = CuVector{@NamedTuple{idx::Int, val::T, absval::P}}(undef, blocks)
-    kernel(
-        resultd, domain; threads, blocks,
+    buffer = CuVector{@NamedTuple{idx::Int, val::T, absval::P}}(undef, blocks)
+    CUDA.@sync kernel(
+        domain, buffer; threads, blocks,
         shmem=sizeof(@NamedTuple{idx::Int, val::T, absval::P}) * threads
     )
 
-    result = Array(resultd)
+    kernel = @cuda launch=false _findabsmaxblockreduction(buffer, resultd)
+    config = launch_configuration(kernel.fun)
+    threads = min(length(buffer), config.threads)
+    CUDA.@sync kernel(
+        buffer, resultd; threads, blocks=1,
+        shmem=sizeof(@NamedTuple{idx::Int, val::T, absval::P}) * threads
+    )
+
+    result = only(Array(resultd))
     CUDA.unsafe_free!(resultd)
-    return result[argmax(x.absval for x in result)]
+    CUDA.unsafe_free!(buffer)
+    return result
 end
 
-function _findabsmax(result::CuDeviceVector{@NamedTuple{idx::Int, val::T, absval::P}}, domain::CuDeviceArray{T}) where {T, P}
+function _findabsmax(
+    domain::CuDeviceArray{T},
+    buffer::CuDeviceVector{@NamedTuple{idx::Int, val::T, absval::P}}
+) where {T, P}
     shm = CUDA.CuDynamicSharedArray(@NamedTuple{idx::Int, val::T, absval::P}, blockDim().x)
 
     idx1 = (blockIdx().x - 1) * blockDim().x + threadIdx().x
@@ -89,22 +102,61 @@ function _findabsmax(result::CuDeviceVector{@NamedTuple{idx::Int, val::T, absval
 
     CUDA.sync_threads()
 
-    s = 1
-    while s < blockDim().x
-        i = 2 * (threadIdx().x - 1) * s + 1
-        if i + s <= blockDim().x
-            idxval1, idxval2 = shm[i], shm[i + s]
+    s, n = divrem(blockDim().x, 2)
+    while s > 0
+        if threadIdx().x <= s + n
+            idxval1, idxval2 = shm[threadIdx().x], shm[threadIdx().x + s]
             if idxval1.absval > idxval2.absval
-                shm[i] = idxval1
+                shm[threadIdx().x] = idxval1
             else
-                shm[i] = idxval2
+                shm[threadIdx().x] = idxval2
             end
         end
-        s *= 2
+        s, n = divrem(s + n, 2)
         CUDA.sync_threads()
     end
 
-    result[blockIdx().x] = shm[1]
+    buffer[blockIdx().x] = shm[1]
+
+    return nothing
+end
+
+function _findabsmaxblockreduction(
+    buffer::CuDeviceVector{@NamedTuple{idx::Int, val::T, absval::P}},
+    result::CuDeviceVector{@NamedTuple{idx::Int, val::T, absval::P}}
+) where {T, P}
+    shm = CUDA.CuDynamicSharedArray(@NamedTuple{idx::Int, val::T, absval::P}, blockDim().x)
+
+    maxval = buffer[threadIdx().x]
+    for idx in threadIdx().x + blockDim().x:blockDim().x:length(buffer)
+        val = buffer[idx]
+        if val.absval > maxval.absval
+            maxval = val
+        end
+    end
+
+    shm[threadIdx().x] = maxval
+
+    CUDA.sync_threads()
+
+    s, n = divrem(blockDim().x, 2)
+    while s > 0
+        if threadIdx().x <= s + n
+            idxval1, idxval2 = shm[threadIdx().x], shm[threadIdx().x + s]
+            if idxval1.absval > idxval2.absval
+                shm[threadIdx().x] = idxval1
+            else
+                shm[threadIdx().x] = idxval2
+            end
+        end
+        s, n = divrem(s + n, 2)
+        CUDA.sync_threads()
+    end
+
+    if threadIdx().x == 1
+        result[1] = shm[1]
+    end
+
     return nothing
 end
 

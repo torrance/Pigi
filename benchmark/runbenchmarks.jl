@@ -248,6 +248,10 @@ end
     Time (mean ± σ): 3.618 s ± 56.215 ms GC (mean ± σ): 0.42% ± 0.28%
     Memory estimate: 1.18 GiB, allocs estimate: 69001
     Note: increased benchmark niter=100 -> niter=1000
+2022/02/25 : Nimbus
+    Time (mean ± σ): 2.671 s ± 38.050 ms GC (mean ± σ): 0.34% ± 0.66%
+    Memory estimate: 492.54 MiB, allocs estimate: 77278
+    Note: block reduction kernel, and more efficient thread-level reduction
 =#
 begin
     expectedcomponentmap = zeros(Float64, 8000, 8000)
@@ -276,6 +280,10 @@ end
 2022/02/25 : Nimbus
     Time (mean ± σ): 3.174 ms ± 153.783 μs GC (mean ± σ): 1.01% ± 0.35%
     Memory estimate: 827.63 KiB, allocs estimate: 65
+2022/02/25 : Nimbus
+    Time (mean ± σ): 2.302 ms ± 57.978 μs GC (mean ± σ): 0.00% ± 0.00%
+    Memory estimate: 4.05 KiB, allocs estimate: 73
+    Note: block reduction kernel, and more efficient thread-level reduction
 =#
 begin
     arr = CUDA.rand(9000, 9000)
