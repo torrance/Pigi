@@ -8,14 +8,9 @@ function clean!(img, psf; gain=0.1, mgain=0.8, threshold=0, niter::Int=typemax(I
     threshold = maximum([(1 - mgain) * maximum(abs, img), threshold])
     println("Cleaning to threshold: $(threshold)")
 
-    timemax = zero(UInt64)
-    timesubtract = zero(UInt64)
-
     iter = 1
     while iter <= niter
-        start = time_ns()
         idx, val, absval = findabsmax(imgd)
-        timemax += time_ns() - start
 
         if absval < threshold
             println("\nThreshold limit reached ($(absval) < $(threshold))")
@@ -26,19 +21,15 @@ function clean!(img, psf; gain=0.1, mgain=0.8, threshold=0, niter::Int=typemax(I
             print("\rClean iteration $(iter) found peak $(val) at $(idx)")
         end
 
-       # Add the component to the component map
+        # Add the component to the component map
         xpeak, ypeak = Tuple(idx)
         components[xpeak, ypeak] += gain * val
 
-         # Subtract out the psf
-        start = time_ns()
+        # Subtract out the psf
         subtractpsf(imgd, psfd, xpeak, ypeak, gain * val)
-        timesubtract += time_ns() - start
 
         iter += 1
     end
-
-    println("Cleaning time budget: $(timemax / 1e9) s peak searching, $(timesubtract / 1e9) s PSF subtracting")
 
     copy!(img, imgd)
     return components, iter
