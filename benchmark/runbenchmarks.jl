@@ -252,6 +252,10 @@ end
     Time (mean ± σ): 2.671 s ± 38.050 ms GC (mean ± σ): 0.34% ± 0.66%
     Memory estimate: 492.54 MiB, allocs estimate: 77278
     Note: block reduction kernel, and more efficient thread-level reduction
+2022/02/25 : Nimbus
+    Time (mean ± σ): 1.820 s ± 41.545 ms  GC (mean ± σ): 0.66% ± 1.18%
+    Memory estimate: 497.35 MiB, allocs estimate: 169040
+    Note: mapreduce on findabsmax()
 =#
 begin
     expectedcomponentmap = zeros(Float64, 8000, 8000)
@@ -284,6 +288,10 @@ end
     Time (mean ± σ): 2.302 ms ± 57.978 μs GC (mean ± σ): 0.00% ± 0.00%
     Memory estimate: 4.05 KiB, allocs estimate: 73
     Note: block reduction kernel, and more efficient thread-level reduction
+2022/02/25 : Nimbus
+    Time (mean ± σ): 1.239 ms ± 83.558 μs GC (mean ± σ): 0.00% ± 0.00%
+    Memory estimate: 8.02 KiB, allocs estimate: 134
+    Note: just use mapreduce :/
 =#
 begin
     arr = CUDA.rand(9000, 9000)
