@@ -271,3 +271,24 @@ begin
     show(stdout, MIME"text/plain"(), b)
     println()
 end
+
+#=
+2022/02/25 : Nimbus
+    Time (mean ± σ): 3.174 ms ± 153.783 μs GC (mean ± σ): 1.01% ± 0.35%
+    Memory estimate: 827.63 KiB, allocs estimate: 65
+=#
+begin
+    arr = CUDA.rand(9000, 9000)
+
+    b = @benchmark begin
+        CUDA.findmax(arr)
+    end evals=100 samples=10 seconds=60
+    show(stdout, MIME"text/plain"(), b)
+    println()
+
+    b = @benchmark begin
+        Pigi.findabsmax(arr)
+    end evals=100 samples=10 seconds=60
+    show(stdout, MIME"text/plain"(), b)
+    println()
+end
