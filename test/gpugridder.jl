@@ -19,12 +19,12 @@
         0, 0, 0, 0, 0, subgridspec, Aleft, Aright, uvdata
     )
 
-    gpusubgrid = Pigi.gpugridder(workunit, makepsf=true)
-    cpusubgrid = Pigi.gridder(workunit, makepsf=true)
+    gpusubgrid = Pigi.gridder(workunit, CuArray, makepsf=true)
+    cpusubgrid = Pigi.gridder(workunit, Array, makepsf=true)
     @test all(isapprox(x, y; atol) for (x, y) in zip(gpusubgrid, cpusubgrid))
 
-    gpusubgrid = Pigi.gpugridder(workunit)
-    cpusubgrid = Pigi.gridder(workunit)
+    gpusubgrid = Pigi.gridder(workunit, CuArray)
+    cpusubgrid = Pigi.gridder(workunit, Array)
     @test all(isapprox(x, y; atol) for (x, y) in zip(gpusubgrid, cpusubgrid))
 
     # gpusubgrid = [real(x[1]) for x in gpusubgrid]

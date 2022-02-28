@@ -149,6 +149,10 @@ end
     Time (mean ± σ): 6.608 s ± 725.974 ms GC (mean ± σ): 0.55% ± 0.30%
     Memory estimate: 2.10 GiB, allocs estimate: 488955
     Note: iterate over uvdatum fields as separate arrays; perform fft on CPU
+2022/02/14 : Nimbus
+    Time (mean ± σ): 5.361 s ± 512.201 ms GC (mean ± σ): 0.45% ± 0.39%
+    Memory estimate: 1.85 GiB, allocs estimate: 363213
+    Note: one thread per subgrid cell, iterate over uvdata within the thread
 =#
 begin
     println("Reading mset...")
@@ -171,14 +175,14 @@ begin
 
     # Compile CUDA kernel
     println("Compiling CUDA kernel...")
-    Pigi.gpugridder(workunits[1])
+    Pigi.gridder(workunits[1], CuArray)
     println("Done.")
 
     b = @benchmark begin
         gridded = 0
         CUDA.@profile CUDA.NVTX.@range "Gridding" Base.@sync for workunit in $workunits
             Base.@async begin
-                Pigi.gpugridder(workunit)
+                Pigi.gridder(workunit, CuArray)
                 gridded += 1
                 print("\rGridded $(gridded)/$(length($workunits))")
             end
