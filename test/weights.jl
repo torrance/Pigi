@@ -72,7 +72,7 @@
 
     Aleft = Aright = ones(SMatrix{2, 2, Complex{precision}, 4}, 128, 128)
     workunit = Pigi.WorkUnit{precision}(65, 65, 0, 0, 0, gridspec, Aleft, Aright, weighteduvdata)
-    uvgrid = Pigi.gridder(workunit, makepsf=true)
+    uvgrid = Pigi.gridder(workunit, Array, makepsf=true)
 
     xx = map(uv -> real(uv[1]), uvgrid)
     @test real.(fftshift(bfft(ifftshift(xx))))[65, 65] ≈ 1

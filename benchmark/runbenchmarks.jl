@@ -97,7 +97,7 @@ begin
         0, 0, 0, 0, 0, subgridspec, Aleft, Aright, uvdata
     )
 
-    b = @benchmark Pigi.gridder($workunit) evals=1 samples=10 seconds=60
+    b = @benchmark Pigi.gridder($workunit, Array) evals=1 samples=10 seconds=60
     show(stdout, MIME"text/plain"(), b)
     println()
 end
@@ -132,7 +132,7 @@ begin
     )
 
     grid = rand(SMatrix{2, 2, Complex{precision}, 4}, 128, 128)
-    b = @benchmark Pigi.degridder!($workunit, $grid, Pigi.degridop_replace) evals=1 samples=10 seconds=60
+    b = @benchmark Pigi.degridder!($workunit, $grid, Pigi.degridop_replace, Array) evals=1 samples=10 seconds=60
     show(stdout, MIME"text/plain"(), b)
     println()
 end
@@ -222,12 +222,12 @@ begin
 
     # Compile CUDA kernel
     println("Compiling CUDA kernel...")
-    Pigi.gpudegridder!(workunits[1], visgrid, Pigi.degridop_replace)
+    Pigi.degridder!(workunits[1], visgrid, Pigi.degridop_replace, CuArray)
     println("Done.")
 
     b = @benchmark begin
         CUDA.@profile CUDA.NVTX.@range "Degridding" Base.@sync for (i, workunit) in enumerate($workunits)
-            Base.@async Pigi.gpudegridder!(workunit, visgrid, Pigi.degridop_replace)
+            Base.@async Pigi.degridder!(workunit, visgrid, Pigi.degridop_replace, CuArray)
             print("\rDegridded $(i)/$(length($workunits))")
         end
         println("")

@@ -1,4 +1,4 @@
-function gridder(workunit::WorkUnit{T}; makepsf::Bool=false) where T
+function gridder(workunit::WorkUnit{T}, ::Type{Array}; makepsf::Bool=false) where T
     subgrid = zeros(
         SMatrix{2, 2, Complex{T}, 4}, workunit.subgridspec.Nx, workunit.subgridspec.Ny
     )

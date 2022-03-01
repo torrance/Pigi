@@ -21,7 +21,7 @@
     padding = 15
     subgridspec = Pigi.GridSpec(64, 64, scaleuv=gridspec.scaleuv)
     workunits = Pigi.partition(uvdata, gridspec, subgridspec, padding, 25, taper)
-    @time Pigi.predict!(workunits, skymap, gridspec, taper)
+    @time Pigi.predict!(workunits, skymap, gridspec, taper, CuArray)
 
     uvdata = Pigi.UVDatum{precision}[]
     for workunit in workunits

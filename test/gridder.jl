@@ -28,7 +28,7 @@
         0, 0, 0, 0, 0, subgridspec, Aleft, Aright, uvdata
     )
 
-    idggrid = Pigi.gridder(workunit)
+    idggrid = Pigi.gridder(workunit, Array)
     idggrid = reinterpret(reshape, Complex{precision}, idggrid)
 
     @test maximum(abs.(visgrid[:, :, :] .- idggrid[:, :, :])) < 1e-12
@@ -90,7 +90,7 @@ end
     workunit = Pigi.WorkUnit{precision}(
         0, 0, 0, 0, 0, subgridspec, Aleft, Aright, uvdata
     )
-    idggrid = Pigi.gridder(workunit)
+    idggrid = Pigi.gridder(workunit, Array)
     idggrid = reinterpret(reshape, Complex{precision}, idggrid)
 
     @test maximum(abs.(expected .- idggrid)) < 1e-10
@@ -161,7 +161,7 @@ end
     workunit = Pigi.WorkUnit{precision}(
         0, 0, 0, 0, 0, subgridspec, Aleft, Aright, uvdata
     )
-    idggrid = Pigi.gridder(workunit)
+    idggrid = Pigi.gridder(workunit, Array)
     idggrid = reinterpret(reshape, Complex{precision}, idggrid)
     idggrid = fftshift(ifft(fftshift(idggrid, (2, 3)), (2, 3)), (2, 3)) * subgridspec.Nx * subgridspec.Ny / length(uvdata)
 

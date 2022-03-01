@@ -15,3 +15,18 @@
         return r2 / (1 + sqrt(1 - r2))
     end
 end
+
+function fftshift!(arr::AbstractArray{T, 2}) where {T}
+    @assert all(iseven(x) for x in size(arr)) "fftshift!() must operate on arrays with even dimensions"
+
+    Nx, Ny = size(arr)
+    shiftx, shifty = Nx ÷ 2, Ny ÷ 2
+
+    for j1 in 1:shifty
+        for i1 in 1:Nx
+            i2 = mod1(i1 + shiftx, Nx)
+            j2 = j1 + shifty
+            arr[i1, j1], arr[i2, j2] = arr[i2, j2], arr[i1, j1]
+        end
+    end
+end

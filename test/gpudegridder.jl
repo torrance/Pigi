@@ -16,8 +16,8 @@
     cpuworkunit = Pigi.WorkUnit(0, 0, precision(0), precision(0), precision(0), subgridspec, Aleft, Aright, uvdata)
     gpuworkunit = deepcopy(cpuworkunit)
 
-    Pigi.gpudegridder!(gpuworkunit, visgrid, Pigi.degridop_replace)
-    Pigi.degridder!(cpuworkunit, visgrid, Pigi.degridop_replace)
+    Pigi.degridder!(gpuworkunit, visgrid, Pigi.degridop_replace, CuArray)
+    Pigi.degridder!(cpuworkunit, visgrid, Pigi.degridop_replace, Array)
 
     @test all(isapprox(x.data, y.data; atol) for (x, y) in zip(gpuworkunit.data, cpuworkunit.data))
 end

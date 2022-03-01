@@ -1,4 +1,4 @@
-function degridder!(workunit::WorkUnit, grid::Matrix{SMatrix{2, 2, Complex{T}, 4}}, degridop) where T
+function degridder!(workunit::WorkUnit, grid::Matrix{SMatrix{2, 2, Complex{T}, 4}}, degridop, ::Type{Array}) where T
     grid = ifftshift(grid)
     gridflat = reinterpret(reshape, Complex{T}, grid)
     ifft!(gridflat, (2, 3))

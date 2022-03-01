@@ -2,9 +2,10 @@ function predict!(
     workunits::Vector{WorkUnit{T}},
     img::Matrix{SMatrix{2, 2, Complex{T}, 4}},
     gridspec::GridSpec,
-    taper;
+    taper,
+    ::Type{wrapper};
     degridop=degridop_replace
-) where {T}
+) where {T, wrapper}
     # To avoid unnecessary fftshifts, we now move to 'standard ordering' and
     # do a final fftshift on each wlayer.
     img = ifftshift(img)
@@ -29,37 +30,38 @@ function predict!(
         end
     end
 
-    # Create the fftplan just once, for a slight performance win.
-    # We use img as a proxy for the planning, since it has the same shape and type
-    # as the mastergrids.
-    imgflat = reinterpret(reshape, Complex{T}, img)
-    plan = plan_fft!(imgflat, (2, 3))
+    lsd = wrapper(ls)
+    msd = wrapper(ms)
 
-    mastergrid = Array{SMatrix{2, 2, Complex{T}, 4}, 2}(undef, gridspec.Nx, gridspec.Ny)
-    mastergridshifted = Array{SMatrix{2, 2, Complex{T}, 4}, 2}(undef, gridspec.Nx, gridspec.Ny)
+    wlayerd = wrapper{SMatrix{2, 2, Complex{T}, 4}, 2}(undef, gridspec.Nx, gridspec.Ny)
+    wlayer = Array{SMatrix{2, 2, Complex{T}, 4}, 2}(undef, gridspec.Nx, gridspec.Ny)
+
+    wlayerdflat = reinterpret(reshape, Complex{T}, wlayerd)
+    plan = plan_fft!(wlayerdflat, (2, 3))
 
     gridded = Threads.Atomic{Int}(0)
     for w0 in unique(workunit.w0 for workunit in workunits)
-        fill!(mastergrid, zero(SMatrix{2, 2, Complex{T}, 4}))
+        copy!(wlayerd, img)
 
-        # Apply w-layer (de)correction
-        Threads.@threads for idx in CartesianIndices(mastergrid)
+        # w-layer decorrection
+        map!(wlayerd, wlayerd, CartesianIndices(wlayerd)) do val, idx
             lpx, mpx = Tuple(idx)
             l, m = ls[lpx], ms[mpx]
-            mastergrid[lpx, mpx] = img[lpx, mpx] * exp(-2π * 1im * w0 * ndash(l, m))
+            return val * exp(-2π * 1im * w0 * ndash(l, m))
         end
 
-        # Flatten the data structure so that we can FFT
-        mastergridflat = reinterpret(reshape, Complex{T}, mastergrid)
-        plan * mastergridflat  # inplace
+        plan * wlayerdflat  # inplace
 
-        # Revert back to zero centering the power
-        circshift!(mastergridshifted, mastergrid, size(mastergrid) .÷ 2)
+        copy!(wlayer, wlayerd)
+
+        # Revert back to zero centering the power since extract subgrid
+        # and degridder! expect this ordering
+        fftshift!(wlayer)
 
         for workunit in workunits
             if workunit.w0 == w0
-                visgrid = Pigi.extractsubgrid(mastergridshifted, workunit)
-                Pigi.degridder!(workunit, visgrid, degridop)
+                visgrid = Pigi.extractsubgrid(wlayer, workunit)
+                Pigi.degridder!(workunit, visgrid, degridop, wrapper)
                 Threads.atomic_add!(gridded, 1)
                 print("\rDegridded $(gridded[])/$(length(workunits)) workunits...")
             end
