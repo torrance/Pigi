@@ -4,6 +4,7 @@ using FFTW
 using Pigi
 using PyPlot: PyPlot as plt
 using StaticArrays
+using StructArrays
 using Test
 using Unitful
 using UnitfulAngles

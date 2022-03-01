@@ -8,7 +8,7 @@
         Aleft[lpx, mpx] *= sqrt(taper(l, m))
     end
 
-    uvdata = Pigi.UVDatum{precision}[]
+    uvdata = StructVector{Pigi.UVDatum{precision}}(undef, 0)
     for u in -20:20, v in -20:20
         push!(uvdata, Pigi.UVDatum{precision}(
             0, 0, precision(u), precision(v), precision(0), SMatrix{2, 2, precision, 4}(1, 1, 1, 1), rand(SMatrix{2, 2, Complex{precision}, 4})

@@ -7,7 +7,7 @@ struct WorkUnit{T}
     subgridspec::GridSpec
     Aleft::Matrix{SMatrix{2, 2, Complex{T}, 4}}
     Aright::Matrix{SMatrix{2, 2, Complex{T}, 4}}
-    data::Vector{UVDatum{T}}
+    data::StructVector{UVDatum{T}}
 end
 
 """
@@ -17,7 +17,7 @@ that may be required at a future time is partitioning is based on baselines, whi
 yet implemented.
 """
 function partition(
-    uvdata::Vector{UVDatum{T}},
+    uvdata::AbstractVector{UVDatum{T}},
     gridspec::GridSpec,
     subgridspec::GridSpec,
     padding::Int,
@@ -69,8 +69,8 @@ function partition(
         v0px = round(Int, vpx)
         u0, v0 = px2lambda(u0px, v0px, gridspec)
 
-        data = UVDatum{T}[uvdatum]
-        sizehint!(data, 1000)
+        data = StructVector{UVDatum{T}}(undef, 0)
+        push!(data, uvdatum)
         push!(workunits, WorkUnit{T}(
             u0px, v0px, u0, v0, w0, subgridspec, Aleft, Aright, data
         ))

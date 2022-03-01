@@ -34,7 +34,7 @@ struct Natural{T <: AbstractFloat} <: ImageWeight
     normfactor::SMatrix{2, 2, T, 4}
 end
 
-function Natural(uvdata::Vector{UVDatum{T}}, gridspec::GridSpec) where T
+function Natural(uvdata::AbstractVector{UVDatum{T}}, gridspec::GridSpec) where T
     normfactor = MMatrix{2, 2, T, 4}(0, 0, 0, 0)
     for uvdatum in uvdata
         upx, vpx = lambda2px(Int, uvdatum.u, uvdatum.v, gridspec)
@@ -56,7 +56,7 @@ struct Uniform{T <: AbstractFloat} <: ImageWeight
     normfactor::SMatrix{2, 2, T, 4}
 end
 
-function Uniform(uvdata::Vector{UVDatum{T}}, gridspec::GridSpec) where T
+function Uniform(uvdata::AbstractVector{UVDatum{T}}, gridspec::GridSpec) where T
     griddedweights = makegriddedweights(uvdata, gridspec)
 
     imageweights = map(griddedweights) do W_k
@@ -87,7 +87,7 @@ struct Briggs{T <: AbstractFloat} <: ImageWeight
     normfactor::SMatrix{2, 2, T, 4}
 end
 
-function Briggs(uvdata::Vector{UVDatum{T}}, gridspec::GridSpec, robust) where T
+function Briggs(uvdata::AbstractVector{UVDatum{T}}, gridspec::GridSpec, robust) where T
     robust = T(robust)
     griddedweights = makegriddedweights(uvdata, gridspec)
 
@@ -109,7 +109,7 @@ function (w::Briggs{T})(uvdatum::UVDatum{T}) where T
     end
 end
 
-function makegriddedweights(uvdata::Vector{UVDatum{T}}, gridspec::GridSpec) where T
+function makegriddedweights(uvdata::AbstractVector{UVDatum{T}}, gridspec::GridSpec) where T
     griddedweights = zeros(SMatrix{2, 2, T, 4}, gridspec.Nx, gridspec.Ny)
 
     for uvdatum in uvdata
@@ -125,13 +125,13 @@ function makegriddedweights(uvdata::Vector{UVDatum{T}}, gridspec::GridSpec) wher
     return griddedweights
 end
 
-function applyweights!(workunits::Vector{WorkUnit{T}}, weighter::ImageWeight) where T
+function applyweights!(workunits::AbstractVector{WorkUnit{T}}, weighter::ImageWeight) where T
     for workunit in workunits
         applyweights!(workunit.data, weighter)
     end
 end
 
-function applyweights!(uvdata::Vector{UVDatum{T}}, weighter::ImageWeight) where T
+function applyweights!(uvdata::AbstractVector{UVDatum{T}}, weighter::ImageWeight) where T
     for (i, uvd) in enumerate(uvdata)
         uvdata[i] = UVDatum{T}(
             uvd.row,

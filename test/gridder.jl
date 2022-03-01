@@ -7,7 +7,7 @@
     visgrid = zeros(Complex{precision}, 4, 128, 128)
     visgrid[:, 1 + padding:end - padding, 1 + padding:end - padding] = rand(Complex{precision}, 4, 128 - 2 * padding, 128 - 2 * padding)
 
-    uvdata = Pigi.UVDatum{precision}[]
+    uvdata = StructArray{Pigi.UVDatum{precision}}(undef, 0)
     for vpx in axes(visgrid, 3), upx in axes(visgrid, 2)
         val = visgrid[:, upx, vpx]
         if !all(val .== 0)
@@ -58,7 +58,7 @@ end
     center = (128 - 2 * padding) ÷ 2 + 1
     uvs = subgridspec.scaleuv * ((128 - 2 * padding) * rand(2, N) .- [center center;]')
     data = rand(SMatrix{2, 2, Complex{precision}, 4}, N)
-    uvdata = Array{Pigi.UVDatum{precision}, 1}(undef, N)
+    uvdata = StructArray{Pigi.UVDatum{precision}, 1}(undef, N)
     for i in eachindex(uvdata)
         u, v = uvs[:, i]
         uvdata[i] = Pigi.UVDatum(1, 1, u, v, zero(precision), @SMatrix(precision[1 1; 1 1]), data[i])
@@ -122,7 +122,7 @@ end
     sources[:, 1] .= 0
 
     println("Predicting UVDatum...")
-    uvdata = Pigi.UVDatum{precision}[]
+    uvdata = StructArray{Pigi.UVDatum{precision}}(undef, 0)
     for (u, v, w) in eachcol(rand(Float64, 3, 1000))
         u = subgridspec.scaleuv * (u * (N - 2 * padding) .- ((N - 2 * padding) ÷ 2 + 1))
         v = subgridspec.scaleuv * (v * (N - 2 * padding) .- ((N - 2 * padding) ÷ 2 + 1))

@@ -30,10 +30,10 @@
     @test -23.9 > minimum(vs .- 19.5) > -24
 end
 
-@testset "Add workunit" begin
+@testset "Add subgrid" begin
     subgridspec = Pigi.GridSpec(64, 64, scaleuv=1)
     Aleft = Aright = ones(SMatrix{2, 2, ComplexF64, 4}, 64, 64)
-    workunit = Pigi.WorkUnit(346, 346, 0., 0., 0., subgridspec, Aleft, Aright, Pigi.UVDatum{Float64}[])
+    workunit = Pigi.WorkUnit(346, 346, 0., 0., 0., subgridspec, Aleft, Aright, StructVector{Pigi.UVDatum{Float64}}(undef, 0))
 
     expected = zeros(SMatrix{2, 2, ComplexF64, 4}, 1000, 1000)
     grid = rand(SMatrix{2, 2, ComplexF64, 4}, 64, 64)
@@ -45,7 +45,7 @@ end
     @test all(x -> x[1] == x[2], zip(master, expected))
 
     # Negative grid
-    workunit = Pigi.WorkUnit(4, 346, 0., 0., 0., subgridspec, Aleft, Aright, Pigi.UVDatum{Float64}[])
+    workunit = Pigi.WorkUnit(4, 346, 0., 0., 0., subgridspec, Aleft, Aright, StructVector{Pigi.UVDatum{Float64}}(undef, 0))
 
     expected = zeros(SMatrix{2, 2, ComplexF64, 4}, 1000, 1000)
     grid = rand(SMatrix{2, 2, ComplexF64, 4}, 64, 64)

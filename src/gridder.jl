@@ -13,21 +13,22 @@ end
 
 function dift!(subgrid::Matrix{SMatrix{2, 2, Complex{T}, 4}}, workunit::WorkUnit{T}, ::Val{makepsf}) where {T, makepsf}
     lms = fftfreq(workunit.subgridspec.Nx, T(1 / workunit.subgridspec.scaleuv))::Frequencies{T}
+    uvdata = workunit.data
 
     Threads.@threads for idx in CartesianIndices(subgrid)
         lpx, mpx = Tuple(idx)
         l, m = lms[lpx], lms[mpx]
 
-        @simd for uvdatum in workunit.data
+        @simd for i in 1:length(uvdata)
             phase = 2π * 1im * (
-                (uvdatum.u - workunit.u0) * l +
-                (uvdatum.v - workunit.v0) * m +
-                (uvdatum.w - workunit.w0) * ndash(l, m)
+                (uvdata.u[i] - workunit.u0) * l +
+                (uvdata.v[i] - workunit.v0) * m +
+                (uvdata.w[i] - workunit.w0) * ndash(l, m)
             )
             if makepsf
-                subgrid[lpx, mpx] += uvdatum.weights * exp(phase)
+                subgrid[lpx, mpx] += uvdata.weights[i] * exp(phase)
             else
-                subgrid[lpx, mpx] += uvdatum.weights .* uvdatum.data * exp(phase)
+                subgrid[lpx, mpx] += uvdata.weights[i] .* uvdata.data[i] * exp(phase)
             end
         end
         subgrid[lpx, mpx] = (

@@ -2,11 +2,11 @@ module Pigi
     using CUDA
     using FFTW
     using LsqFit: curve_fit, coef
-    using MappedArrays
     using PyCall
     using SpecialFunctions: besseli
     using StaticArrays
     using Statistics: mean, median
+    using StructArrays
     using Unitful: Quantity, uconvert, @u_str
 
     include("constants.jl")

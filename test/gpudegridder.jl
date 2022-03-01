@@ -6,7 +6,7 @@
 
     # Create uvw sample points
     uvws = rand(3, 5000) .* [100 100 20;]' .- [50 50 10;]'
-    uvdata = Pigi.UVDatum{precision}[]
+    uvdata = StructVector{Pigi.UVDatum{precision}}(undef, 0)
     for (u, v, w) in eachcol(uvws)
         push!(uvdata, Pigi.UVDatum{precision}(0, 0, u, v, w, [1 1; 1 1], [0 0; 0 0]))
     end

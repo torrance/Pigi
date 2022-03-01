@@ -5,6 +5,7 @@ using InteractiveUtils: @code_warntype
 using Pigi
 using Profile
 using StaticArrays
+using StructArrays
 
 println("Running benchmarks...")
 
@@ -66,6 +67,10 @@ end
     Time (mean ± σ): 4.483 s ± 7.480 ms GC (mean ± σ): 0.00% ± 0.00%
     Memory estimate: 2.00 MiB, allocs estimate: 33
     Note: upgrade to Julia 1.7.1
+2022/03/01 : Nimbus
+    Time (mean ± σ): 4.860 s ± 4.979 ms GC (mean ± σ): 0.00% ± 0.00%
+    Memory estimate: 2.00 MiB, allocs estimate: 37
+    Note: switch the StructArrays
 =#
 begin
     precision = Float64
@@ -76,7 +81,7 @@ begin
     visgrid = zeros(Complex{precision}, 4, 128, 128)
     visgrid[:, 1 + padding:end - padding, 1 + padding:end - padding] = rand(Complex{precision}, 4, 128 - 2 * padding, 128 - 2 * padding)
 
-    uvdata = Pigi.UVDatum{precision}[]
+    uvdata = StructVector{Pigi.UVDatum{precision}}(undef, 0)
     for vpx in axes(visgrid, 3), upx in axes(visgrid, 2)
         val = visgrid[:, upx, vpx]
         if !all(val .== 0)
@@ -110,6 +115,10 @@ end
     Time (mean ± σ): 5.664 s ± 10.579 ms GC (mean ± σ): 0.00% ± 0.00%
     Memory estimate: 1.00 MiB, allocs estimate: 37
     Note: upgrade to Julia 1.7.1
+2022/03/01 : Nimbus
+    Time (mean ± σ): 5.929 s ± 4.686 ms GC (mean ± σ): 0.00% ± 0.00%
+    Memory estimate: 4.04 MiB, allocs estimate: 49016
+    Note: switch to StructArray
 =#
 begin
     precision = Float64
@@ -117,7 +126,7 @@ begin
 
     Aleft = Aright = ones(SMatrix{2, 2, Complex{precision}, 4}, 128, 128)
 
-    uvdata = Pigi.UVDatum{precision}[]
+    uvdata = StructArray{Pigi.UVDatum{precision}}(undef, 0)
     for (upx, vpx) in eachcol(rand(2, 10000))
         upx, vpx = upx * 100 + 14, vpx * 100 + 14
         u, v = Pigi.px2lambda(upx, vpx, subgridspec)
@@ -149,10 +158,14 @@ end
     Time (mean ± σ): 6.608 s ± 725.974 ms GC (mean ± σ): 0.55% ± 0.30%
     Memory estimate: 2.10 GiB, allocs estimate: 488955
     Note: iterate over uvdatum fields as separate arrays; perform fft on CPU
-2022/02/14 : Nimbus
+2022/02/28 : Nimbus
     Time (mean ± σ): 5.361 s ± 512.201 ms GC (mean ± σ): 0.45% ± 0.39%
     Memory estimate: 1.85 GiB, allocs estimate: 363213
     Note: one thread per subgrid cell, iterate over uvdata within the thread
+2022/02/28 : Nimbus
+    Time (mean ± σ): 4.794 s ± 1.011 s GC (mean ± σ): 0.25% ± 0.41%
+    Memory estimate: 640.10 MiB, allocs estimate: 434324
+    Note: using StructArrays
 =#
 begin
     println("Reading mset...")

@@ -25,15 +25,7 @@ function dft!(workunit::WorkUnit{T}, grid::Matrix{SMatrix{2, 2, Complex{T}, 4}},
             data += grid[lpx, mpx] * exp(phase)
         end
 
-        workunit.data[i] = UVDatum{T}(
-            uvdatum.row,
-            uvdatum.chan,
-            uvdatum.u,
-            uvdatum.v,
-            uvdatum.w,
-            uvdatum.weights,
-            degridop(uvdatum.data, data),
-        )
+        workunit.data.data[i] = degridop(uvdatum.data, data)
     end
 end
 

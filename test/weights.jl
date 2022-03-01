@@ -1,6 +1,6 @@
 @testset "Weighting" begin
     precision = Float64
-    uvdata = Pigi.UVDatum{precision}[]
+    uvdata = StructArray{Pigi.UVDatum{precision}}(undef, 0)
 
     gridspec = Pigi.GridSpec(128, 128, scaleuv=1.2)
 

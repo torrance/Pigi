@@ -16,10 +16,10 @@ function convolutionalsample!(grid, gridspec, uvdata, kernel, width; uoffset=0, 
     end
 end
 
-function idft!(grid::AbstractMatrix{SMatrix{2, 2, Complex{T}, 4}},  uvdata::Vector{Pigi.UVDatum{T}}, gridspec::Pigi.GridSpec, normfactor::T; gpu::Bool = true) where T
+function idft!(grid::AbstractMatrix{SMatrix{2, 2, Complex{T}, 4}},  uvdata::StructVector{Pigi.UVDatum{T}}, gridspec::Pigi.GridSpec, normfactor::T; gpu::Bool = true) where T
     if gpu
         gridd = CuArray(grid)
-        uvdatad = CuArray(uvdata)
+        uvdatad = replace_storage(CuArray, uvdata)
 
         kernel = @cuda launch=false _idft!(gridd, uvdatad, gridspec, normfactor)
         config = launch_configuration(kernel.fun)
@@ -28,14 +28,12 @@ function idft!(grid::AbstractMatrix{SMatrix{2, 2, Complex{T}, 4}},  uvdata::Vect
         kernel(gridd, uvdatad, gridspec, normfactor; threads, blocks)
 
         copyto!(grid, gridd)
-        CUDA.unsafe_free!(gridd)
-        CUDA.unsafe_free!(uvdatad)
     else
         _idft!(grid, uvdata, gridspec, normfactor)
     end
 end
 
-function _idft!(dft::Matrix{SMatrix{2, 2, Complex{T}, 4}}, uvdata::Vector{Pigi.UVDatum{T}}, gridspec::Pigi.GridSpec, normfactor::T) where T
+function _idft!(dft::Matrix{SMatrix{2, 2, Complex{T}, 4}}, uvdata::StructVector{Pigi.UVDatum{T}}, gridspec::Pigi.GridSpec, normfactor::T) where T
     rowscomplete = 0
     Threads.@threads for lmpx in CartesianIndices(dft)
         lpx, mpx = Tuple(lmpx)
@@ -57,7 +55,7 @@ function _idft!(dft::Matrix{SMatrix{2, 2, Complex{T}, 4}}, uvdata::Vector{Pigi.U
     end
 end
 
-function _idft!(dft::CuDeviceMatrix{SMatrix{2, 2, Complex{T}, 4}}, uvdata::CuDeviceVector{Pigi.UVDatum{T}}, gridspec::Pigi.GridSpec, normfactor::T) where T
+function _idft!(dft::CuDeviceMatrix{SMatrix{2, 2, Complex{T}, 4}}, uvdata::StructVector{Pigi.UVDatum{T}}, gridspec::Pigi.GridSpec, normfactor::T) where T
     idx = (blockIdx().x - 1) * blockDim().x + threadIdx().x
 
     if idx <= length(dft)
@@ -77,7 +75,7 @@ function _idft!(dft::CuDeviceMatrix{SMatrix{2, 2, Complex{T}, 4}}, uvdata::CuDev
     return nothing
 end
 
-function dft!(uvdata::Vector{Pigi.UVDatum{T}}, img::Matrix{SMatrix{2, 2, Complex{T}, 4}}, gridspec::Pigi.GridSpec) where T
+function dft!(uvdata::StructVector{Pigi.UVDatum{T}}, img::Matrix{SMatrix{2, 2, Complex{T}, 4}}, gridspec::Pigi.GridSpec) where T
     idxs = findall(x -> !iszero(x), img)
     for (i, uvdatum) in enumerate(uvdata)
         data = SMatrix{2, 2, Complex{T}, 4}(0, 0, 0, 0)
@@ -89,14 +87,6 @@ function dft!(uvdata::Vector{Pigi.UVDatum{T}}, img::Matrix{SMatrix{2, 2, Complex
             )
         end
 
-        uvdata[i] = Pigi.UVDatum{T}(
-            uvdatum.row,
-            uvdatum.chan,
-            uvdatum.u,
-            uvdatum.v,
-            uvdatum.w,
-            uvdatum.weights,
-            data,
-        )
+        uvdata.data[i] = data
     end
 end

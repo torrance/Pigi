@@ -23,7 +23,7 @@
     workunits = Pigi.partition(uvdata, gridspec, subgridspec, padding, 25, taper)
     @time Pigi.predict!(workunits, skymap, gridspec, taper, CuArray)
 
-    uvdata = Pigi.UVDatum{precision}[]
+    uvdata = StructVector{Pigi.UVDatum{precision}}(undef, 0)
     for workunit in workunits
         append!(uvdata, workunit.data)
     end

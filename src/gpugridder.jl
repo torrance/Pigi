@@ -3,21 +3,16 @@ function gridder(workunit::WorkUnit{T}, ::Type{CuArray}; makepsf::Bool=false) wh
         SMatrix{2, 2, Complex{T}, 4}, workunit.subgridspec.Nx, workunit.subgridspec.Ny
     )
 
-    # TODO: Switch memory layout of workunit.data to StructArrays to avoid this fussin' and a feudin'.
-    us = CuArray([x.u for x in workunit.data])
-    vs = CuArray([x.v for x in workunit.data])
-    ws = CuArray([x.w for x in workunit.data])
-    weights = CuArray([x.weights for x in workunit.data])
-    data = CuArray([x.data for x in workunit.data])
+    uvdata = replace_storage(CuArray, workunit.data)
 
     kernel = @cuda launch=false gpudift!(
-        subgridd, workunit.u0, workunit.v0, workunit.w0, us, vs, ws, weights, data, workunit.subgridspec, Val(makepsf)
+        subgridd, workunit.u0, workunit.v0, workunit.w0, uvdata.u, uvdata.v, uvdata.w, uvdata.weights, uvdata.data, workunit.subgridspec, Val(makepsf)
     )
     config = launch_configuration(kernel.fun)
     nthreads = min(length(subgridd), config.threads)
     nblocks = cld(length(subgridd), nthreads)
     kernel(
-        subgridd, workunit.u0, workunit.v0, workunit.w0, us, vs, ws, weights, data, workunit.subgridspec, Val(makepsf);
+        subgridd, workunit.u0, workunit.v0, workunit.w0, uvdata.u, uvdata.v, uvdata.w, uvdata.weights, uvdata.data, workunit.subgridspec, Val(makepsf);
         threads=nthreads,
         blocks=nblocks,
     )
