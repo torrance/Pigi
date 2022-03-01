@@ -1,11 +1,22 @@
-function mkkbtaper(gridspec; alpha=14)
-    # We want the KB function to reach zero at the edge of our image. rnorm ensures this.
-    rnorm = (minimum([gridspec.Nx, gridspec.Ny]) ÷ 2 - 1) * gridspec.scalelm
+function mkkbtaper(gridspec; alpha=14, threshold=1e-4)
+    # We want the taper to reach threshold at edge of the image
+    # This can't be too small, otherwise we encounter significant floating point
+    # errors at Float32, but can't be too large or else we truncate the taper too severely
+    # (and require significant padding).
+    rmax = 0.5
+    for r in 0:1e-2:0.5
+        if besseli(0, π * alpha * sqrt(1 - 4 * r^2)) / besseli(0, π * alpha) < threshold
+            rmax = r
+            break
+        end
+    end
+    rnorm  = sqrt((gridspec.Nx ÷ 2)^2 + (gridspec.Ny ÷ 2)^2) * gridspec.scalelm / rmax
+    println("Taper rmax: $(rmax)")
 
     kbnorm = besseli(0, π * alpha)
     function taper(l, m)
-        l /= 2 * rnorm
-        m /= 2 * rnorm
+        l /= rnorm
+        m /= rnorm
         r2 = l^2 + m^2
         if r2 > 0.25
             return 0.

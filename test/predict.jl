@@ -17,7 +17,7 @@
     end
 
     # Predict using IDG
-    taper = Pigi.mkkbtaper(gridspec)
+    taper = Pigi.mkkbtaper(gridspec, threshold=0)
     padding = 15
     subgridspec = Pigi.GridSpec(64, 64, scaleuv=gridspec.scaleuv)
     workunits = Pigi.partition(uvdata, gridspec, subgridspec, padding, 25, taper)
@@ -32,10 +32,10 @@
     uvdatadft = deepcopy(uvdata)
     @time dft!(uvdatadft, skymap, gridspec)
 
-    @test all(x -> sum(abs.(x[1].data - x[2].data)) < 1e-7, zip(uvdata, uvdatadft))
+    @test maximum(sum(abs.(x[1].data - x[2].data)) for x in zip(uvdata, uvdatadft)) < 1e-4
 
     # # Plot images
-    # expected = similar(skymap)
+    # expected = zeros(SMatrix{2, 2, Complex{precision}, 4}, gridspec.Nx, gridspec.Ny)
     # idft!(expected, uvdatadft, gridspec, precision(length(uvdatadft)))
 
     # img = zeros(SMatrix{2, 2, Complex{precision}, 4}, gridspec.Nx, gridspec.Ny)
