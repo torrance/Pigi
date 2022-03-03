@@ -1,11 +1,11 @@
-function clean!(img, psf; gain=0.1, mgain=0.8, threshold=0, niter::Int=typemax(Int))
+function clean!(img, psf; gain=0.1, mgain=0.8, threshold=0., niter::Int=typemax(Int))
     components = similar(img)
     fill!(components, 0)
 
     imgd = CuArray(img)
     psfd = CuArray(psf)
 
-    threshold = maximum([(1 - mgain) * maximum(abs, img), threshold])
+    threshold = max((1 - mgain) * maximum(abs, img), threshold)
     println("Cleaning to threshold: $(threshold)")
 
     iter = 1
