@@ -314,13 +314,13 @@ begin
     arr = CUDA.rand(9000, 9000)
 
     b = @benchmark begin
-        CUDA.findmax(arr)
+        CUDA.findmax($arr)
     end evals=100 samples=10 seconds=60
     show(stdout, MIME"text/plain"(), b)
     println()
 
     b = @benchmark begin
-        Pigi.findabsmax(arr)
+        Pigi.findabsmax($arr)
     end evals=100 samples=10 seconds=60
     show(stdout, MIME"text/plain"(), b)
     println()
