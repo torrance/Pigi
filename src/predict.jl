@@ -40,13 +40,13 @@ function predict!(
     plan = plan_fft!(wlayerdflat, (2, 3))
 
     gridded = Threads.Atomic{Int}(0)
-    for w0 in unique(workunit.w0 for workunit in workunits)
+    Base.@sync for w0 in unique(workunit.w0 for workunit in workunits)
         copy!(wlayerd, img)
 
         # w-layer decorrection
         map!(wlayerd, wlayerd, CartesianIndices(wlayerd)) do val, idx
             lpx, mpx = Tuple(idx)
-            l, m = ls[lpx], ms[mpx]
+            l, m = lsd[lpx], msd[mpx]
             return val * exp(-2π * 1im * w0 * ndash(l, m))
         end
 
@@ -61,9 +61,11 @@ function predict!(
         for workunit in workunits
             if workunit.w0 == w0
                 visgrid = Pigi.extractsubgrid(wlayer, workunit)
-                Pigi.degridder!(workunit, visgrid, degridop, wrapper)
-                Threads.atomic_add!(gridded, 1)
-                print("\rDegridded $(gridded[])/$(length(workunits)) workunits...")
+                Base.@async begin
+                    Pigi.degridder!(workunit, visgrid, degridop, wrapper)
+                    Threads.atomic_add!(gridded, 1)
+                    print("\rDegridded $(gridded[])/$(length(workunits)) workunits...")
+                end
             end
         end
     end
