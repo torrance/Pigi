@@ -27,7 +27,8 @@ function gridder(workunit::WorkUnit{T}, ::Type{CuArray}; makepsf::Bool=false) wh
     fft!(subgridflat, (2, 3))
     subgrid ./= (workunit.subgridspec.Nx * workunit.subgridspec.Ny)
 
-    return fftshift(subgrid)
+    fftshift!(subgrid)
+    return subgrid
 end
 
 function gpudift!(subgrid::CuDeviceMatrix{SMatrix{2, 2, Complex{T}, 4}}, u0, v0, w0, us, vs, ws, weights, data, subgridspec, ::Val{makepsf}) where {T, makepsf}

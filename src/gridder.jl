@@ -8,7 +8,8 @@ function gridder(workunit::WorkUnit{T}, ::Type{Array}; makepsf::Bool=false) wher
     subgridflat = reinterpret(reshape, Complex{T}, subgrid)
     fft!(subgridflat, (2, 3))
     subgrid ./= (workunit.subgridspec.Nx * workunit.subgridspec.Ny)
-    return fftshift(subgrid)
+    fftshift!(subgrid)
+    return subgrid
 end
 
 function dift!(subgrid::Matrix{SMatrix{2, 2, Complex{T}, 4}}, workunit::WorkUnit{T}, ::Val{makepsf}) where {T, makepsf}

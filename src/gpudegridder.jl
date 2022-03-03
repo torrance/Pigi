@@ -1,5 +1,5 @@
 function degridder!(workunit::WorkUnit, subgrid::Matrix{SMatrix{2, 2, Complex{T}, 4}}, degridop, ::Type{CuArray}) where T
-    subgrid = ifftshift(subgrid)
+    fftshift!(subgrid)
     subgridflat = reinterpret(reshape, Complex{T}, subgrid)
     ifft!(subgridflat, (2, 3))
 
