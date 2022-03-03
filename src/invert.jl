@@ -8,39 +8,30 @@ function invert(workunits::Vector{WorkUnit{T}}, gridspec::GridSpec, taper, ::Typ
     ls = wrapper(fftfreq(gridspec.Nx, 1 / gridspec.scaleuv))
     ms = wrapper(fftfreq(gridspec.Ny, 1 / gridspec.scaleuv))
 
-    sort!(workunits, rev=true, by=x -> length(x.data))
-
-    subgrids = Vector{Matrix{SMatrix{2, 2, Complex{T}, 4}}}(undef, length(workunits))
-
-    gridded = Threads.Atomic{Int}(0)
-    @time Base.@sync for (i, workunit) in enumerate(workunits)
-        Base.@async begin
-            subgrids[i] = gridder(workunit, wrapper, makepsf=makepsf)
-            Threads.atomic_add!(gridded, 1)
-            print("\rGridded $(gridded[])/$(length(workunits)) workunits...")
-        end
-    end
-
     wlayer = Array{SMatrix{2, 2, Complex{T}, 4}}(undef, gridspec.Nx, gridspec.Ny)
     wlayerd = wrapper{SMatrix{2, 2, Complex{T}, 4}}(undef, gridspec.Nx, gridspec.Ny)
 
     wlayerdflat = reinterpret(reshape, Complex{T}, wlayerd)
     plan = plan_ifft!(wlayerdflat, (2, 3))
 
+    gridded = Threads.Atomic{Int}(0)
     @time for w0 in unique(wu.w0 for wu in workunits)
-        println("Processing w=$(w0) layer...")
-
         fill!(wlayer, zero(SMatrix{2, 2, Complex{T}, 4}))
-        for (subgrid, workunit) in zip(subgrids, workunits)
+        Base.@sync for workunit in workunits
             if workunit.w0 == w0
-                addsubgrid!(wlayer, subgrid, workunit)
+                Base.@async begin
+                    subgrid = gridder(workunit, wrapper, makepsf=makepsf)
+                    Threads.atomic_add!(gridded, 1)
+                    print("\rGridded $(gridded[])/$(length(workunits)) workunits...")
+                    addsubgrid!(wlayer, subgrid, workunit)
+                end
             end
         end
 
         fftshift!(wlayer)
         copy!(wlayerd, wlayer)
 
-        plan * wlayerdflat
+        plan * wlayerdflat  # in place
 
         # w-layer correction
         map!(wlayerd, wlayerd, CartesianIndices(wlayerd)) do val, idx
@@ -52,6 +43,7 @@ function invert(workunits::Vector{WorkUnit{T}}, gridspec::GridSpec, taper, ::Typ
         copy!(wlayer, wlayerd)
         img .+= wlayer
     end
+    println(" Done.")
 
     # Shift back to zero-centering order.
     fftshift!(img)
