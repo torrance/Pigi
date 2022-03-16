@@ -41,7 +41,7 @@ function partition(
 
     for uvdatum in uvdata
         upx, vpx = lambda2px(uvdatum.u, uvdatum.v, gridspec)
-        w0 = wstep * round(Int, uvdatum.w / wstep)
+        w0 = wstep * fld(uvdatum.w, wstep) + wstep ÷ 2
 
         workunits = get!(wlayers, w0) do
             WorkUnit{T}[]
