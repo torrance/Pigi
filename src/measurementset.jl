@@ -158,7 +158,11 @@ function _msetread(ch, startrow, lambdas, uvw, flagrow, weight, flag, weightspec
             end
         end
 
-        put!(ch, UVDatum{T}(startrow + row, chan, u, v, w, tmpweights, tmpdata))
+        if w >= 0
+            put!(ch, UVDatum{T}(startrow + row, chan, u, v, w, tmpweights, tmpdata))
+        else
+            put!(ch, UVDatum{T}(startrow + row, chan, -u, -v, -w, adjoint(tmpweights), adjoint(tmpdata)))
+        end
     end
 end
 
