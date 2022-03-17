@@ -147,61 +147,34 @@ begin
 end
 
 #=
-2022/02/07 : Nimbus
-    Time (mean ± σ): 24.062 s ± 1.728 s GC (mean ± σ): 0.05% ± 0.06%
-    Memory estimate: 885.26 MiB, allocs estimate: 354185
-2022/02/11 : Nimus
-    Time (mean ± σ): 12.147 s ± 900.924 ms GC (mean ± σ): 0.07% ± 0.14%
-    Memory estimate: 883.59 MiB, allocs estimate: 332030
-    Note: subgrid cell per block, kernel performs block-local reduction over uvdata
-2022/02/14 : Nimbus
-    Time (mean ± σ): 6.608 s ± 725.974 ms GC (mean ± σ): 0.55% ± 0.30%
-    Memory estimate: 2.10 GiB, allocs estimate: 488955
-    Note: iterate over uvdatum fields as separate arrays; perform fft on CPU
-2022/02/28 : Nimbus
-    Time (mean ± σ): 5.361 s ± 512.201 ms GC (mean ± σ): 0.45% ± 0.39%
-    Memory estimate: 1.85 GiB, allocs estimate: 363213
-    Note: one thread per subgrid cell, iterate over uvdata within the thread
-2022/02/28 : Nimbus
-    Time (mean ± σ): 4.794 s ± 1.011 s GC (mean ± σ): 0.25% ± 0.41%
-    Memory estimate: 640.10 MiB, allocs estimate: 434324
-    Note: using StructArrays
+Function: invert()
+
+2022/03/16 : Nibmus
+    Time (mean ± σ): 35.156 s ±  1.220 s GC (mean ± σ): 0.73% ± 0.38%
+    Memory estimate: 6.63 GiB, allocs estimate: 81407455
+    Note: multithreaded
 =#
 begin
     println("Reading mset...")
     path = "../testdata/1215555160/1215555160.ms"
-    mset = Pigi.MeasurementSet(path, chanstart=1, chanstop=96)
+    mset = Pigi.MeasurementSet(path, chanstart=1, chanstop=196)
     println("Mset opened...")
-    uvdata = collect(Pigi.read(mset, precision=Float32))
+    uvdata = StructArray(Pigi.read(mset, precision=Float32))
     println(typeof(uvdata))
     println("Done.")
 
     scalelm = sin(deg2rad(15 / 3600))
-    gridspec = Pigi.GridSpec(4000, 4000, scalelm=scalelm)
-    subgridspec = Pigi.GridSpec(64, 64, scaleuv=gridspec.scaleuv)
-    padding = 8
-    wstep = 10
+    gridspec = Pigi.GridSpec(9000, 9000, scalelm=scalelm)
+    subgridspec = Pigi.GridSpec(96, 96, scaleuv=gridspec.scaleuv)
+    padding = 15
+    wstep = 200
 
     println("Partitioning data...")
-    workunits = Pigi.partition(uvdata, gridspec, subgridspec, padding, wstep, (l, m) -> 1)
+    taper = Pigi.mkkbtaper(gridspec)
+    workunits = Pigi.partition(uvdata, gridspec, subgridspec, padding, wstep, taper)
     println("Done.")
 
-    # Compile CUDA kernel
-    println("Compiling CUDA kernel...")
-    Pigi.gridder(workunits[1], CuArray)
-    println("Done.")
-
-    b = @benchmark begin
-        gridded = 0
-        CUDA.@profile CUDA.NVTX.@range "Gridding" Base.@sync for workunit in $workunits
-            Base.@async begin
-                Pigi.gridder(workunit, CuArray)
-                gridded += 1
-                print("\rGridded $(gridded)/$(length($workunits))")
-            end
-        end
-        println("")
-    end evals=1 samples=5 seconds=120
+    b = @benchmark Pigi.invert(workunits, gridspec, taper, CuArray) evals=1 samples=5 seconds=240
     show(stdout, MIME"text/plain"(), b)
     println()
 end

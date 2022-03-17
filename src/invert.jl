@@ -1,4 +1,6 @@
 function invert(workunits::Vector{WorkUnit{T}}, gridspec::GridSpec, taper, ::Type{wrapper}; makepsf=false) where {T, wrapper}
+    t_grid, t_postprocess = 0., 0.
+
     # Create the fftplan just once, for a slight performance win.
     # We use img as a proxy for the planning, since it has the same shape and type
     # as the mastergrids.
@@ -17,7 +19,7 @@ function invert(workunits::Vector{WorkUnit{T}}, gridspec::GridSpec, taper, ::Typ
     gridded = Threads.Atomic{Int}(0)
     @time for w0 in unique(wu.w0 for wu in workunits)
         fill!(wlayer, zero(SMatrix{2, 2, Complex{T}, 4}))
-        Base.@sync for workunit in workunits
+        t_grid += @elapsed Base.@sync for workunit in workunits
             if workunit.w0 == w0
                 Base.@async begin
                     subgrid = gridder(workunit, wrapper, makepsf=makepsf)
@@ -28,22 +30,25 @@ function invert(workunits::Vector{WorkUnit{T}}, gridspec::GridSpec, taper, ::Typ
             end
         end
 
-        fftshift!(wlayer)
-        copy!(wlayerd, wlayer)
+        t_postprocess += @elapsed begin
+            fftshift!(wlayer)
+            copy!(wlayerd, wlayer)
 
-        plan * wlayerdflat  # in place
+            plan * wlayerdflat  # in place
 
-        # w-layer correction
-        map!(wlayerd, wlayerd, CartesianIndices(wlayerd)) do val, idx
-            lpx, mpx = Tuple(idx)
-            l, m = ls[lpx], ms[mpx]
-            return val * exp(2π * 1im * w0 * ndash(l, m)) * length(wlayerd)
+            # w-layer correction
+            map!(wlayerd, wlayerd, CartesianIndices(wlayerd)) do val, idx
+                lpx, mpx = Tuple(idx)
+                l, m = ls[lpx], ms[mpx]
+                return val * exp(2π * 1im * w0 * ndash(l, m)) * length(wlayerd)
+            end
+
+            copy!(wlayer, wlayerd)
+            img .+= wlayer
         end
-
-        copy!(wlayer, wlayerd)
-        img .+= wlayer
     end
     println(" Done.")
+    println("Elapsed gridding: $(t_grid) Elapsed post processing: $(t_postprocess)")
 
     # Shift back to zero-centering order.
     fftshift!(img)
