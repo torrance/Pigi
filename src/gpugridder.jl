@@ -1,61 +1,87 @@
-function gridder(workunit::WorkUnit{T}, ::Type{CuArray}; makepsf::Bool=false) where T
-    subgridd = CUDA.zeros(
-        SMatrix{2, 2, Complex{T}, 4}, workunit.subgridspec.Nx, workunit.subgridspec.Ny
-    )
+function gridder!(grid::CuMatrix, workunits::AbstractArray{WorkUnit{T}}; makepsf::Bool=false) where T
+    subgridspec = workunits[1].subgridspec
 
-    uvdata = replace_storage(CuArray, workunit.data)
-
-    kernel = @cuda launch=false gpudift!(
-        subgridd, workunit.u0, workunit.v0, workunit.w0, uvdata.u, uvdata.v, uvdata.w, uvdata.weights, uvdata.data, workunit.subgridspec, Val(makepsf)
-    )
-    config = launch_configuration(kernel.fun)
-    nthreads = min(length(subgridd), config.threads)
-    nblocks = cld(length(subgridd), nthreads)
-    kernel(
-        subgridd, workunit.u0, workunit.v0, workunit.w0, uvdata.u, uvdata.v, uvdata.w, uvdata.weights, uvdata.data, workunit.subgridspec, Val(makepsf);
-        threads=nthreads,
-        blocks=nblocks,
-    )
-
-    subgrid = Array(subgridd)
-
-    for i in eachindex(workunit.Aleft, subgrid, workunit.Aright)
-        subgrid[i] = workunit.Aleft[i] * subgrid[i] * adjoint(workunit.Aright[i])
+    # A terms are shared amongst work units, so we only have to transfer over the unique arrays.
+    # We do this (awkwardly) by hashing them into an ID dictionary.
+    Aterms = Dict{AbstractMatrix{SMatrix{2, 2, Complex{T}, 4}}, CuMatrix{SMatrix{2, 2, Complex{T}, 4}}}()
+    for workunit in workunits, Aterm in (workunit.Aleft, workunit.Aright)
+        if !haskey(Aterms, Aterm)
+            Aterms[Aterm] = CuArray(Aterm)
+        end
     end
+    CUDA.synchronize()
 
-    subgridflat = reinterpret(reshape, Complex{T}, subgrid)
-    fft!(subgridflat, (2, 3))
-    subgrid ./= (workunit.subgridspec.Nx * workunit.subgridspec.Ny)
+    defaultstream = CUDA.stream()
+    Base.@sync for workunit in workunits
+        Base.@async CUDA.@sync begin
+            origin = (u0=workunit.u0, v0=workunit.v0, w0=workunit.w0)
+            subgrid = CuMatrix{SMatrix{2, 2, Complex{T}, 4}}(undef, subgridspec.Nx, subgridspec.Ny)
+            uvdata = replace_storage(CuArray, workunit.data)
 
-    fftshift!(subgrid)
-    return subgrid
+            # Perform direct IFT
+            gpudift!(subgrid, origin, uvdata, subgridspec, makepsf)
+
+            # Apply A terms (and normalise prior to fft)
+            Aleft = Aterms[workunit.Aleft]
+            Aright = Aterms[workunit.Aright]
+            map!(subgrid, Aleft, subgrid, Aright) do Aleft, subgrid, Aright
+                return Aleft * subgrid * adjoint(Aright) / (subgridspec.Nx * subgridspec.Ny)
+            end
+
+            # Apply fft
+            subgridflat = reinterpret(reshape, Complex{T}, subgrid)
+            fft!(subgridflat, (2, 3))
+
+            fftshift!(subgrid)
+
+            # When we are ready, add the subgrid in the default CUDA stream so that it
+            # happens sequentially.
+            CUDA.synchronize()
+            CUDA.stream!(defaultstream) do
+                addsubgrid!(grid, subgrid, workunit)
+            end
+        end
+    end
 end
 
-function gpudift!(subgrid::CuDeviceMatrix{SMatrix{2, 2, Complex{T}, 4}}, u0, v0, w0, us, vs, ws, weights, data, subgridspec, ::Val{makepsf}) where {T, makepsf}
-    idx = (blockIdx().x - 1) * blockDim().x + threadIdx().x
-    lms = fftfreq(subgridspec.Nx, T(1 / subgridspec.scaleuv))::Frequencies{T}
+function gpudift!(subgrid::CuMatrix{SMatrix{2, 2, Complex{T}, 4}}, origin, uvdata, subgridspec, makepsf::Bool) where {T}
+    function _gpudift!(subgrid::CuDeviceMatrix{SMatrix{2, 2, Complex{T}, 4}}, origin, uvdata, subgridspec, ::Val{makepsf}) where {T, makepsf}
+        idx = (blockIdx().x - 1) * blockDim().x + threadIdx().x
+        lms = fftfreq(subgridspec.Nx, T(1 / subgridspec.scaleuv))::Frequencies{T}
 
-    if idx > length(subgrid)
+        if idx > length(subgrid)
+            return nothing
+        end
+
+        lpx, mpx = Tuple(CartesianIndices(subgrid)[idx])
+        l, m = lms[lpx], lms[mpx]
+
+        cell = SMatrix{2, 2, Complex{T}, 4}(0, 0, 0, 0)
+        for i in 1:length(uvdata)
+            phase = 2π * 1im * (
+                (uvdata.u[i] - origin.u0) * l +
+                (uvdata.v[i] - origin.v0) * m +
+                (uvdata.w[i] - origin.w0) * ndash(l, m)
+            )
+            if makepsf
+                cell += uvdata.weights[i] * exp(phase)
+            else
+                cell += uvdata.weights[i] .* uvdata.data[i] * exp(phase)
+            end
+        end
+
+        subgrid[idx] = cell
         return nothing
     end
 
-    lpx, mpx = Tuple(CartesianIndices(subgrid)[idx])
-    l, m = lms[lpx], lms[mpx]
-
-    cell = SMatrix{2, 2, Complex{T}, 4}(0, 0, 0, 0)
-    for i in 1:length(data)
-        phase = 2π * 1im * (
-            (us[i] - u0) * l +
-            (vs[i] - v0) * m +
-            (ws[i] - w0) * ndash(l, m)
-        )
-        if makepsf
-            cell += weights[i] * exp(phase)
-        else
-            cell += weights[i] .* data[i] * exp(phase)
-        end
-    end
-
-    subgrid[idx] = cell
-    return nothing
+    kernel = @cuda launch=false _gpudift!(
+        subgrid, origin, uvdata, subgridspec, Val(makepsf)
+    )
+    config = launch_configuration(kernel.fun)
+    threads = min(subgridspec.Nx * subgridspec.Ny, config.threads)
+    blocks = cld(subgridspec.Nx * subgridspec.Ny, threads)
+    kernel(
+        subgrid, origin, uvdata, subgridspec, Val(makepsf);
+        threads, blocks
+    )
 end

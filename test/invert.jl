@@ -1,4 +1,4 @@
-@testset "Simple inversion: $(wrapper), $(precision)" for wrapper in [Array, CuArray], (precision, atol) in [(Float32, 1e-4), (Float64, 1e-6)]
+@testset "Simple inversion: $(wrapper), $(precision)" for wrapper in [CuArray], (precision, atol) in [(Float32, 1e-4), (Float64, 1e-6)]
     gridspec = Pigi.GridSpec(1000, 1000, scalelm=1u"arcminute")
 
     padding = 15

@@ -30,7 +30,7 @@
     @test -23.9 > minimum(vs .- 19.5) > -24
 end
 
-@testset "Add subgrid" begin
+@testset "Add subgrid" for wrapper in [Array, CuArray]
     subgridspec = Pigi.GridSpec(64, 64, scaleuv=1)
     Aleft = Aright = ones(SMatrix{2, 2, ComplexF64, 4}, 64, 64)
     workunit = Pigi.WorkUnit(346, 346, 0., 0., 0., subgridspec, Aleft, Aright, StructVector{Pigi.UVDatum{Float64}}(undef, 0))
@@ -39,10 +39,10 @@ end
     grid = rand(SMatrix{2, 2, ComplexF64, 4}, 64, 64)
     expected[346 - 32:346 + 31, 346 - 32:346 + 31] .= grid
 
-    master = zeros(SMatrix{2, 2, ComplexF64, 4}, 1000, 1000)
-    Pigi.addsubgrid!(master, grid, workunit)
+    master = wrapper(zeros(SMatrix{2, 2, ComplexF64, 4}, 1000, 1000))
+    Pigi.addsubgrid!(master, wrapper(grid), workunit)
 
-    @test all(x -> x[1] == x[2], zip(master, expected))
+    @test Array(master) == expected
 
     # Negative grid
     workunit = Pigi.WorkUnit(4, 346, 0., 0., 0., subgridspec, Aleft, Aright, StructVector{Pigi.UVDatum{Float64}}(undef, 0))
@@ -51,8 +51,8 @@ end
     grid = rand(SMatrix{2, 2, ComplexF64, 4}, 64, 64)
     expected[1:4 + 31, 346 - 32:346 + 31] .= grid[30:end, :]
 
-    master = zeros(SMatrix{2, 2, ComplexF64, 4}, 1000, 1000)
-    Pigi.addsubgrid!(master, grid, workunit)
+    master = wrapper(zeros(SMatrix{2, 2, ComplexF64, 4}, 1000, 1000))
+    Pigi.addsubgrid!(master, wrapper(grid), workunit)
 
-    @test all(master .== expected)
+    @test Array(master) == expected
 end

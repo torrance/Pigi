@@ -10,30 +10,23 @@ function invert(workunits::Vector{WorkUnit{T}}, gridspec::GridSpec, taper, ::Typ
     ls = wrapper(fftfreq(gridspec.Nx, 1 / gridspec.scaleuv))
     ms = wrapper(fftfreq(gridspec.Ny, 1 / gridspec.scaleuv))
 
-    wlayer = Array{SMatrix{2, 2, Complex{T}, 4}}(undef, gridspec.Nx, gridspec.Ny)
+    wlayer = CUDA.Mem.pin(Array{SMatrix{2, 2, Complex{T}, 4}}(undef, gridspec.Nx, gridspec.Ny))
     wlayerd = wrapper{SMatrix{2, 2, Complex{T}, 4}}(undef, gridspec.Nx, gridspec.Ny)
 
     wlayerdflat = reinterpret(reshape, Complex{T}, wlayerd)
     plan = plan_ifft!(wlayerdflat, (2, 3))
 
-    gridded = Threads.Atomic{Int}(0)
     @time for w0 in unique(wu.w0 for wu in workunits)
-        fill!(wlayer, zero(SMatrix{2, 2, Complex{T}, 4}))
-        t_grid += @elapsed Base.@sync for workunit in workunits
-            if workunit.w0 == w0
-                Base.@async begin
-                    subgrid = gridder(workunit, wrapper, makepsf=makepsf)
-                    Threads.atomic_add!(gridded, 1)
-                    print("\rGridded $(gridded[])/$(length(workunits)) workunits...")
-                    addsubgrid!(wlayer, subgrid, workunit)
-                end
-            end
+        println("Processing w=$(w0) layer...")
+        fill!(wlayerd, zero(SMatrix{2, 2, Complex{T}, 4}))
+
+        t_grid += @elapsed CUDA.@sync begin
+            wworkunits = [wu for wu in workunits if wu.w0 == w0]
+            gridder!(wlayerd, wworkunits; makepsf)
         end
 
         t_postprocess += @elapsed begin
-            fftshift!(wlayer)
-            copy!(wlayerd, wlayer)
-
+            fftshift!(wlayerd)
             plan * wlayerdflat  # in place
 
             # w-layer correction
@@ -48,7 +41,7 @@ function invert(workunits::Vector{WorkUnit{T}}, gridspec::GridSpec, taper, ::Typ
         end
     end
     println(" Done.")
-    println("Elapsed gridding: $(t_grid) Elapsed post processing: $(t_postprocess)")
+    println("Elapsed gridding: $(t_grid) Elapsed w-layer post-processing: $(t_postprocess)")
 
     # Shift back to zero-centering order.
     fftshift!(img)

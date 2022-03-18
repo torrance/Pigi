@@ -30,3 +30,33 @@ function fftshift!(arr::AbstractArray{T, 2}) where {T}
         end
     end
 end
+
+function fftshift!(arr::CuMatrix)
+    @assert all(iseven(x) for x in size(arr)) "fftshift!() must operate on arrays with even dimensions"
+
+    function _fftshift!(arr::CuDeviceMatrix, shiftx, shifty, Nx)
+        idx = blockDim().x * (blockIdx().x - 1) + threadIdx().x
+        if idx > Nx * shifty
+            return nothing
+        end
+
+        i1 = mod1(idx, Nx)
+        j1 = div(idx - 1, Nx) + 1
+
+        i2 = mod1(i1 + shiftx, Nx)
+        j2 = j1 + shifty
+
+        arr[i1, j1], arr[i2, j2] = arr[i2, j2], arr[i1, j1]
+
+        return nothing
+    end
+
+    Nx, Ny = size(arr)
+    shiftx, shifty = Nx ÷ 2, Ny ÷ 2
+
+    kernel = @cuda launch=false _fftshift!(arr, shiftx, shifty, Nx)
+    config = launch_configuration(kernel.fun)
+    threads = min(config.threads, Nx * shifty)
+    blocks = cld(Nx * shifty, threads)
+    kernel(arr, shiftx, shifty, Nx; threads, blocks)
+end
