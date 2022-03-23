@@ -32,6 +32,9 @@ function clean!(img, psf; gain=0.1, mgain=0.8, threshold=0., niter::Int=typemax(
     end
 
     copy!(img, imgd)
+    CUDA.unsafe_free!(imgd)
+    CUDA.unsafe_free!(psfd)
+
     return components, iter
 end
 

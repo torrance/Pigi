@@ -16,7 +16,7 @@
     end
 end
 
-function fftshift!(arr::AbstractArray{T, 2}) where {T}
+function fftshift!(arr::AbstractMatrix)
     @assert all(iseven(x) for x in size(arr)) "fftshift!() must operate on arrays with even dimensions"
 
     Nx, Ny = size(arr)

@@ -153,6 +153,10 @@ Function: invert()
     Time (mean ± σ): 35.156 s ±  1.220 s GC (mean ± σ): 0.73% ± 0.38%
     Memory estimate: 6.63 GiB, allocs estimate: 81407455
     Note: multithreaded
+2022/03/23 : Nimbus
+    Time (mean ± σ): 28.856 s ± 76.938 ms GC (mean ± σ): 3.58% ± 0.16%
+    Memory estimate: 6.08 GiB, allocs estimate: 81594187
+    Note: remove intermdiate data transfers from host <-> device
 =#
 begin
     println("Reading mset...")
@@ -178,7 +182,7 @@ begin
     Pigi.invert(workunits[1:1], gridspec, taper, CuArray)
     println("Done.")
 
-    b = @benchmark Pigi.invert(workunits, gridspec, taper, CuArray) evals=1 samples=5 seconds=240
+    b = @benchmark Pigi.invert(workunits, gridspec, taper, CuArray) evals=1 samples=5 seconds=300
     show(stdout, MIME"text/plain"(), b)
     println()
 end
@@ -189,6 +193,10 @@ Function: predict!()
 2022/02/11 : Nimbus
     Time (mean ± σ): 30.747 s ± 287.560 ms  GC (mean ± σ): 0.43% ± 0.25%
     Memory estimate: 5.43 GiB, allocs estimate: 447389
+2022/03/23 : Nimbus
+    Time (mean ± σ): 22.880 s ± 339.722 ms GC (mean ± σ): 1.56% ± 0.75%
+    Memory estimate: 2.44 GiB, allocs estimate: 518681
+    Note: remove intermdiate data transfers from host <-> device
 =#
 begin
     println("Reading mset...")
@@ -221,7 +229,7 @@ begin
 
     b = @benchmark begin
         Pigi.predict!(workunits, grid, gridspec, taper, CuArray; degridop=Pigi.degridop_replace)
-    end evals=1 samples=5 seconds=120
+    end evals=1 samples=5 seconds=300
     show(stdout, MIME"text/plain"(), b)
     println()
 end

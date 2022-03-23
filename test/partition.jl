@@ -56,3 +56,15 @@ end
 
     @test Array(master) == expected
 end
+
+@testset "Extract subgrid" for wrapper in [Array, CuArray]
+    mastergrid = rand(SMatrix{2, 2, ComplexF64, 4}, 1000, 1000)
+
+    expected = mastergrid[231 - 32:231 + 31, 785 - 32:785 + 31]
+
+    subgridspec = Pigi.GridSpec(64, 64, scaleuv=1)
+    Aleft = Aright = ones(SMatrix{2, 2, ComplexF64, 4}, 64, 64)
+    workunit = Pigi.WorkUnit{Float64}(231, 785, 0., 0., 0., subgridspec, Aleft, Aright, StructVector{Pigi.UVDatum{Float64}}(undef, 0))
+
+    @test expected == Array(Pigi.extractsubgrid(wrapper(mastergrid), workunit))
+end

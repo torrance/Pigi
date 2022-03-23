@@ -16,18 +16,27 @@
     end
 
     workunit = Pigi.WorkUnit{precision}(
-        0, 0, 0, 0, 0, subgridspec, Aleft, Aright, uvdata
+        49, 49, 0, 0, 0, subgridspec, Aleft, Aright, uvdata
     )
 
-    gpusubgrid = Pigi.gridder(workunit, CuArray, makepsf=true)
-    cpusubgrid = Pigi.gridder(workunit, Array, makepsf=true)
-    @test all(isapprox(x, y; atol) for (x, y) in zip(gpusubgrid, cpusubgrid))
+    cpusubgrid = zeros(SMatrix{2, 2, Complex{precision}, 4}, 96, 96)
+    gpusubgrid = CuArray(cpusubgrid)
 
-    gpusubgrid = Pigi.gridder(workunit, CuArray)
-    cpusubgrid = Pigi.gridder(workunit, Array)
-    @test all(isapprox(x, y; atol) for (x, y) in zip(gpusubgrid, cpusubgrid))
+    Pigi.gridder!(cpusubgrid, [workunit]; makepsf=true)
+    Pigi.gridder!(gpusubgrid, [workunit]; makepsf=true)
 
-    # gpusubgrid = [real(x[1]) for x in gpusubgrid]
+    @test all(x -> all(isfinite, x), cpusubgrid)
+    @test all(x -> all(isfinite, x), gpusubgrid)
+    @test maximum(x -> sum(abs, x[1] - x[2]), zip(Array(gpusubgrid), cpusubgrid)) < atol
+
+    cpusubgrid = zeros(SMatrix{2, 2, Complex{precision}, 4}, 96, 96)
+    gpusubgrid = CuArray(cpusubgrid)
+
+    Pigi.gridder!(cpusubgrid, [workunit])
+    Pigi.gridder!(gpusubgrid, [workunit])
+    @test maximum(x -> sum(abs, x[1] - x[2]), zip(Array(gpusubgrid), cpusubgrid)) < atol
+
+    # gpusubgrid = [real(x[1]) for x in Array(gpusubgrid)]
     # cpusubgrid = [real(x[1]) for x in cpusubgrid]
     # plt.subplot(1, 2, 1)
     # plt.imshow(real.(gpusubgrid))

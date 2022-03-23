@@ -13,7 +13,8 @@ function predict!(
     ms = fftfreq(gridspec.Ny, 1 / gridspec.scaleuv)
 
     # Inverse tapering
-    Threads.@threads for (mpx, m) in collect(enumerate(ms))
+    println("Applying taper...")
+    @time Threads.@threads for (mpx, m) in collect(enumerate(ms))
         for (lpx, l) in enumerate(ls)
             # The prediction map is often sparse, so skip exhaustive application
             # of taper.
@@ -34,40 +35,33 @@ function predict!(
     msd = wrapper(ms)
 
     wlayerd = wrapper{SMatrix{2, 2, Complex{T}, 4}, 2}(undef, gridspec.Nx, gridspec.Ny)
-    wlayer = Array{SMatrix{2, 2, Complex{T}, 4}, 2}(undef, gridspec.Nx, gridspec.Ny)
-
     wlayerdflat = reinterpret(reshape, Complex{T}, wlayerd)
-    plan = plan_fft!(wlayerdflat, (2, 3))
 
-    gridded = Threads.Atomic{Int}(0)
-    Base.@sync for w0 in unique(workunit.w0 for workunit in workunits)
-        copy!(wlayerd, img)
+    t_degrid, t_preprocess = 0., 0.
+    for w0 in unique(workunit.w0 for workunit in workunits)
+        println("Processing w=$(w0) layer...")
 
-        # w-layer decorrection
-        map!(wlayerd, wlayerd, CartesianIndices(wlayerd)) do val, idx
-            lpx, mpx = Tuple(idx)
-            l, m = lsd[lpx], msd[mpx]
-            return val * exp(-2π * 1im * w0 * ndash(l, m))
+        t_preprocess += @elapsed CUDA.@sync begin
+            copy!(wlayerd, img)
+
+            # w-layer decorrection
+            map!(wlayerd, wlayerd, CartesianIndices(wlayerd)) do val, idx
+                lpx, mpx = Tuple(idx)
+                l, m = lsd[lpx], msd[mpx]
+                return val * exp(-2π * 1im * w0 * ndash(l, m))
+            end
+
+            fft!(wlayerdflat, (2, 3))  # inplace
+
+            # Revert back to zero centering the power since extract subgrid
+            # and degridder! expect this ordering
+            fftshift!(wlayerd)
         end
 
-        plan * wlayerdflat  # inplace
-
-        copy!(wlayer, wlayerd)
-
-        # Revert back to zero centering the power since extract subgrid
-        # and degridder! expect this ordering
-        fftshift!(wlayer)
-
-        for workunit in workunits
-            if workunit.w0 == w0
-                visgrid = Pigi.extractsubgrid(wlayer, workunit)
-                Base.@async begin
-                    Pigi.degridder!(workunit, visgrid, degridop, wrapper)
-                    Threads.atomic_add!(gridded, 1)
-                    print("\rDegridded $(gridded[])/$(length(workunits)) workunits...")
-                end
-            end
+        t_degrid += @elapsed CUDA.@sync begin
+            wworkunits = [wu for wu in workunits if wu.w0 == w0]
+            Pigi.degridder!(wworkunits, wlayerd, degridop)
         end
     end
-    println("\nDone.")
+    println("Elapsed degridding: $(t_degrid) Elapsed w-layer pre-processing: $(t_preprocess)")
 end

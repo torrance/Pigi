@@ -12,22 +12,20 @@ function invert(workunits::Vector{WorkUnit{T}}, gridspec::GridSpec, taper, ::Typ
 
     wlayer = CUDA.Mem.pin(Array{SMatrix{2, 2, Complex{T}, 4}}(undef, gridspec.Nx, gridspec.Ny))
     wlayerd = wrapper{SMatrix{2, 2, Complex{T}, 4}}(undef, gridspec.Nx, gridspec.Ny)
-
     wlayerdflat = reinterpret(reshape, Complex{T}, wlayerd)
-    plan = plan_ifft!(wlayerdflat, (2, 3))
 
-    @time for w0 in unique(wu.w0 for wu in workunits)
+    for w0 in unique(wu.w0 for wu in workunits)
         println("Processing w=$(w0) layer...")
-        fill!(wlayerd, zero(SMatrix{2, 2, Complex{T}, 4}))
 
         t_grid += @elapsed CUDA.@sync begin
+            fill!(wlayerd, zero(SMatrix{2, 2, Complex{T}, 4}))
             wworkunits = [wu for wu in workunits if wu.w0 == w0]
             gridder!(wlayerd, wworkunits; makepsf)
         end
 
         t_postprocess += @elapsed begin
             fftshift!(wlayerd)
-            plan * wlayerdflat  # in place
+            ifft!(wlayerdflat, (2, 3))
 
             # w-layer correction
             map!(wlayerd, wlayerd, CartesianIndices(wlayerd)) do val, idx
@@ -40,7 +38,6 @@ function invert(workunits::Vector{WorkUnit{T}}, gridspec::GridSpec, taper, ::Typ
             img .+= wlayer
         end
     end
-    println(" Done.")
     println("Elapsed gridding: $(t_grid) Elapsed w-layer post-processing: $(t_postprocess)")
 
     # Shift back to zero-centering order.

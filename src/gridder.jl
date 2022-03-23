@@ -1,15 +1,18 @@
-function gridder(workunit::WorkUnit{T}, ::Type{Array}; makepsf::Bool=false) where T
-    subgrid = zeros(
-        SMatrix{2, 2, Complex{T}, 4}, workunit.subgridspec.Nx, workunit.subgridspec.Ny
-    )
+function gridder!(grid::AbstractMatrix, workunits::AbstractVector{WorkUnit{T}}; makepsf::Bool=false) where T
+    subgridspec = workunits[1].subgridspec
+    subgrid = Matrix{SMatrix{2, 2, Complex{T}, 4}}(undef, subgridspec.Nx, subgridspec.Ny)
 
-    dift!(subgrid, workunit, Val(makepsf))
+    for workunit in workunits
+        fill!(subgrid, zero(SMatrix{2, 2, Complex{T}, 4}))
+        dift!(subgrid, workunit, Val(makepsf))
 
-    subgridflat = reinterpret(reshape, Complex{T}, subgrid)
-    fft!(subgridflat, (2, 3))
-    subgrid ./= (workunit.subgridspec.Nx * workunit.subgridspec.Ny)
-    fftshift!(subgrid)
-    return subgrid
+        subgridflat = reinterpret(reshape, Complex{T}, subgrid)
+        fft!(subgridflat, (2, 3))
+        subgrid ./= (workunit.subgridspec.Nx * workunit.subgridspec.Ny)
+        fftshift!(subgrid)
+
+        addsubgrid!(grid, subgrid, workunit)
+    end
 end
 
 function dift!(subgrid::Matrix{SMatrix{2, 2, Complex{T}, 4}}, workunit::WorkUnit{T}, ::Val{makepsf}) where {T, makepsf}

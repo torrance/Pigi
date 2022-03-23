@@ -2,7 +2,7 @@
     gridspec = Pigi.GridSpec(1000, 1000, scalelm=1u"arcminute")
 
     padding = 15
-    wstep = 50
+    wstep = 100
 
     # Source locations in radians, wrt to phase center, with x degree FOV
     sources = deg2rad.(
@@ -33,7 +33,7 @@
     expected = reinterpret(reshape, Complex{precision}, expected)
 
     # IDG
-    masterpadding = round(Int, 0.35 * gridspec.Nx)
+    masterpadding = round(Int, 0.35 * gridspec.Nx / 2)
     paddedgridspec = Pigi.GridSpec(
         gridspec.Nx + 2 * masterpadding,
         gridspec.Ny + 2 * masterpadding,
@@ -53,12 +53,12 @@
     img = reinterpret(reshape, Complex{precision}, img)
     @test maximum(isfinite(x) ? abs(x - y) : 0 for (x, y) in zip(img, expected)) < atol
 
-    # plt.subplot(1, 3, 1)
-    # plt.imshow(real.(img[1, :, :]))
-    # plt.subplot(1, 3, 2)
-    # plt.imshow(real.(expected[1, :, :]))
-    # plt.subplot(1, 3, 3)
-    # plt.imshow(real.(img[1, :, :] .- expected[1, :, :]))
-    # plt.colorbar()
-    # plt.show()
+    plt.subplot(1, 3, 1)
+    plt.imshow(real.(img[1, :, :]))
+    plt.subplot(1, 3, 2)
+    plt.imshow(real.(expected[1, :, :]))
+    plt.subplot(1, 3, 3)
+    plt.imshow(real.(img[1, :, :] .- expected[1, :, :]))
+    plt.colorbar()
+    plt.show()
 end

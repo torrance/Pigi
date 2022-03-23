@@ -1,4 +1,4 @@
-@testset "Prediction" begin
+@testset "Prediction: $(wrapper)" for wrapper in [Array, CuArray]
     precision = Float64
     gridspec = Pigi.GridSpec(2000, 2000, scaleuv=1)
 
@@ -21,7 +21,7 @@
     padding = 15
     subgridspec = Pigi.GridSpec(64, 64, scaleuv=gridspec.scaleuv)
     workunits = Pigi.partition(uvdata, gridspec, subgridspec, padding, 25, taper)
-    @time Pigi.predict!(workunits, skymap, gridspec, taper, CuArray)
+    @time Pigi.predict!(workunits, skymap, gridspec, taper, wrapper)
 
     uvdata = StructVector{Pigi.UVDatum{precision}}(undef, 0)
     for workunit in workunits

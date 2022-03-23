@@ -1,15 +1,19 @@
-function degridder!(workunit::WorkUnit, grid::Matrix{SMatrix{2, 2, Complex{T}, 4}}, degridop, ::Type{Array}) where T
-    fftshift!(grid)
-    gridflat = reinterpret(reshape, Complex{T}, grid)
-    ifft!(gridflat, (2, 3))
+function degridder!(workunits::AbstractVector{WorkUnit{T}}, grid::AbstractMatrix, degridop) where T
+    for workunit in workunits
+        subgrid = extractsubgrid(grid, workunit)
 
-    for i in eachindex(workunit.Aleft, grid, workunit.Aright)
-        grid[i] = workunit.Aleft[i] * grid[i] * adjoint(workunit.Aright[i])
+        fftshift!(subgrid)
+        subgridflat = reinterpret(reshape, Complex{T}, subgrid)
+        ifft!(subgridflat, (2, 3))
+
+        map!(subgrid, workunit.Aleft, subgrid, workunit.Aright) do Aleft, subgrid, Aright
+            return Aleft * subgrid * adjoint(Aright)
+        end
+        dft!(workunit, subgrid, degridop)
     end
-    dft!(workunit, grid, degridop)
 end
 
-function dft!(workunit::WorkUnit{T}, grid::Matrix{SMatrix{2, 2, Complex{T}, 4}}, degridop) where T
+function dft!(workunit::WorkUnit{T}, subgrid::Matrix{SMatrix{2, 2, Complex{T}, 4}}, degridop) where T
     lms = fftfreq(workunit.subgridspec.Nx, 1 / workunit.subgridspec.scaleuv)
 
     Threads.@threads for i in eachindex(workunit.data)
@@ -22,7 +26,7 @@ function dft!(workunit::WorkUnit{T}, grid::Matrix{SMatrix{2, 2, Complex{T}, 4}},
                 (uvdatum.v - workunit.v0) * m +
                 (uvdatum.w - workunit.w0) * ndash(l, m)
             )
-            data += grid[lpx, mpx] * exp(phase)
+            data += subgrid[lpx, mpx] * exp(phase)
         end
 
         workunit.data.data[i] = degridop(uvdatum.data, data)

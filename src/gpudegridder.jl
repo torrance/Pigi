@@ -1,43 +1,72 @@
-function degridder!(workunit::WorkUnit, subgrid::Matrix{SMatrix{2, 2, Complex{T}, 4}}, degridop, ::Type{CuArray}) where T
-    fftshift!(subgrid)
-    subgridflat = reinterpret(reshape, Complex{T}, subgrid)
-    ifft!(subgridflat, (2, 3))
-
-    for i in eachindex(workunit.Aleft, subgrid, workunit.Aright)
-        subgrid[i] = workunit.Aleft[i] * subgrid[i] * adjoint(workunit.Aright[i])
+function degridder!(workunits::AbstractVector{WorkUnit{T}}, grid::CuMatrix, degridop) where T
+    # A terms are shared amongst work units, so we only have to transfer over the unique arrays.
+    # We do this (awkwardly) by hashing them into an ID dictionary.
+    Aterms = IdDict{AbstractMatrix{SMatrix{2, 2, Complex{T}, 4}}, CuMatrix{SMatrix{2, 2, Complex{T}, 4}}}()
+    for workunit in workunits, Aterm in (workunit.Aleft, workunit.Aright)
+        if !haskey(Aterms, Aterm)
+            Aterms[Aterm] = CuArray(Aterm)
+        end
     end
 
-    uvdata = replace_storage(CuArray, workunit.data)
-    subgridd = CuArray(subgrid)
+    Base.@sync for workunit in workunits
+        # We do the ifft in the default stream, due to garbage issues the fft when run on multiple streams.
+        # Once this is done, we have off the rest of the work to a separate stream.
+        CUDA.@sync begin
+            subgrid = extractsubgrid(grid, workunit)
 
-    kernel = @cuda launch=false gpudft!(uvdata, workunit.u0, workunit.v0, workunit.w0, subgridd, workunit.subgridspec, degridop)
-    config = launch_configuration(kernel.fun)
-    nthreads = min(length(uvdata), config.threads)
-    nblocks = cld(length(uvdata), nthreads)
-    kernel(uvdata, workunit.u0, workunit.v0, workunit.w0, subgridd, workunit.subgridspec, degridop; threads=nthreads, blocks=nblocks)
-
-    copyto!(workunit.data.data, uvdata.data)
-end
-
-function gpudft!(uvdata::StructVector{Pigi.UVDatum{T}}, u0, v0, w0, subgrid, subgridspec, degridop) where T
-    gpuidx = (blockIdx().x - 1) * blockDim().x + threadIdx().x
-    stride = gridDim().x * blockDim().x
-
-    lms = fftfreq(subgridspec.Nx, 1 / subgridspec.scaleuv)
-
-    for idx in gpuidx:stride:length(uvdata)
-        uvdatum = uvdata[idx]
-
-        data = SMatrix{2, 2, Complex{T}, 4}(0, 0, 0, 0)
-        for (mpx, m) in enumerate(lms), (lpx, l) in enumerate(lms)
-            phase = -2π * 1im * (
-                (uvdatum.u - u0) * l +
-                (uvdatum.v - v0) * m +
-                (uvdatum.w - w0) * ndash(l, m)
-            )
-            data += subgrid[lpx, mpx] * exp(phase)
+            fftshift!(subgrid)
+            subgridflat = reinterpret(reshape, Complex{T}, subgrid)
+            ifft!(subgridflat, (2, 3))
         end
 
-        uvdata.data[idx] = degridop(uvdatum.data, data)
+        Base.@async CUDA.@sync begin
+            # Apply A terms
+            Aleft = Aterms[workunit.Aleft]
+            Aright = Aterms[workunit.Aright]
+            map!(subgrid, Aleft, subgrid, Aright) do Aleft, subgrid, Aright
+                return Aleft * subgrid * adjoint(Aright)
+            end
+
+            uvdata = (
+                u=CuArray(workunit.data.u),
+                v=CuArray(workunit.data.v),
+                w=CuArray(workunit.data.w),
+                data=CuArray(workunit.data.data)
+            )
+            gpudft!(uvdata, (u0=workunit.u0, v0=workunit.v0, w0=workunit.w0), subgrid, workunit.subgridspec, degridop)
+
+            copyto!(workunit.data.data, uvdata.data)
+        end
     end
+end
+
+function gpudft!(uvdata, origin, subgrid, subgridspec, degridop)
+    function _gpudft!(uvdata, origin, subgrid::CuDeviceMatrix{SMatrix{2, 2, Complex{T}, 4}}, subgridspec, degridop) where T
+        gpuidx = (blockIdx().x - 1) * blockDim().x + threadIdx().x
+        stride = gridDim().x * blockDim().x
+
+        lms = fftfreq(subgridspec.Nx, 1 / subgridspec.scaleuv)
+
+        for idx in gpuidx:stride:length(uvdata.data)
+            u, v, w = uvdata.u[idx], uvdata.v[idx], uvdata.w[idx]
+
+            data = SMatrix{2, 2, Complex{T}, 4}(0, 0, 0, 0)
+            for (mpx, m) in enumerate(lms), (lpx, l) in enumerate(lms)
+                phase = -2π * 1im * (
+                    (u - origin.u0) * l +
+                    (v - origin.v0) * m +
+                    (w - origin.w0) * ndash(l, m)
+                )
+                data += subgrid[lpx, mpx] * exp(phase)
+            end
+
+            uvdata.data[idx] = degridop(uvdata.data[idx], data)
+        end
+    end
+
+    kernel = @cuda launch=false _gpudft!(uvdata, origin, subgrid, subgridspec, degridop)
+    config = launch_configuration(kernel.fun)
+    threads = min(length(uvdata.data), config.threads)
+    blocks = cld(length(uvdata.data), threads)
+    kernel(uvdata, origin, subgrid, subgridspec, degridop; threads, blocks)
 end

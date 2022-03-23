@@ -1,9 +1,9 @@
-function gridder!(grid::CuMatrix, workunits::AbstractArray{WorkUnit{T}}; makepsf::Bool=false) where T
+function gridder!(grid::CuMatrix, workunits::AbstractVector{WorkUnit{T}}; makepsf::Bool=false) where T
     subgridspec = workunits[1].subgridspec
 
     # A terms are shared amongst work units, so we only have to transfer over the unique arrays.
     # We do this (awkwardly) by hashing them into an ID dictionary.
-    Aterms = Dict{AbstractMatrix{SMatrix{2, 2, Complex{T}, 4}}, CuMatrix{SMatrix{2, 2, Complex{T}, 4}}}()
+    Aterms = IdDict{AbstractMatrix{SMatrix{2, 2, Complex{T}, 4}}, CuMatrix{SMatrix{2, 2, Complex{T}, 4}}}()
     for workunit in workunits, Aterm in (workunit.Aleft, workunit.Aright)
         if !haskey(Aterms, Aterm)
             Aterms[Aterm] = CuArray(Aterm)
@@ -11,7 +11,7 @@ function gridder!(grid::CuMatrix, workunits::AbstractArray{WorkUnit{T}}; makepsf
     end
     CUDA.synchronize()
 
-    defaultstream = CUDA.stream()
+    subgrids = CuMatrix{SMatrix{2, 2, Complex{T}, 4}}[]
     Base.@sync for workunit in workunits
         Base.@async CUDA.@sync begin
             origin = (u0=workunit.u0, v0=workunit.v0, w0=workunit.w0)
@@ -28,19 +28,19 @@ function gridder!(grid::CuMatrix, workunits::AbstractArray{WorkUnit{T}}; makepsf
                 return Aleft * subgrid * adjoint(Aright) / (subgridspec.Nx * subgridspec.Ny)
             end
 
-            # Apply fft
-            subgridflat = reinterpret(reshape, Complex{T}, subgrid)
-            fft!(subgridflat, (2, 3))
-
-            fftshift!(subgrid)
-
-            # When we are ready, add the subgrid in the default CUDA stream so that it
-            # happens sequentially.
-            CUDA.synchronize()
-            CUDA.stream!(defaultstream) do
-                addsubgrid!(grid, subgrid, workunit)
-            end
+            push!(subgrids, subgrid)
         end
+    end
+
+    # Perform fft in the default stream, to avoid expensive internal allocations by fft.
+    # Additionally, addsubgrid must be applied sequentially.
+    for (workunit, subgrid) in zip(workunits, subgrids)
+        # Apply fft
+        subgridflat = reinterpret(reshape, Complex{T}, subgrid)
+        fft!(subgridflat, (2, 3))
+        fftshift!(subgrid)
+
+        addsubgrid!(grid, subgrid, workunit)
     end
 end
 

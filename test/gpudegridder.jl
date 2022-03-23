@@ -1,4 +1,4 @@
-@testset "GPU Degridding" for (precision, atol) in [(Float32, 1e-5), (Float64, 1e-8)]
+@testset "GPU Degridding [$(precision)]" for (precision, atol) in [(Float32, 1e-5), (Float64, 1e-8)]
     subgridspec = Pigi.GridSpec(128, 128, scaleuv=1)
 
     # Create visgrid
@@ -16,8 +16,8 @@
     cpuworkunit = Pigi.WorkUnit(0, 0, precision(0), precision(0), precision(0), subgridspec, Aleft, Aright, uvdata)
     gpuworkunit = deepcopy(cpuworkunit)
 
-    Pigi.degridder!(gpuworkunit, copy(visgrid), Pigi.degridop_replace, CuArray)
-    Pigi.degridder!(cpuworkunit, copy(visgrid), Pigi.degridop_replace, Array)
+    Pigi.degridder!([gpuworkunit], CuArray(visgrid), Pigi.degridop_replace)
+    Pigi.degridder!([cpuworkunit], visgrid, Pigi.degridop_replace)
 
     @test all(isapprox(x.data, y.data; atol) for (x, y) in zip(gpuworkunit.data, cpuworkunit.data))
 end

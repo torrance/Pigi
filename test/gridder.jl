@@ -25,10 +25,11 @@
     taper = Pigi.mkkbtaper(subgridspec)
 
     workunit = Pigi.WorkUnit{precision}(
-        0, 0, 0, 0, 0, subgridspec, Aleft, Aright, uvdata
+        65, 65, 0, 0, 0, subgridspec, Aleft, Aright, uvdata
     )
 
-    idggrid = Pigi.gridder(workunit, Array)
+    idggrid = zeros(SMatrix{2, 2, Complex{precision}, 4}, 128, 128)
+    Pigi.gridder!(idggrid, [workunit])
     idggrid = reinterpret(reshape, Complex{precision}, idggrid)
 
     @test maximum(abs.(visgrid[:, :, :] .- idggrid[:, :, :])) < 1e-12
@@ -88,9 +89,10 @@ end
     end
 
     workunit = Pigi.WorkUnit{precision}(
-        0, 0, 0, 0, 0, subgridspec, Aleft, Aright, uvdata
+        65, 65, 0, 0, 0, subgridspec, Aleft, Aright, uvdata
     )
-    idggrid = Pigi.gridder(workunit, Array)
+    idggrid = zeros(SMatrix{2, 2, Complex{precision}, 4}, 128, 128)
+    Pigi.gridder!(idggrid, [workunit])
     idggrid = reinterpret(reshape, Complex{precision}, idggrid)
 
     @test maximum(abs.(expected .- idggrid)) < 1e-10
@@ -159,9 +161,10 @@ end
     end
 
     workunit = Pigi.WorkUnit{precision}(
-        0, 0, 0, 0, 0, subgridspec, Aleft, Aright, uvdata
+        65, 65, 0, 0, 0, subgridspec, Aleft, Aright, uvdata
     )
-    idggrid = Pigi.gridder(workunit, Array)
+    idggrid = zeros(SMatrix{2, 2, Complex{precision}, 4}, 128, 128)
+    Pigi.gridder!(idggrid, [workunit])
     idggrid = reinterpret(reshape, Complex{precision}, idggrid)
     idggrid = fftshift(ifft(fftshift(idggrid, (2, 3)), (2, 3)), (2, 3)) * subgridspec.Nx * subgridspec.Ny / length(uvdata)
 
