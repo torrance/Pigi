@@ -174,49 +174,53 @@ begin
     workunits = Pigi.partition(uvdata, gridspec, subgridspec, padding, wstep, taper)
     println("Done.")
 
+    println("Compiling...")
+    Pigi.invert(workunits[1:1], gridspec, taper, CuArray)
+    println("Done.")
+
     b = @benchmark Pigi.invert(workunits, gridspec, taper, CuArray) evals=1 samples=5 seconds=240
     show(stdout, MIME"text/plain"(), b)
     println()
 end
 
 #=
+Function: predict!()
+
 2022/02/11 : Nimbus
-    Time (mean ± σ): 4.801 s ± 964.457 ms GC (mean ± σ): 0.13% ± 0.21%
-    Memory estimate: 454.40 MiB, allocs estimate: 373964
+    Time (mean ± σ): 30.747 s ± 287.560 ms  GC (mean ± σ): 0.43% ± 0.25%
+    Memory estimate: 5.43 GiB, allocs estimate: 447389
 =#
 begin
     println("Reading mset...")
     path = "../testdata/1215555160/1215555160.ms"
-    mset = Pigi.MeasurementSet(path, chanstart=1, chanstop=96)
+    mset = Pigi.MeasurementSet(path, chanstart=1, chanstop=196)
     println("Mset opened...")
     uvdata = collect(Pigi.read(mset, precision=Float32))
     println(typeof(uvdata))
     println("Done.")
 
     scalelm = sin(deg2rad(15 / 3600))
-    gridspec = Pigi.GridSpec(4000, 4000, scalelm=scalelm)
-    subgridspec = Pigi.GridSpec(64, 64, scaleuv=gridspec.scaleuv)
-    padding = 8
-    wstep = 10
+    gridspec = Pigi.GridSpec(9000, 9000, scalelm=scalelm)
+    subgridspec = Pigi.GridSpec(96, 96, scaleuv=gridspec.scaleuv)
+    padding = 15
+    wstep = 200
 
     println("Partitioning data...")
+    taper = Pigi.mkkbtaper(gridspec)
     workunits = Pigi.partition(uvdata, gridspec, subgridspec, padding, wstep, (l, m) -> 1)
     println("Done.")
 
-    # Create random visgrid
-    visgrid = rand(SMatrix{2, 2, ComplexF32, 4}, 64, 64)
+    # Create random sky grid
+    grid = zeros(SMatrix{2, 2, ComplexF32, 4}, 9000, 9000)
+    grid[rand(1:9000 * 9000, 6000)] .= rand(SMatrix{2, 2, ComplexF32, 4}, 6000)
 
     # Compile CUDA kernel
     println("Compiling CUDA kernel...")
-    Pigi.degridder!(workunits[1], visgrid, Pigi.degridop_replace, CuArray)
+    Pigi.predict!(workunits[1:1], grid, gridspec, taper, CuArray; degridop=Pigi.degridop_replace)
     println("Done.")
 
     b = @benchmark begin
-        CUDA.@profile CUDA.NVTX.@range "Degridding" Base.@sync for (i, workunit) in enumerate($workunits)
-            Base.@async Pigi.degridder!(workunit, visgrid, Pigi.degridop_replace, CuArray)
-            print("\rDegridded $(i)/$(length($workunits))")
-        end
-        println("")
+        Pigi.predict!(workunits, grid, gridspec, taper, CuArray; degridop=Pigi.degridop_replace)
     end evals=1 samples=5 seconds=120
     show(stdout, MIME"text/plain"(), b)
     println()
