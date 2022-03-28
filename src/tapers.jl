@@ -42,3 +42,28 @@ function removetaper!(img, gridspec, taper)
         img[lm] /= taper(l, m)
     end
 end
+
+function taperpadding(vimg, vtruncate; alpha=14)
+    function kbtaper(r)
+        r2 = r^2
+
+        if r2 > 0.25
+            return 0.
+        else
+            return besseli(0, π * alpha * sqrt(1 - 4 * r2)) / besseli(0, π * alpha)
+        end
+    end
+
+    rimg, rtruncate = 0, 0.5
+    for r in range(0, 0.5, length=2000)
+        t = kbtaper(r)
+        if t > vimg
+            rimg = r
+        end
+        if t > vtruncate
+            rtruncate = r
+        end
+    end
+
+    return rtruncate / rimg
+end

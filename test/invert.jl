@@ -1,7 +1,7 @@
-@testset "Simple inversion: $(wrapper), $(precision)" for wrapper in [CuArray], (precision, atol) in [(Float32, 1e-4), (Float64, 1e-6)]
-    gridspec = Pigi.GridSpec(1000, 1000, scalelm=1u"arcminute")
+@testset "Simple inversion: $(wrapper), $(precision)" for wrapper in [Array, CuArray], (precision, atol) in [(Float32, 6e-4), (Float64, 6e-4)]
+    gridspec = Pigi.GridSpec(2000, 2000, scalelm=0.5u"arcminute")
 
-    padding = 15
+    padding = 18
     wstep = 100
 
     # Source locations in radians, wrt to phase center, with x degree FOV
@@ -15,7 +15,7 @@
     uvdata = StructVector{Pigi.UVDatum{precision}}(undef, N)
     Threads.@threads for i in 1:N
         u, v, w = rand(Float64, 3)
-        u, v = Pigi.px2lambda(u * 500 + 250, v * 500 + 250, gridspec)
+        u, v = Pigi.px2lambda(u * 500 + gridspec.Nx ÷ 2 - 250, v * 500 + gridspec.Ny ÷ 2 - 250, gridspec)
         w = w * 500
 
         val = zero(SMatrix{2, 2, Complex{precision}, 4})
@@ -33,17 +33,23 @@
     expected = reinterpret(reshape, Complex{precision}, expected)
 
     # IDG
-    masterpadding = round(Int, 0.35 * gridspec.Nx / 2)
+    vimg, vtruncate = 1e-3, 1e-6
+    paddingfactor = Pigi.taperpadding(vimg, vtruncate)
+
+    masterpadding = round(Int, (paddingfactor - 1) * gridspec.Nx / 2)
     paddedgridspec = Pigi.GridSpec(
         gridspec.Nx + 2 * masterpadding,
         gridspec.Ny + 2 * masterpadding,
         scalelm=gridspec.scalelm,
     )
-    subgridspec = Pigi.GridSpec(64, 64, scaleuv=paddedgridspec.scaleuv)
+    println("Use padding factor $(paddingfactor) -> $(paddedgridspec.Nx)px x $(paddedgridspec.Ny)")
+
+    subgridspec = Pigi.GridSpec(96, 96, scaleuv=paddedgridspec.scaleuv)
 
     weighter = Pigi.Natural(uvdata, paddedgridspec)
 
-    taper = Pigi.mkkbtaper(gridspec)
+    taper = Pigi.mkkbtaper(paddedgridspec, threshold=vtruncate)
+
     workunits = Pigi.partition(uvdata, paddedgridspec, subgridspec, padding, wstep, taper)
     Pigi.applyweights!(workunits, weighter)
     img = Pigi.invert(workunits, paddedgridspec, taper, wrapper)
@@ -51,14 +57,18 @@
     img = img[1 + masterpadding:end - masterpadding, 1 + masterpadding:end - masterpadding]
 
     img = reinterpret(reshape, Complex{precision}, img)
+
     @test maximum(isfinite(x) ? abs(x - y) : 0 for (x, y) in zip(img, expected)) < atol
 
-    plt.subplot(1, 3, 1)
-    plt.imshow(real.(img[1, :, :]))
-    plt.subplot(1, 3, 2)
-    plt.imshow(real.(expected[1, :, :]))
-    plt.subplot(1, 3, 3)
-    plt.imshow(real.(img[1, :, :] .- expected[1, :, :]))
-    plt.colorbar()
-    plt.show()
+    # vmin, vmax = extrema(real, expected[1, :, :])
+    # plt.subplot(1, 3, 1)
+    # plt.imshow(real.(img[1, :, :]); vmin, vmax)
+    # plt.subplot(1, 3, 2)
+    # plt.imshow(real.(expected[1, :, :]); vmin, vmax)
+    # plt.subplot(1, 3, 3)
+    # diff = real.(img[1, :, :] .- expected[1, :, :])
+    # vmin, vmax = extrema(x -> isfinite(x) ? x : 0, diff)
+    # plt.imshow(diff; vmin, vmax)
+    # plt.colorbar()
+    # plt.show()
 end
