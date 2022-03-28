@@ -1,5 +1,6 @@
 function gridder!(grid::CuMatrix, workunits::AbstractVector{WorkUnit{T}}; makepsf::Bool=false) where T
     subgridspec = workunits[1].subgridspec
+    subgrids = CuArray{SMatrix{2, 2, Complex{T}, 4}, 3}(undef, subgridspec.Nx, subgridspec.Ny, length(workunits))
 
     # A terms are shared amongst work units, so we only have to transfer over the unique arrays.
     # We do this (awkwardly) by hashing them into an ID dictionary.
@@ -11,11 +12,10 @@ function gridder!(grid::CuMatrix, workunits::AbstractVector{WorkUnit{T}}; makeps
     end
     CUDA.synchronize()
 
-    subgrids = CuMatrix{SMatrix{2, 2, Complex{T}, 4}}[]
-    Base.@sync for workunit in workunits
+    Base.@sync for (i, workunit) in enumerate(workunits)
         Base.@async CUDA.@sync begin
             origin = (u0=workunit.u0, v0=workunit.v0, w0=workunit.w0)
-            subgrid = CuMatrix{SMatrix{2, 2, Complex{T}, 4}}(undef, subgridspec.Nx, subgridspec.Ny)
+            subgrid = view(subgrids, :, :, i)
             uvdata = replace_storage(CuArray, workunit.data)
 
             # Perform direct IFT
@@ -27,14 +27,14 @@ function gridder!(grid::CuMatrix, workunits::AbstractVector{WorkUnit{T}}; makeps
             map!(subgrid, Aleft, subgrid, Aright) do Aleft, subgrid, Aright
                 return Aleft * subgrid * adjoint(Aright) / (subgridspec.Nx * subgridspec.Ny)
             end
-
-            push!(subgrids, subgrid)
         end
     end
 
     # Perform fft in the default stream, to avoid expensive internal allocations by fft.
     # Additionally, addsubgrid must be applied sequentially.
-    for (workunit, subgrid) in zip(workunits, subgrids)
+    for (i, workunit) in enumerate(workunits)
+        subgrid = view(subgrids, :, :, i)
+
         # Apply fft
         subgridflat = reinterpret(reshape, Complex{T}, subgrid)
         fft!(subgridflat, (2, 3))
