@@ -76,11 +76,7 @@ function partition(
         ))
     end
 
-    workunits = [workunit for workunits in values(wlayers) for workunit in workunits]
-    occupancy = [length(workunit.data) for workunit in workunits]
-    println("WorkUnits: $(length(workunits)) Min/mean/median/max occupancy: $(minimum(occupancy))/$(mean(occupancy))/$(median(occupancy))/$(maximum(occupancy))")
-
-    return workunits
+    return [workunit for workunits in values(wlayers) for workunit in workunits]
 end
 
 function addsubgrid!(

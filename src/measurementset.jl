@@ -1,4 +1,4 @@
-struct MeasurementSet <: DataStore
+struct MeasurementSet
     tbl::PyCall.PyObject
     timestart::Float64
     timestop::Float64
@@ -13,6 +13,7 @@ struct MeasurementSet <: DataStore
     ants1::Vector{Int}
     ants2::Vector{Int}
     phasecenter::NamedTuple{(:ra, :dec), Tuple{Float64, Float64}}  # radians
+    ignoreflagged::Bool
 end
 
 """
@@ -37,7 +38,7 @@ function MeasurementSet(
     chanstart::Int=0,
     chanstop::Int=0,
     autocorrelations=false,
-    flagrow=false
+    ignoreflagged=true
 )
     PyCasaTable = PyCall.pyimport("casacore.tables")
     tbl = PyCasaTable.table(path, ack=false)
@@ -50,7 +51,7 @@ function MeasurementSet(
     if !autocorrelations
         push!(conditions, "ANTENNA1 <> ANTENNA2")
     end
-    if !flagrow
+    if ignoreflagged
         push!(conditions, "not FLAG_ROW")
     end
     if length(conditions) != 0
@@ -83,6 +84,7 @@ function MeasurementSet(
         ants1,
         ants2,
         (ra=ra0, dec=dec0),
+        ignoreflagged,
     )
 end
 
@@ -123,14 +125,14 @@ function read(mset::MeasurementSet; precision::Type=Float64, datacol=nothing)
                 startrow=startrow, nrow=nbatch, blc=(chanstart, -1), trc=(chanstop, -1)
             ), (3, 2, 1))
 
-            _msetread(ch, startrow, mset.lambdas, uvw, flagrow, weight, flag, weightspectrum, data, precision)
+            _msetread(ch, startrow, mset.lambdas, uvw, flagrow, weight, flag, weightspectrum, data, precision, mset.ignoreflagged)
         end
     end
 
     return ch
 end
 
-function _msetread(ch, startrow, lambdas, uvw, flagrow, weight, flag, weightspectrum, data, ::Type{T}) where T
+function _msetread(ch, startrow, lambdas, uvw, flagrow, weight, flag, weightspectrum, data, ::Type{T}, ignoreflagged) where T
     tmpdata = zero(MMatrix{2, 2, Complex{T}, 4})
     tmpweights = zero(MMatrix{2, 2, T, 4})
 
@@ -156,6 +158,10 @@ function _msetread(ch, startrow, lambdas, uvw, flagrow, weight, flag, weightspec
                 tmpdata[idx] = d
                 tmpweights[idx] = vw
             end
+        end
+
+        if ignoreflagged && iszero(tmpweights)
+            continue
         end
 
         if w >= 0

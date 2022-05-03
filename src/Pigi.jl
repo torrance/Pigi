@@ -1,5 +1,9 @@
 module Pigi
     using CUDA
+    using DSP: conv
+    using DSP.Util: nextfastfft
+    using FITSIO: FITS
+    using Formatting
     using FFTW
     using LsqFit: curve_fit, coef
     using PyCall
@@ -13,7 +17,6 @@ module Pigi
     include("uvdatum.jl")
     include("gridspec.jl")
     include("utility.jl")
-    include("datastore.jl")
     include("measurementset.jl")
     include("partition.jl")
     include("gridder.jl")
@@ -26,4 +29,5 @@ module Pigi
     include("psf.jl")
     include("gpugridder.jl")
     include("gpudegridder.jl")
+    include("main.jl")
 end

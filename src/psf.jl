@@ -39,3 +39,13 @@ function psfclip(psf, threshold)
     r0 = r0 <= x0 - 1 ? r0 : x0 - 1
     return psf[x0 - r0:x0 + r0 - 1, y0 - r0:y0 + r0 - 1]
 end
+
+function mkpsffitted!(psf_fitted, xsigma, ysigma, pa)
+    xy0 = size(psf_fitted) .÷ 2 .+ 1
+
+    Threads.@threads for xy in CartesianIndices(psf_fitted)
+        x, y = Tuple(xy) .- xy0
+        x, y = x * cos(pa) - y * sin(pa), x * sin(pa) + y * cos(pa)
+        psf_fitted[xy] = exp(-x^2 / (2 * xsigma^2) - y^2 / (2 * ysigma^2))
+    end
+end
