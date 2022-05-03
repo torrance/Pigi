@@ -1,5 +1,4 @@
-@testset "Weighting" begin
-    precision = Float64
+@testset "Weighting ($(precision))" for precision in [Float32, Float64]
     uvdata = StructArray{Pigi.UVDatum{precision}}(undef, 0)
 
     gridspec = Pigi.GridSpec(128, 128, scaleuv=1.2)
@@ -21,7 +20,7 @@
     end
     expectednatural ./= sum(expectednatural)
 
-    weighter = Pigi.Natural(uvdata, gridspec)
+    weighter = Pigi.Natural(precision, uvdata, gridspec)
     weighteduvdata = deepcopy(uvdata)
     Pigi.applyweights!(weighteduvdata, weighter)
 
@@ -33,9 +32,9 @@
         end
     end
 
-    @test all(x -> isapprox(x[1], x[2]), zip(naturalgrid, expectednatural))
+    @test all(x -> isapprox(x[1], x[2], rtol=1e-5), zip(naturalgrid, expectednatural))
 
-    weighter = Pigi.Uniform(uvdata, gridspec)
+    weighter = Pigi.Uniform(precision, uvdata, gridspec)
     weighteduvdata = deepcopy(uvdata)
     Pigi.applyweights!(weighteduvdata, weighter)
 
@@ -49,9 +48,9 @@
 
     # Unform weighting should be all ones (or empty cells)
     norm = sum(x -> x == 0 ? 0 : 1, uniformgrid)
-    @test all(x -> x == 0 || x ≈ 1 / norm, uniformgrid)
+    @test all(x -> x == 0 || isapprox(x, 1 / norm; rtol=1e-5), uniformgrid)
 
-    weighter = Pigi.Briggs(uvdata, gridspec, 2)
+    weighter = Pigi.Briggs(precision, uvdata, gridspec, 2)
     weighteduvdata = deepcopy(uvdata)
     Pigi.applyweights!(weighteduvdata, weighter)
 
@@ -64,9 +63,9 @@
     end
 
     # High briggs numbers should tend towards uniform weighting
-    @test all(x -> isapprox(x[1], x[2], atol=1e-5), zip(naturalgrid, briggsgrid))
+    @test all(x -> isapprox(x[1], x[2], rtol=1e-2), zip(naturalgrid, briggsgrid))
 
-    weighter = Pigi.Briggs(uvdata, gridspec, 0)
+    weighter = Pigi.Briggs(precision, uvdata, gridspec, 0)
     weighteduvdata = deepcopy(uvdata)
     Pigi.applyweights!(weighteduvdata, weighter)
 

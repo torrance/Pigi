@@ -28,13 +28,13 @@ measurement set, and assume this has been set correctly by the observatory.
 
 =#
 
-abstract type ImageWeight end
+abstract type ImageWeight{T} end
 
-struct Natural{T <: AbstractFloat} <: ImageWeight
+struct Natural{T} <: ImageWeight{T}
     normfactor::SMatrix{2, 2, T, 4}
 end
 
-function Natural(uvdata::AbstractVector{UVDatum{T}}, gridspec::GridSpec) where T
+function Natural(::Type{T}, uvdata, gridspec::GridSpec) where T
     normfactor = MMatrix{2, 2, T, 4}(0, 0, 0, 0)
     for uvdatum in uvdata
         upx, vpx = lambda2px(Int, uvdatum.u, uvdatum.v, gridspec)
@@ -50,14 +50,14 @@ function (w::Natural{T})(::UVDatum{T}) where T
     return SMatrix{2, 2, T, 4}(1, 1, 1, 1) ./ w.normfactor
 end
 
-struct Uniform{T <: AbstractFloat} <: ImageWeight
+struct Uniform{T} <: ImageWeight{T}
     imageweights::Matrix{SMatrix{2, 2, T, 4}}
     gridspec::GridSpec
     normfactor::SMatrix{2, 2, T, 4}
 end
 
-function Uniform(uvdata::AbstractVector{UVDatum{T}}, gridspec::GridSpec) where T
-    griddedweights = makegriddedweights(uvdata, gridspec)
+function Uniform(::Type{T}, uvdata, gridspec::GridSpec) where T
+    griddedweights = makegriddedweights(T, uvdata, gridspec)
 
     imageweights = map(griddedweights) do W_k
         SMatrix{2, 2, T, 4}(
@@ -81,15 +81,15 @@ function (w::Uniform{T})(uvdatum::UVDatum{T}) where T
     end
 end
 
-struct Briggs{T <: AbstractFloat} <: ImageWeight
+struct Briggs{T} <: ImageWeight{T}
     imageweights::Matrix{SMatrix{2, 2, T, 4}}
     gridspec::GridSpec
     normfactor::SMatrix{2, 2, T, 4}
 end
 
-function Briggs(uvdata::AbstractVector{UVDatum{T}}, gridspec::GridSpec, robust) where T
+function Briggs(::Type{T}, uvdata, gridspec::GridSpec, robust) where T
     robust = T(robust)
-    griddedweights = makegriddedweights(uvdata, gridspec)
+    griddedweights = makegriddedweights(T, uvdata, gridspec)
 
     f2 = (5 * 10^-robust)^2 ./ (sum(x -> x.^2, griddedweights) ./ sum(griddedweights))
     imageweights = map(W_k -> 1 ./ (1 .+ W_k .* f2), griddedweights)
@@ -109,7 +109,7 @@ function (w::Briggs{T})(uvdatum::UVDatum{T}) where T
     end
 end
 
-function makegriddedweights(uvdata::AbstractVector{UVDatum{T}}, gridspec::GridSpec) where T
+function makegriddedweights(::Type{T}, uvdata, gridspec::GridSpec) where T
     griddedweights = zeros(SMatrix{2, 2, T, 4}, gridspec.Nx, gridspec.Ny)
 
     for uvdatum in uvdata
@@ -125,13 +125,13 @@ function makegriddedweights(uvdata::AbstractVector{UVDatum{T}}, gridspec::GridSp
     return griddedweights
 end
 
-function applyweights!(workunits::AbstractVector{WorkUnit{T}}, weighter::ImageWeight) where T
+function applyweights!(workunits::AbstractVector{WorkUnit{T}}, weighter::ImageWeight{T}) where T
     for workunit in workunits
         applyweights!(workunit.data, weighter)
     end
 end
 
-function applyweights!(uvdata::AbstractVector{UVDatum{T}}, weighter::ImageWeight) where T
+function applyweights!(uvdata::AbstractVector{UVDatum{T}}, weighter::ImageWeight{T}) where T
     for (i, uvd) in enumerate(uvdata)
         uvdata[i] = UVDatum{T}(
             uvd.row,
