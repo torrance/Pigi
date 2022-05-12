@@ -6,6 +6,7 @@ module Pigi
     using Formatting
     using FFTW
     using LsqFit: curve_fit, coef
+    using Polynomials: fit
     using PyCall
     using SpecialFunctions: besseli
     using StaticArrays

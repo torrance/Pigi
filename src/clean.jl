@@ -1,16 +1,17 @@
-function clean!(img, psf; gain=0.1, mgain=0.8, threshold=0., niter::Int=typemax(Int))
+function clean!(img::Array{SVector{N, T}, 2}, psf::Array{SVector{N, T}, 2}, freqs::Vector; gain=0.1, mgain=0.8, threshold=0., niter::Int=typemax(Int), degree=-1) where {N, T}
     components = similar(img)
-    fill!(components, 0)
+    fill!(components, zero(SVector{N, T}))
 
     imgd = CuArray(img)
     psfd = CuArray(psf)
 
-    threshold = max((1 - mgain) * maximum(abs, img), threshold)
+    threshold = max((1 - mgain) * maximum(abs ∘ sum, img) / N, threshold)
     println("Cleaning to threshold: $(threshold)")
 
     iter = 1
     while iter <= niter
         idx, val, absval = findabsmax(imgd)
+        absval /= N
 
         if absval < threshold
             println("\nThreshold limit reached ($(absval) < $(threshold))")
@@ -18,15 +19,27 @@ function clean!(img, psf; gain=0.1, mgain=0.8, threshold=0., niter::Int=typemax(
         end
 
         if iter == 1 || mod(iter, 100) == 0
-            print("\rClean iteration $(iter) found peak $(val) at $(idx)")
+            print("\rClean iteration $(iter) found peak $(sum(val) / N) at $(idx)")
+        end
+
+        # If degree == 0, it's just the mean of each channel
+        if degree == 0
+            val = gain * SVector{N, T}(mean(s), mean(s), mean(s), mean(s))
+        # If the degree is greater than or equal to the number of data points, then we
+        # are overfitting. So just return the channel values. degree < 0 is treated the same.
+        elseif degree >= N || degree < 0
+            val = gain * val
+        else
+            p = fit(freqs, val, degree)
+            val = SVector{N, T}(gain * p.(freqs))
         end
 
         # Add the component to the component map
         xpeak, ypeak = Tuple(idx)
-        components[xpeak, ypeak] += gain * val
+        components[xpeak, ypeak] += val
 
         # Subtract out the psf
-        subtractpsf(imgd, psfd, xpeak, ypeak, gain * val)
+        subtractpsf(imgd, psfd, xpeak, ypeak, val)
 
         iter += 1
     end
@@ -38,9 +51,9 @@ function clean!(img, psf; gain=0.1, mgain=0.8, threshold=0., niter::Int=typemax(
     return components, iter
 end
 
-function findabsmax(domain::AbstractArray{T}) where T
+function findabsmax(domain::AbstractArray{SVector{N, T}, 2}) where {N, T}
     function f(val, idx)
-        return idx, val, abs(val)
+        return idx, val, (abs ∘ sum)(val)
     end
 
     function op(one, two)
@@ -51,7 +64,7 @@ function findabsmax(domain::AbstractArray{T}) where T
     idxs = CartesianIndices(domain)
     return mapreduce(
         f, op, domain, idxs;
-        init=(idxs[1], zero(T), zero(typeof(abs(zero(T)))))
+        init=(idxs[1], zero(SVector{N, T}), zero(typeof(abs(zero(T)))))
     )
 end
 
@@ -91,5 +104,5 @@ function subtractpsf(img, psf, xpeak, ypeak, f)
         yhigh = size(img, 2)
     end
 
-    @. img[xlow:xhigh, ylow:yhigh] -= f * psf[mlow:mhigh, nlow:nhigh]
+    @. img[xlow:xhigh, ylow:yhigh] -= broadcast(.*, (f,), psf[mlow:mhigh, nlow:nhigh])
 end
