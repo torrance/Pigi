@@ -60,3 +60,17 @@ function fftshift!(arr::CuMatrix)
     blocks = cld(Nx * shifty, threads)
     kernel(arr, shiftx, shifty, Nx; threads, blocks)
 end
+
+function permute2vector(input::NTuple{N, Array{T, D}}) where {N, T, D}
+    output = Array{SVector{N, T}, D}(undef, size(input[1]))
+
+    for (i, vals) in enumerate(zip(input...))
+        output[i] = vals
+    end
+
+    return output
+end
+
+function permute2vector(input)
+    return permute2vector(tuple(input...))
+end
