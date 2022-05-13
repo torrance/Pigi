@@ -5,6 +5,7 @@ struct MeasurementSet
     chanstart::Int
     chanstop::Int
     nrows::Int
+    nchans::Int
     freqs::Vector{Float64}
     lambdas::Vector{Float64}
     times::Vector{Float64}
@@ -77,6 +78,7 @@ function MeasurementSet(
         chanstart,
         chanstop,
         tbl.nrows(),
+        length(freqs),
         freqs,
         lambdas,
         times,

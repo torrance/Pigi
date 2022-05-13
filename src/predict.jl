@@ -1,6 +1,6 @@
 function predict!(
     workunits::Vector{WorkUnit{T}},
-    img::Matrix{SMatrix{2, 2, Complex{T}, 4}},
+    img::AbstractMatrix{SMatrix{2, 2, Complex{T}, 4}},
     gridspec::GridSpec,
     taper,
     ::Type{wrapper};

@@ -13,6 +13,7 @@ let  # Global variables can't be typed in Julia < 1.7, so as workaorund we enclo
         @argumentrequired Symbol weight "--weight"
         @arghelp "The weighting scheme applied to gridded visibilities [uniform | natural | briggs]"
         @argumentdefault Float64 0 briggsweight "--briggs"
+        @argumentdefault Int 1 channelsout "--channelsout"
         @argumentdefault Int 15 subgridpadding "--subgridpadding"
         @argumentdefault Int 96 subgridsize "--subgridsize"
         @argumentdefault Float64 0.8 mgain "--mgain"
@@ -30,9 +31,20 @@ let  # Global variables can't be typed in Julia < 1.7, so as workaorund we enclo
 
     if weight ∉ (:uniform, :natural, :briggs)
         println(stderr, "--weight $(weight) is not valid. Options: uniform | natural | briggs")
+        exit(1)
     end
 
-    using Pigi
+    if channelsout <= 0
+        println(stderr, "--channelsout must be at least 1")
+        exit(1)
+    end
+
+    print("Importing Pigi... ")
+    elapsed = @elapsed Base.@sync begin
+        @everywhere using Distributed
+        @everywhere using Pigi
+    end
+    Pigi.printfmtln("done. Elapsed {:.2f} s", elapsed)
 
     # Set wrapper and precision based on CPU v GPU precessing
     wrapper = gpu ? Pigi.CuArray : Array
@@ -41,6 +53,6 @@ let  # Global variables can't be typed in Julia < 1.7, so as workaorund we enclo
     Pigi.main(;
         imgsize, subgridpadding, mgain, name, wrapper, miter, autothreshold, wstep,
         imgthreshold, taperthreshold, msetname, scale, chanstart, chanstop,
-        subgridsize, precision, weight, briggsweight
+        subgridsize, precision, weight, briggsweight, channelsout
     )
 end

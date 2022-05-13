@@ -1,5 +1,6 @@
 module Pigi
     using CUDA
+    using Distributed
     using DSP: conv
     using DSP.Util: nextfastfft
     using FITSIO: FITS
@@ -30,5 +31,6 @@ module Pigi
     include("psf.jl")
     include("gpugridder.jl")
     include("gpudegridder.jl")
+    include("distributed.jl")
     include("main.jl")
 end
