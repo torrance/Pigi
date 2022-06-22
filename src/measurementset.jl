@@ -15,6 +15,7 @@ struct MeasurementSet
     ants2::Vector{Int}
     phasecenter::NTuple{2, Float64}  # radians
     ignoreflagged::Bool
+    delays::Vector{Integer}
 end
 
 """
@@ -71,6 +72,9 @@ function MeasurementSet(
     ants1 = tbl.getcol("ANTENNA1")
     ants2 = tbl.getcol("ANTENNA2")
 
+    # Get MWA phase delays
+    delays = tbl.MWA_TILE_POINTING.getcell("DELAYS", 0)
+
     return MeasurementSet(
         tbl,
         timestart,
@@ -87,6 +91,7 @@ function MeasurementSet(
         ants2,
         (ra0, dec0),
         ignoreflagged,
+        delays,
     )
 end
 
