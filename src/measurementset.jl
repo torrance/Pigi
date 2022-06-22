@@ -13,7 +13,7 @@ struct MeasurementSet
     # antennas::Dict{Int, Tuple{String, @NamedTuple{x::Float64, y::Float64, z::Float64}}}
     ants1::Vector{Int}
     ants2::Vector{Int}
-    phasecenter::NamedTuple{(:ra, :dec), Tuple{Float64, Float64}}  # radians
+    phasecenter::NTuple{2, Float64}  # radians
     ignoreflagged::Bool
 end
 
@@ -61,7 +61,7 @@ function MeasurementSet(
 
     freqs = tbl.SPECTRAL_WINDOW.getcellslice("CHAN_FREQ", 0, chanstart - 1, chanstop - 1)
     lambdas = c ./ freqs
-    ra0, dec0 = deg2rad.(tbl.FIELD.getcell("PHASE_DIR", 0)[1, :])
+    ra0, dec0 = tbl.FIELD.getcell("PHASE_DIR", 0)[1, :]
 
     # Get time information
     times = tbl.getcol("TIME")
@@ -85,7 +85,7 @@ function MeasurementSet(
         timesteps,
         ants1,
         ants2,
-        (ra=ra0, dec=dec0),
+        (ra0, dec0),
         ignoreflagged,
     )
 end

@@ -32,5 +32,6 @@ module Pigi
     include("gpugridder.jl")
     include("gpudegridder.jl")
     include("distributed.jl")
+    include("coordinates.jl")
     include("main.jl")
 end
