@@ -33,5 +33,6 @@ module Pigi
     include("gpudegridder.jl")
     include("distributed.jl")
     include("coordinates.jl")
+    include("mwabeam.jl")
     include("main.jl")
 end
