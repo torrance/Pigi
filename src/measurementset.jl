@@ -175,11 +175,15 @@ function _msetread(ch, startrow, lambdas, uvw, flagrow, weight, flag, weightspec
 end
 
 @inline function time(mset::MeasurementSet, uvdatum::UVDatum)
-    return mset.times[uvdatum.row]
+    return mset.times[uvdatum.row] / 86400  # division by 86400 converts MJD seconds to MJD days
 end
 
 @inline function lambda(mset::MeasurementSet, uvdatum::UVDatum)
     return mset.lambdas[uvdatum.chan]
+end
+
+@inline function freq(mset::MeasurementSet, uvdatum::UVDatum)
+    return mset.freqs[uvdatum.chan]
 end
 
 @inline function ant1(mset::MeasurementSet, uvdatum::UVDatum)
@@ -188,4 +192,26 @@ end
 
 @inline function ant2(mset::MeasurementSet, uvdatum::UVDatum)
     return mset.ants2[uvdatum.row]
+end
+
+function meanfreq(mset::MeasurementSet, uvdata)
+    totalweight = 0.
+    totalfreq = 0.
+    for uvdatum in uvdata
+        weight = sum(uvdatum.weights)
+        totalweight += weight
+        totalfreq += weight * freq(mset, uvdatum)
+    end
+    return totalfreq / totalweight
+end
+
+function meantime(mset::MeasurementSet, uvdata)
+    totalweight = 0.
+    totaltime = 0.
+    for uvdatum in uvdata
+        weight = sum(uvdatum.weights)
+        totalweight += weight
+        totaltime += weight * time(mset, uvdatum)
+    end
+    return totaltime / totalweight
 end
