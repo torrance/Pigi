@@ -75,15 +75,20 @@ function permute2vector(input)
     return permute2vector(tuple(input...))
 end
 
-function resample(img::AbstractArray, fromgrid::GridSpec, togrid::GridSpec)
+function resample(img::AbstractArray{Complex{T}}, fromgrid::GridSpec, togrid::GridSpec) where {T <: Real}
     @assert fromgrid.scaleuv == togrid.scaleuv
 
     Img = fftshift(ifft(img))
-    ImgResampled = zeros(ComplexF64, togrid.Nx, togrid.Ny)
+    ImgResampled = zeros(Complex{T}, togrid.Nx, togrid.Ny)
 
     u0, v0 = togrid.Nx ÷ 2 + 1, togrid.Ny ÷ 2 + 1
     uwidth, vwidth = fromgrid.Nx ÷ 2, fromgrid.Ny ÷ 2
 
     ImgResampled[u0 - uwidth:u0 + uwidth - 1, v0 - vwidth:v0 + vwidth - 1] .= Img
     return fft(ifftshift(ImgResampled))
+end
+
+function resample(img::AbstractArray{T}, fromgrid::GridSpec, togrid::GridSpec) where {T <: Real}
+    img = complex(img)
+    return real.(resample(img::AbstractArray{Complex{T}}, fromgrid::GridSpec, togrid::GridSpec))
 end

@@ -21,15 +21,14 @@
 
     Aleft = ones(SMatrix{2, 2, Complex{precision}, 4}, 128, 128)
     Aright = ones(SMatrix{2, 2, Complex{precision}, 4}, 128, 128)
-
-    taper = Pigi.mkkbtaper(subgridspec)
+    subtaper = ones(precision, 128, 128)
 
     workunit = Pigi.WorkUnit{precision}(
         65, 65, 0, 0, 0, subgridspec, Aleft, Aright, uvdata
     )
 
     idggrid = zeros(SMatrix{2, 2, Complex{precision}, 4}, 128, 128)
-    Pigi.gridder!(idggrid, [workunit])
+    Pigi.gridder!(idggrid, [workunit], subtaper)
     idggrid = reinterpret(reshape, Complex{precision}, idggrid)
 
     @test maximum(abs.(visgrid[:, :, :] .- idggrid[:, :, :])) < 1e-12
@@ -82,17 +81,17 @@ end
     Aleft = ones(SMatrix{2, 2, Complex{precision}, 4}, 128, 128)
     Aright = ones(SMatrix{2, 2, Complex{precision}, 4}, 128, 128)
 
+    subtaper = ones(precision, 128, 128)
     lms = fftfreq(subgridspec.Nx, 1 / subgridspec.scaleuv)
     for (mpx, m) in enumerate(lms), (lpx, l) in enumerate(lms)
-        Aleft[lpx, mpx] *= sqrt(taper(l, m))
-        Aright[lpx, mpx] *= sqrt(taper(l, m))
+        subtaper[lpx, mpx] *= taper(l, m)
     end
 
     workunit = Pigi.WorkUnit{precision}(
         65, 65, 0, 0, 0, subgridspec, Aleft, Aright, uvdata
     )
     idggrid = zeros(SMatrix{2, 2, Complex{precision}, 4}, 128, 128)
-    Pigi.gridder!(idggrid, [workunit])
+    Pigi.gridder!(idggrid, [workunit], subtaper)
     idggrid = reinterpret(reshape, Complex{precision}, idggrid)
 
     @test maximum(abs.(expected .- idggrid)) < 1e-10
@@ -139,32 +138,23 @@ end
     end
     println("Done.")
 
-    taper = Pigi.mkkbtaper(subgridspec)
+    subtaper = Pigi.mkkbtaper(subgridspec, precision)
 
     # Calculate expected output
     expected = zeros(SMatrix{2, 2, Complex{precision}, 4}, subgridspec.Nx, subgridspec.Ny)
     @time idft!(expected, uvdata, subgridspec, precision(length(uvdata)))
+    expected .*= subtaper
     expected = reinterpret(reshape, Complex{precision}, expected)
-    for mpx in axes(expected, 3), lpx in axes(expected, 2)
-        l, m = Pigi.px2sky(lpx, mpx, subgridspec)
-        expected[:, lpx, mpx] *= taper(l, m)
-    end
 
     # Now run IDG gridding
     Aleft = ones(SMatrix{2, 2, Complex{precision}, 4}, subgridspec.Nx, subgridspec.Ny)
     Aright = ones(SMatrix{2, 2, Complex{precision}, 4}, subgridspec.Nx, subgridspec.Ny)
 
-    lms = fftfreq(subgridspec.Nx, 1 / subgridspec.scaleuv)
-    for (mpx, m) in enumerate(lms), (lpx, l) in enumerate(lms)
-        Aleft[lpx, mpx] *= sqrt(taper(l, m))
-        Aright[lpx, mpx] *= sqrt(taper(l, m))
-    end
-
     workunit = Pigi.WorkUnit{precision}(
         65, 65, 0, 0, 0, subgridspec, Aleft, Aright, uvdata
     )
     idggrid = zeros(SMatrix{2, 2, Complex{precision}, 4}, 128, 128)
-    Pigi.gridder!(idggrid, [workunit])
+    Pigi.gridder!(idggrid, [workunit], ifftshift(subtaper))
     idggrid = reinterpret(reshape, Complex{precision}, idggrid)
     idggrid = fftshift(ifft(fftshift(idggrid, (2, 3)), (2, 3)), (2, 3)) * subgridspec.Nx * subgridspec.Ny / length(uvdata)
 

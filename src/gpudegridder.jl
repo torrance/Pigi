@@ -1,4 +1,5 @@
-function degridder!(workunits::AbstractVector{WorkUnit{T}}, grid::CuMatrix, degridop) where T
+function degridder!(workunits::AbstractVector{WorkUnit{T}}, grid::CuMatrix, subtaper::CuMatrix{T}, degridop) where T
+
     # A terms are shared amongst work units, so we only have to transfer over the unique arrays.
     # We do this (awkwardly) by hashing them into an ID dictionary.
     Aterms = IdDict{AbstractMatrix{SMatrix{2, 2, Complex{T}, 4}}, CuMatrix{SMatrix{2, 2, Complex{T}, 4}}}()
@@ -23,8 +24,8 @@ function degridder!(workunits::AbstractVector{WorkUnit{T}}, grid::CuMatrix, degr
             # Apply A terms
             Aleft = Aterms[workunit.Aleft]
             Aright = Aterms[workunit.Aright]
-            map!(subgrid, Aleft, subgrid, Aright) do Aleft, subgrid, Aright
-                return Aleft * subgrid * adjoint(Aright)
+            map!(subgrid, Aleft, subgrid, Aright, subtaper) do Aleft, subgrid, Aright, t
+                return Aleft * subgrid * adjoint(Aright) * t
             end
 
             uvdata = (

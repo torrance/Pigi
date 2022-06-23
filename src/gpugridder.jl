@@ -1,4 +1,4 @@
-function gridder!(grid::CuMatrix, workunits::AbstractVector{WorkUnit{T}}; makepsf::Bool=false) where T
+function gridder!(grid::CuMatrix, workunits::AbstractVector{WorkUnit{T}}, subtaper::CuMatrix{T}; makepsf::Bool=false) where T
     subgridspec = workunits[1].subgridspec
     subgrids = CuArray{SMatrix{2, 2, Complex{T}, 4}, 3}(undef, subgridspec.Nx, subgridspec.Ny, length(workunits))
 
@@ -24,8 +24,8 @@ function gridder!(grid::CuMatrix, workunits::AbstractVector{WorkUnit{T}}; makeps
             # Apply A terms (and normalise prior to fft)
             Aleft = Aterms[workunit.Aleft]
             Aright = Aterms[workunit.Aright]
-            map!(subgrid, Aleft, subgrid, Aright) do Aleft, subgrid, Aright
-                return Aleft * subgrid * adjoint(Aright) / (subgridspec.Nx * subgridspec.Ny)
+            map!(subgrid, Aleft, subgrid, Aright, subtaper) do Aleft, subgrid, Aright, t
+                return Aleft * subgrid * adjoint(Aright) * t / (subgridspec.Nx * subgridspec.Ny)
             end
         end
     end

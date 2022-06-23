@@ -12,12 +12,13 @@
     end
 
     Aleft = Aright = ones(SMatrix{2, 2, Complex{precision}, 4}, 128, 128)
+    subtaper = ones(precision, 128, 128)
 
     cpuworkunit = Pigi.WorkUnit(0, 0, precision(0), precision(0), precision(0), subgridspec, Aleft, Aright, uvdata)
     gpuworkunit = deepcopy(cpuworkunit)
 
-    Pigi.degridder!([gpuworkunit], CuArray(visgrid), Pigi.degridop_replace)
-    Pigi.degridder!([cpuworkunit], visgrid, Pigi.degridop_replace)
+    Pigi.degridder!([gpuworkunit], CuArray(visgrid), CuArray(subtaper), Pigi.degridop_replace)
+    Pigi.degridder!([cpuworkunit], visgrid, subtaper, Pigi.degridop_replace)
 
     @test all(isapprox(x.data, y.data; atol) for (x, y) in zip(gpuworkunit.data, cpuworkunit.data))
 end

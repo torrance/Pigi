@@ -1,14 +1,16 @@
-function gridder!(grid::AbstractMatrix, workunits::AbstractVector{WorkUnit{T}}; makepsf::Bool=false) where T
+function gridder!(grid::AbstractMatrix, workunits::AbstractVector{WorkUnit{T}}, subtaper::Matrix{T}; makepsf::Bool=false) where T
     subgridspec = workunits[1].subgridspec
     subgrid = Matrix{SMatrix{2, 2, Complex{T}, 4}}(undef, subgridspec.Nx, subgridspec.Ny)
 
     for workunit in workunits
         fill!(subgrid, zero(SMatrix{2, 2, Complex{T}, 4}))
         dift!(subgrid, workunit, Val(makepsf))
+        map!(subgrid, workunit.Aleft, subgrid, workunit.Aright, subtaper) do Aleft, subgrid, Aright, t
+            return Aleft * subgrid * adjoint(Aright) * t / (subgridspec.Nx * subgridspec.Ny)
+        end
 
         subgridflat = reinterpret(reshape, Complex{T}, subgrid)
         fft!(subgridflat, (2, 3))
-        subgrid ./= (workunit.subgridspec.Nx * workunit.subgridspec.Ny)
         fftshift!(subgrid)
 
         addsubgrid!(grid, subgrid, workunit)
@@ -35,8 +37,5 @@ function dift!(subgrid::Matrix{SMatrix{2, 2, Complex{T}, 4}}, workunit::WorkUnit
                 subgrid[lpx, mpx] += uvdata.weights[i] .* uvdata.data[i] * exp(phase)
             end
         end
-        subgrid[lpx, mpx] = (
-            workunit.Aleft[lpx, mpx] * subgrid[lpx, mpx] * adjoint(workunit.Aright[lpx, mpx])
-        )
     end
 end

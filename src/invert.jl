@@ -1,4 +1,4 @@
-function invert(workunits::Vector{WorkUnit{T}}, gridspec::GridSpec, taper, ::Type{wrapper}; makepsf=false) where {T, wrapper}
+function invert(workunits::Vector{WorkUnit{T}}, gridspec::GridSpec, taper::Matrix{T}, subtaper::Matrix{T}, ::Type{wrapper}; makepsf=false) where {T, wrapper}
     t_grid, t_postprocess = 0., 0.
 
     # Create the fftplan just once, for a slight performance win.
@@ -14,13 +14,16 @@ function invert(workunits::Vector{WorkUnit{T}}, gridspec::GridSpec, taper, ::Typ
     wlayerd = wrapper{SMatrix{2, 2, Complex{T}, 4}}(undef, gridspec.Nx, gridspec.Ny)
     wlayerdflat = reinterpret(reshape, Complex{T}, wlayerd)
 
+    # Use standard ordering for taper
+    subtaper = wrapper(ifftshift(subtaper))
+
     for w0 in unique(wu.w0 for wu in workunits)
         println("Processing w=$(w0) layer...")
 
         t_grid += @elapsed CUDA.@sync begin
             fill!(wlayerd, zero(SMatrix{2, 2, Complex{T}, 4}))
             wworkunits = [wu for wu in workunits if wu.w0 == w0]
-            gridder!(wlayerd, wworkunits; makepsf)
+            gridder!(wlayerd, wworkunits, subtaper; makepsf)
         end
 
         t_postprocess += @elapsed begin
@@ -45,7 +48,7 @@ function invert(workunits::Vector{WorkUnit{T}}, gridspec::GridSpec, taper, ::Typ
 
     # Our final image still has a taper applied, time to remove it.
     println("Removing taper...")
-    @time removetaper!(img, gridspec, taper)
+    @time img ./= taper
 
     println("Inversion complete")
     return img

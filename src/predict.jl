@@ -2,37 +2,27 @@ function predict!(
     workunits::Vector{WorkUnit{T}},
     img::AbstractMatrix{SMatrix{2, 2, Complex{T}, 4}},
     gridspec::GridSpec,
-    taper,
+    taper::Matrix{T},
+    subtaper::Matrix{T},
     ::Type{wrapper};
     degridop=degridop_replace
 ) where {T, wrapper}
-    # To avoid unnecessary fftshifts, we now move to 'standard ordering' and
-    # do a final fftshift on each wlayer.
-    img = ifftshift(img)
-    ls = fftfreq(gridspec.Nx, 1 / gridspec.scaleuv)
-    ms = fftfreq(gridspec.Ny, 1 / gridspec.scaleuv)
-
     # Inverse tapering
-    println("Applying taper...")
-    @time Threads.@threads for (mpx, m) in collect(enumerate(ms))
-        for (lpx, l) in enumerate(ls)
-            # The prediction map is often sparse, so skip exhaustive application
-            # of taper.
-            if iszero(img[lpx, mpx])
-                continue
-            end
-
-            tlm = taper(l, m)
-            if iszero(tlm)
-                img[lpx, mpx] = zero(SMatrix{2, 2, Complex{T}, 4})
-            else
-                img[lpx, mpx] /= tlm
-            end
+    img = map(img, taper) do val, t
+        if iszero(t)
+            return zero(val)
+        else
+            return val / t
         end
     end
 
-    lsd = wrapper(ls)
-    msd = wrapper(ms)
+    # To avoid unnecessary fftshifts, we now move to 'standard ordering' and
+    # do a final fftshift on each wlayer.
+    fftshift!(img)
+    subtaper = wrapper(ifftshift(subtaper))
+
+    ls = wrapper(fftfreq(gridspec.Nx, 1 / gridspec.scaleuv))
+    ms = wrapper(fftfreq(gridspec.Ny, 1 / gridspec.scaleuv))
 
     wlayerd = wrapper{SMatrix{2, 2, Complex{T}, 4}, 2}(undef, gridspec.Nx, gridspec.Ny)
     wlayerdflat = reinterpret(reshape, Complex{T}, wlayerd)
@@ -47,7 +37,7 @@ function predict!(
             # w-layer decorrection
             map!(wlayerd, wlayerd, CartesianIndices(wlayerd)) do val, idx
                 lpx, mpx = Tuple(idx)
-                l, m = lsd[lpx], msd[mpx]
+                l, m = ls[lpx], ms[mpx]
                 return val * exp(-2π * 1im * w0 * ndash(l, m))
             end
 
@@ -60,7 +50,7 @@ function predict!(
 
         t_degrid += @elapsed CUDA.@sync begin
             wworkunits = [wu for wu in workunits if wu.w0 == w0]
-            Pigi.degridder!(wworkunits, wlayerd, degridop)
+            Pigi.degridder!(wworkunits, wlayerd, subtaper, degridop)
         end
     end
     println("Elapsed degridding: $(t_degrid) Elapsed w-layer pre-processing: $(t_preprocess)")

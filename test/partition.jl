@@ -15,7 +15,7 @@
     padding = 8
     wstep = 1
 
-    workunits = Pigi.partition(uvdata, gridspec, subgridspec, padding, wstep, (l, m) -> 1)
+    workunits = Pigi.partition(uvdata, gridspec, subgridspec, padding, wstep)
     workunit = workunits[1]
 
     @test workunit.u0px == 71

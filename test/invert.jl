@@ -46,13 +46,14 @@
 
     subgridspec = Pigi.GridSpec(96, 96, scaleuv=paddedgridspec.scaleuv)
 
-    weighter = Pigi.Natural(uvdata, paddedgridspec)
+    weighter = Pigi.Natural(precision, uvdata, paddedgridspec)
 
-    taper = Pigi.mkkbtaper(paddedgridspec, threshold=vtruncate)
+    subtaper = Pigi.mkkbtaper(subgridspec, precision, threshold=vtruncate)
+    taper = Pigi.resample(subtaper, subgridspec, paddedgridspec)
 
-    workunits = Pigi.partition(uvdata, paddedgridspec, subgridspec, padding, wstep, taper)
+    workunits = Pigi.partition(uvdata, paddedgridspec, subgridspec, padding, wstep)
     Pigi.applyweights!(workunits, weighter)
-    img = Pigi.invert(workunits, paddedgridspec, taper, wrapper)
+    img = Pigi.invert(workunits, paddedgridspec, taper, subtaper, wrapper)
 
     img = img[1 + masterpadding:end - masterpadding, 1 + masterpadding:end - masterpadding]
 

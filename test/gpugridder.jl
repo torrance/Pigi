@@ -1,12 +1,8 @@
 @testset "GPU Gridding" for (precision, atol) in [(Float32, 1e-5), (Float64, 1e-8)]
     subgridspec = Pigi.GridSpec(96, 96, scaleuv=1)
 
-    taper = Pigi.mkkbtaper(subgridspec)
+    subtaper = Pigi.mkkbtaper(subgridspec, precision)
     Aleft = Aright = ones(SMatrix{2, 2, Complex{precision}, 4}, subgridspec.Nx, subgridspec.Ny)
-    lms = fftfreq(subgridspec.Nx, 1 / subgridspec.scaleuv)
-    for (mpx, m) in enumerate(lms), (lpx, l) in enumerate(lms)
-        Aleft[lpx, mpx] *= sqrt(taper(l, m))
-    end
 
     uvdata = StructVector{Pigi.UVDatum{precision}}(undef, 0)
     for u in -20:20, v in -20:20
@@ -22,18 +18,18 @@
     cpusubgrid = zeros(SMatrix{2, 2, Complex{precision}, 4}, 96, 96)
     gpusubgrid = CuArray(cpusubgrid)
 
-    Pigi.gridder!(cpusubgrid, [workunit]; makepsf=true)
-    Pigi.gridder!(gpusubgrid, [workunit]; makepsf=true)
+    Pigi.gridder!(cpusubgrid, [workunit], subtaper; makepsf=true)
+    Pigi.gridder!(gpusubgrid, [workunit], CuArray(subtaper); makepsf=true)
 
     @test all(x -> all(isfinite, x), cpusubgrid)
-    @test all(x -> all(isfinite, x), gpusubgrid)
+    @test all(x -> all(isfinite, x), CuArray(gpusubgrid))
     @test maximum(x -> sum(abs, x[1] - x[2]), zip(Array(gpusubgrid), cpusubgrid)) < atol
 
     cpusubgrid = zeros(SMatrix{2, 2, Complex{precision}, 4}, 96, 96)
     gpusubgrid = CuArray(cpusubgrid)
 
-    Pigi.gridder!(cpusubgrid, [workunit])
-    Pigi.gridder!(gpusubgrid, [workunit])
+    Pigi.gridder!(cpusubgrid, [workunit], subtaper)
+    Pigi.gridder!(gpusubgrid, [workunit], CuArray(subtaper))
     @test maximum(x -> sum(abs, x[1] - x[2]), zip(Array(gpusubgrid), cpusubgrid)) < atol
 
     # gpusubgrid = [real(x[1]) for x in Array(gpusubgrid)]

@@ -1,4 +1,4 @@
-@testset "Prediction: $(wrapper)" for wrapper in [Array, CuArray]
+@testset "Prediction: $(wrapper)" for wrapper in [CuArray]
     precision = Float64
     gridspec = Pigi.GridSpec(2000, 2000, scaleuv=1)
 
@@ -17,11 +17,12 @@
     end
 
     # Predict using IDG
-    taper = Pigi.mkkbtaper(gridspec, threshold=0)
-    padding = 15
     subgridspec = Pigi.GridSpec(64, 64, scaleuv=gridspec.scaleuv)
-    workunits = Pigi.partition(uvdata, gridspec, subgridspec, padding, 25, taper)
-    @time Pigi.predict!(workunits, skymap, gridspec, taper, wrapper)
+    subtaper = Pigi.mkkbtaper(subgridspec, precision, threshold=0)
+    taper = Pigi.resample(subtaper, subgridspec, gridspec)
+    padding = 15
+    workunits = Pigi.partition(uvdata, gridspec, subgridspec, padding, 25)
+    @time Pigi.predict!(workunits, skymap, gridspec, taper, subtaper, wrapper)
 
     uvdata = StructVector{Pigi.UVDatum{precision}}(undef, 0)
     for workunit in workunits

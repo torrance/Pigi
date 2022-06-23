@@ -1,4 +1,4 @@
-function degridder!(workunits::AbstractVector{WorkUnit{T}}, grid::AbstractMatrix, degridop) where T
+function degridder!(workunits::AbstractVector{WorkUnit{T}}, grid::AbstractMatrix, subtaper::Matrix{T}, degridop) where T
     for workunit in workunits
         subgrid = extractsubgrid(grid, workunit)
 
@@ -6,8 +6,8 @@ function degridder!(workunits::AbstractVector{WorkUnit{T}}, grid::AbstractMatrix
         subgridflat = reinterpret(reshape, Complex{T}, subgrid)
         ifft!(subgridflat, (2, 3))
 
-        map!(subgrid, workunit.Aleft, subgrid, workunit.Aright) do Aleft, subgrid, Aright
-            return Aleft * subgrid * adjoint(Aright)
+        map!(subgrid, workunit.Aleft, subgrid, workunit.Aright, subtaper) do Aleft, subgrid, Aright, t
+            return Aleft * subgrid * adjoint(Aright) * t
         end
         dft!(workunit, subgrid, degridop)
     end
