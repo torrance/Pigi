@@ -19,6 +19,7 @@ module Pigi
     include("uvdatum.jl")
     include("gridspec.jl")
     include("utility.jl")
+    include("stokes.jl")
     include("measurementset.jl")
     include("partition.jl")
     include("gridder.jl")
