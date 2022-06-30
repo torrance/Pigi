@@ -60,3 +60,84 @@
 
     # plt.show()
 end
+
+@testset "Prediction with Aterms" begin
+    precision = Float64
+    Nbaselines = 10000
+    gridspec = Pigi.GridSpec(2000, 2000, scalelm=deg2rad(1/60))
+    subgridspec = Pigi.GridSpec(128, 128, scaleuv=gridspec.scaleuv)
+
+    # Set up original sky map
+    skymap = zeros(SMatrix{2, 2, Complex{precision}, 4}, 2000, 2000)
+    for coord in rand(CartesianIndices((500:1500, 500:1500)), 10)
+        skymap[coord] = rand() * one(SMatrix{2, 2, ComplexF64, 4})
+    end
+
+    # Create Aterms
+    sigmalm = 400 * gridspec.scalelm
+    subAbeam = map(CartesianIndices((-64:63, -64:63))) do xy
+        r = hypot(Tuple(xy)...) * subgridspec.scalelm
+        θ = π / 8
+        return SMatrix{2, 2, Complex{precision}, 4}(cos(θ), sin(θ), -sin(θ), cos(θ)) * sqrt(exp(-r^2 / (2 * sigmalm^2)))
+    end
+    Abeam = map(CartesianIndices((-1000:999, -1000:999))) do xy
+        r = hypot(Tuple(xy)...) * gridspec.scalelm
+        θ = π / 8
+        return SMatrix{2, 2, Complex{precision}, 4}(cos(θ), sin(θ), -sin(θ), cos(θ)) * sqrt(exp(-r^2 / (2 * sigmalm^2)))
+    end
+
+    # Create UVData by direct FT
+    uvdata = Pigi.UVDatum{precision}[]
+    for (u, v, w) in eachcol(rand(3, Nbaselines))
+        u, v = Pigi.px2lambda(u * 1000 + 500, v * 1000 + 500, gridspec)
+        w = 200 * w
+        push!(uvdata, Pigi.UVDatum{precision}(1, 1, u, v, w, (1, 1, 1, 1) ./ Nbaselines, (0, 0, 0, 0)))
+    end
+    uvdata = StructArray(uvdata)
+
+    # Predict using IDG
+    wstep = 50
+    padding = 15
+    subtaper = Pigi.mkkbtaper(subgridspec, precision, threshold=1e-6)
+    taper = Pigi.resample(subtaper, subgridspec, gridspec)
+    workunits = Pigi.partition(uvdata, gridspec, subgridspec, padding, wstep, subAbeam)
+    Pigi.predict!(workunits, skymap, gridspec, taper, subtaper, CuArray)
+
+    uvdata = StructVector{Pigi.UVDatum{precision}}(undef, 0)
+    for workunit in workunits
+        append!(uvdata, workunit.data)
+    end
+
+    # Calcuate expected by direct FT
+    expected = deepcopy(uvdata)
+    map!(skymap, Abeam, skymap) do J, val
+        return J * val * J'
+    end
+    dft!(expected, skymap, gridspec)
+
+    @test maximum(sum(abs, x[1].data - x[2].data) for x in zip(uvdata, expected)) < 1e-4
+
+    # # Plot images
+    # expectedmap = zeros(SMatrix{2, 2, Complex{precision}, 4}, gridspec.Nx, gridspec.Ny)
+    # idft!(expectedmap, expected, gridspec, precision(length(expected)))
+
+    # img = zeros(SMatrix{2, 2, Complex{precision}, 4}, gridspec.Nx, gridspec.Ny)
+    # idft!(img, uvdata, gridspec, precision(length(uvdata)))
+
+    # img = Pigi.stokesI(img)
+    # expectedmap = Pigi.stokesI(expectedmap)
+
+    # plt.subplot(1, 3, 1)
+    # plt.imshow(img)
+    # plt.colorbar()
+
+    # plt.subplot(1, 3, 2)
+    # plt.imshow(expectedmap)
+    # plt.colorbar()
+
+    # plt.subplot(1, 3, 3)
+    # plt.imshow(img - expectedmap)
+    # plt.colorbar()
+
+    # plt.show()
+end
