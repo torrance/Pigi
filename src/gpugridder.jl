@@ -4,10 +4,10 @@ function gridder!(grid::CuMatrix, workunits::AbstractVector{WorkUnit{T}}, subtap
 
     # A terms are shared amongst work units, so we only have to transfer over the unique arrays.
     # We do this (awkwardly) by hashing them into an ID dictionary.
-    Aterms = IdDict{AbstractMatrix{SMatrix{2, 2, Complex{T}, 4}}, CuMatrix{SMatrix{2, 2, Complex{T}, 4}}}()
+    invAterms = IdDict{AbstractMatrix{SMatrix{2, 2, Complex{T}, 4}}, CuMatrix{SMatrix{2, 2, Complex{T}, 4}}}()
     for workunit in workunits, Aterm in (workunit.Aleft, workunit.Aright)
-        if !haskey(Aterms, Aterm)
-            Aterms[Aterm] = CuArray(Aterm)
+        if !haskey(invAterms, Aterm)
+            invAterms[Aterm] = CuArray(inv.(Aterm))
         end
     end
     CUDA.synchronize()
@@ -21,11 +21,17 @@ function gridder!(grid::CuMatrix, workunits::AbstractVector{WorkUnit{T}}, subtap
             # Perform direct IFT
             gpudift!(subgrid, origin, uvdata, subgridspec, makepsf)
 
-            # Apply A terms (and normalise prior to fft)
-            Aleft = Aterms[workunit.Aleft]
-            Aright = Aterms[workunit.Aright]
-            map!(subgrid, Aleft, subgrid, Aright, subtaper) do Aleft, subgrid, Aright, t
-                return Aleft * subgrid * adjoint(Aright) * t / (subgridspec.Nx * subgridspec.Ny)
+            # Apply taper and normalise prior to fft. Also apply Aterms if we are not making a PSF.
+            if makepsf
+                map!(subgrid, subgrid, subtaper) do subgrid, t
+                    return subgrid * t / (subgridspec.Nx * subgridspec.Ny)
+                end
+            else
+                invAleft = invAterms[workunit.Aleft]
+                invAright = invAterms[workunit.Aright]
+                map!(subgrid, invAleft, subgrid, invAright, subtaper) do invAleft, subgrid, invAright, t
+                    return invAleft * subgrid * adjoint(invAright) * t / (subgridspec.Nx * subgridspec.Ny)
+                end
             end
         end
     end

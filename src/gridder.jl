@@ -5,8 +5,16 @@ function gridder!(grid::AbstractMatrix, workunits::AbstractVector{WorkUnit{T}}, 
     for workunit in workunits
         fill!(subgrid, zero(SMatrix{2, 2, Complex{T}, 4}))
         dift!(subgrid, workunit, Val(makepsf))
-        map!(subgrid, workunit.Aleft, subgrid, workunit.Aright, subtaper) do Aleft, subgrid, Aright, t
-            return Aleft * subgrid * adjoint(Aright) * t / (subgridspec.Nx * subgridspec.Ny)
+
+        # Apply taper and normalise prior to fft. Also apply Aterms if we are not making a PSF.
+        if makepsf
+            map!(subgrid, subgrid, subtaper) do subgrid, t
+                return subgrid * t / (subgridspec.Nx * subgridspec.Ny)
+            end
+        else
+            map!(subgrid, workunit.Aleft, subgrid, workunit.Aright, subtaper) do Aleft, subgrid, Aright, t
+                return inv(Aleft) * subgrid * adjoint(inv(Aright)) * t / (subgridspec.Nx * subgridspec.Ny)
+            end
         end
 
         subgridflat = reinterpret(reshape, Complex{T}, subgrid)

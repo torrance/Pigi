@@ -14,8 +14,9 @@
     subgridspec = Pigi.GridSpec(64, 64, scaleuv=1)
     padding = 8
     wstep = 1
+    Aterms = ones(SMatrix{2, 2, Complex{Float64}, 4}, subgridspec.Nx, subgridspec.Ny)
 
-    workunits = Pigi.partition(uvdata, gridspec, subgridspec, padding, wstep)
+    workunits = Pigi.partition(uvdata, gridspec, subgridspec, padding, wstep, Aterms)
     workunit = workunits[1]
 
     @test workunit.u0px == 71

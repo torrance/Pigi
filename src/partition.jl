@@ -22,14 +22,17 @@ function partition(
     subgridspec::GridSpec,
     padding::Int,
     wstep::Int,
+    Aterms::Matrix{SMatrix{2, 2, Complex{T}, 4}}
 ) where T
     # Partition the workunits into w layers to help reduce the search space during partitioning.
     wlayers = Dict{Int, Vector{WorkUnit{T}}}()
     radius = subgridspec.Nx ÷ 2 - padding
 
     # Initialize Aterms to match precision of uvdata
-    Aleft = ones(SMatrix{2, 2, Complex{T}, 4}, subgridspec.Nx, subgridspec.Ny)
-    Aright = ones(SMatrix{2, 2, Complex{T}, 4}, subgridspec.Nx, subgridspec.Ny)
+    # In future, Aterms will have 3 dimensions, one for each antenna.
+    Aterms = ifftshift(Aterms, (1, 2))
+    Aleft = Aterms
+    Aright = Aterms
 
     for uvdatum in uvdata
         upx, vpx = lambda2px(uvdatum.u, uvdatum.v, gridspec)

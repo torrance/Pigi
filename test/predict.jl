@@ -21,7 +21,8 @@
     subtaper = Pigi.mkkbtaper(subgridspec, precision, threshold=0)
     taper = Pigi.resample(subtaper, subgridspec, gridspec)
     padding = 15
-    workunits = Pigi.partition(uvdata, gridspec, subgridspec, padding, 25)
+    Aterms = ones(SMatrix{2, 2, Complex{precision}, 4}, subgridspec.Nx, subgridspec.Ny)
+    workunits = Pigi.partition(uvdata, gridspec, subgridspec, padding, 25, Aterms)
     @time Pigi.predict!(workunits, skymap, gridspec, taper, subtaper, wrapper)
 
     uvdata = StructVector{Pigi.UVDatum{precision}}(undef, 0)
