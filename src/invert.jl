@@ -7,8 +7,8 @@ function invert(workunits::Vector{WorkUnit{T}}, gridspec::GridSpec, taper::Matri
     img = zeros(SMatrix{2, 2, Complex{T}, 4}, gridspec.Nx, gridspec.Ny)
 
     # Create the iterators for standard ordering (used to apply w-correction)
-    ls = wrapper(fftfreq(gridspec.Nx, 1 / gridspec.scaleuv))
-    ms = wrapper(fftfreq(gridspec.Ny, 1 / gridspec.scaleuv))
+    ls = fftfreq(gridspec.Nx, 1 / gridspec.scaleuv)
+    ms = fftfreq(gridspec.Ny, 1 / gridspec.scaleuv)
 
     wlayer = CUDA.Mem.pin(Array{SMatrix{2, 2, Complex{T}, 4}}(undef, gridspec.Nx, gridspec.Ny))
     wlayerd = wrapper{SMatrix{2, 2, Complex{T}, 4}}(undef, gridspec.Nx, gridspec.Ny)

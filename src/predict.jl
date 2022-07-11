@@ -21,8 +21,8 @@ function predict!(
     fftshift!(img)
     subtaper = wrapper(ifftshift(subtaper))
 
-    ls = wrapper(fftfreq(gridspec.Nx, 1 / gridspec.scaleuv))
-    ms = wrapper(fftfreq(gridspec.Ny, 1 / gridspec.scaleuv))
+    ls = fftfreq(gridspec.Nx, 1 / gridspec.scaleuv)
+    ms = fftfreq(gridspec.Ny, 1 / gridspec.scaleuv)
 
     wlayerd = wrapper{SMatrix{2, 2, Complex{T}, 4}, 2}(undef, gridspec.Nx, gridspec.Ny)
     wlayerdflat = reinterpret(reshape, Complex{T}, wlayerd)
