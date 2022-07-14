@@ -46,17 +46,7 @@ end
         real(sum((A * A')[[1, 4]])) / 2
     end
 
-    # PowerSmall = fftshift(ifft(power))
-    # PowerLarge = zeros(ComplexF64, 1000, 1000)
-    # PowerLarge[501 - 64:501 + 63, 501 - 64:501 + 63] .= PowerSmall
-    # powerlarge = fft(ifftshift(PowerLarge))
     powerlarge = Pigi.resample(power, subgridspec, gridspec)
 
-    println("Ratio: ", real(powerlarge[501, 501]) / power[65, 65])
-
-    plt.subplot(1, 2, 1)
-    plt.imshow(power)
-    plt.subplot(1, 2, 2)
-    plt.imshow(real.(powerlarge))
-    plt.show()
+    @test (real(powerlarge[501, 501]) / power[65, 65]) ≈ 1
 end

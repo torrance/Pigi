@@ -92,3 +92,16 @@ function resample(img::AbstractArray{T}, fromgrid::GridSpec, togrid::GridSpec) w
     img = complex(img)
     return real.(resample(img::AbstractArray{Complex{T}}, fromgrid::GridSpec, togrid::GridSpec))
 end
+
+function resample(img::AbstractArray{SMatrix{2, 2, T, 4}}, fromgrid::GridSpec, togrid::GridSpec) where {T <: Complex}
+    resampled = Array{SMatrix{2, 2, T, 4}, 2}(undef, togrid.Nx, togrid.Ny)
+
+    img_flattened = reinterpret(reshape, T, img)
+    resampled_flattened = reinterpret(reshape, T, resampled)
+
+    for i in 1:4
+        resampled_flattened[i, :, :] = resample(img_flattened[i, :, :], fromgrid, togrid)
+    end
+
+    return resampled
+end
