@@ -157,6 +157,10 @@ Function: invert()
     Time (mean ± σ): 28.856 s ± 76.938 ms GC (mean ± σ): 3.58% ± 0.16%
     Memory estimate: 6.08 GiB, allocs estimate: 81594187
     Note: remove intermdiate data transfers from host <-> device
+2022/07/14 : Nimbus
+    Time (mean ± σ): 9.548 s ± 171.065 ms GC (mean ± σ): 0.45% ± 0.22%
+    Memory estimate: 1.24 GiB, allocs estimate: 540758
+    Note: use StokesI <: OutputType; precalculate taper; force π to use precision
 =#
 begin
     println("Reading mset...")
@@ -174,15 +178,17 @@ begin
     wstep = 200
 
     println("Partitioning data...")
-    taper = Pigi.mkkbtaper(gridspec)
-    workunits = Pigi.partition(uvdata, gridspec, subgridspec, padding, wstep, taper)
+    subtaper = Pigi.mkkbtaper(subgridspec, Float32)
+    taper = Pigi.resample(subtaper, subgridspec, gridspec)
+    Aterms = zeros(Pigi.Comp2x2{Float32}, 96, 96)
+    workunits = Pigi.partition(uvdata, gridspec, subgridspec, padding, wstep, Aterms)
     println("Done.")
 
     println("Compiling...")
-    Pigi.invert(workunits[1:1], gridspec, taper, CuArray)
+    Pigi.invert(Pigi.StokesI{Float32}, workunits[1:1], gridspec, taper, subtaper, CuArray)
     println("Done.")
 
-    b = @benchmark Pigi.invert(workunits, gridspec, taper, CuArray) evals=1 samples=5 seconds=300
+    b = @benchmark Pigi.invert(Pigi.StokesI{Float32}, workunits, gridspec, taper, subtaper, CuArray) evals=1 samples=5 seconds=300
     show(stdout, MIME"text/plain"(), b)
     println()
 end
