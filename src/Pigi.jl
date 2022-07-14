@@ -15,11 +15,14 @@ module Pigi
     using StructArrays
     using Unitful: Quantity, uconvert, @u_str
 
+    import AbstractFFTs: fft, ifft
+
     include("constants.jl")
+    include("typealiases.jl")
     include("uvdatum.jl")
     include("gridspec.jl")
+    include("outputarray.jl")
     include("utility.jl")
-    include("stokes.jl")
     include("measurementset.jl")
     include("partition.jl")
     include("gridder.jl")

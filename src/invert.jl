@@ -1,18 +1,23 @@
-function invert(workunits::Vector{WorkUnit{T}}, gridspec::GridSpec, taper::Matrix{T}, subtaper::Matrix{T}, ::Type{wrapper}; makepsf=false) where {T, wrapper}
+function invert(
+    ::Type{S},
+    workunits::Vector{WorkUnit{T}},
+    gridspec::GridSpec,
+    taper::Matrix{T},
+    subtaper::Matrix{T},
+    ::Type{wrapper};
+    makepsf=false
+) where {T, S <: OutputType{T}, wrapper}
+
     t_grid, t_postprocess = 0., 0.
 
-    # Create the fftplan just once, for a slight performance win.
-    # We use img as a proxy for the planning, since it has the same shape and type
-    # as the mastergrids.
-    img = zeros(SMatrix{2, 2, Complex{T}, 4}, gridspec.Nx, gridspec.Ny)
+    img = zeros(S, gridspec.Nx, gridspec.Ny)
 
     # Create the iterators for standard ordering (used to apply w-correction)
     ls = fftfreq(gridspec.Nx, 1 / gridspec.scaleuv)
     ms = fftfreq(gridspec.Ny, 1 / gridspec.scaleuv)
 
-    wlayer = CUDA.Mem.pin(Array{SMatrix{2, 2, Complex{T}, 4}}(undef, gridspec.Nx, gridspec.Ny))
-    wlayerd = wrapper{SMatrix{2, 2, Complex{T}, 4}}(undef, gridspec.Nx, gridspec.Ny)
-    wlayerdflat = reinterpret(reshape, Complex{T}, wlayerd)
+    wlayer = CUDA.Mem.pin(Array{S}(undef, gridspec.Nx, gridspec.Ny))
+    wlayerd = wrapper{S}(undef, gridspec.Nx, gridspec.Ny)
 
     # Use standard ordering for taper
     subtaper = wrapper(ifftshift(subtaper))
@@ -21,14 +26,14 @@ function invert(workunits::Vector{WorkUnit{T}}, gridspec::GridSpec, taper::Matri
         println("Processing w=$(w0) layer...")
 
         t_grid += @elapsed CUDA.@sync begin
-            fill!(wlayerd, zero(SMatrix{2, 2, Complex{T}, 4}))
+            fill!(wlayerd, zero(S))
             wworkunits = [wu for wu in workunits if wu.w0 == w0]
             gridder!(wlayerd, wworkunits, subtaper; makepsf)
         end
 
         t_postprocess += @elapsed begin
             fftshift!(wlayerd)
-            ifft!(wlayerdflat, (2, 3))
+            ifft!(wlayerd)
 
             # w-layer correction
             map!(wlayerd, wlayerd, CartesianIndices(wlayerd)) do val, idx

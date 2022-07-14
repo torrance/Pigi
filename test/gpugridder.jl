@@ -15,7 +15,7 @@
         49, 49, 0, 0, 0, subgridspec, Aleft, Aright, uvdata
     )
 
-    cpusubgrid = zeros(SMatrix{2, 2, Complex{precision}, 4}, 96, 96)
+    cpusubgrid = zeros(Pigi.LinearData{precision}, 96, 96)
     gpusubgrid = CuArray(cpusubgrid)
 
     Pigi.gridder!(cpusubgrid, [workunit], subtaper; makepsf=true)
@@ -25,7 +25,7 @@
     @test all(x -> all(isfinite, x), CuArray(gpusubgrid))
     @test maximum(x -> sum(abs, x[1] - x[2]), zip(Array(gpusubgrid), cpusubgrid)) < atol
 
-    cpusubgrid = zeros(SMatrix{2, 2, Complex{precision}, 4}, 96, 96)
+    cpusubgrid = zeros(Pigi.LinearData{precision}, 96, 96)
     gpusubgrid = CuArray(cpusubgrid)
 
     Pigi.gridder!(cpusubgrid, [workunit], subtaper)

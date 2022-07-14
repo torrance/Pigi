@@ -4,6 +4,7 @@ authors = ["Torrance Hodgson <torrance@pravic.xyz>"]
 version = "0.1.0"
 
 [deps]
+AbstractFFTs = "621f4979-c628-5d54-868e-fcf4e3e8185c"
 ArgMacros = "dbc42088-9de8-42a0-8ec8-2cd114e1ea3e"
 CUDA = "052768ef-5323-5732-b1bb-66c8b64840ba"
 Conda = "8f4d0f93-b110-5947-807f-2305c1781a2d"

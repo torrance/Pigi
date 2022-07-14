@@ -74,11 +74,7 @@ function partition(
     return [workunit for workunits in values(wlayers) for workunit in workunits]
 end
 
-function addsubgrid!(
-    mastergrid::AbstractMatrix{SMatrix{2, 2, T, 4}},
-    subgrid::AbstractMatrix{SMatrix{2, 2, T, 4}},
-    workunit::WorkUnit
-) where {T}
+function addsubgrid!(mastergrid::AbstractMatrix, subgrid::AbstractMatrix, workunit::WorkUnit)
     u0px = workunit.u0px
     v0px = workunit.v0px
     width = workunit.subgridspec.Nx ÷ 2

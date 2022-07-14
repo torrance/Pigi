@@ -30,7 +30,9 @@
     # Calculate expected output
     expected = zeros(SMatrix{2, 2, Complex{precision}, 4}, gridspec.Nx, gridspec.Ny)
     @time idft!(expected, uvdata, gridspec, precision(length(uvdata)))
-    expected = reinterpret(reshape, Complex{precision}, expected)
+    expected = map(expected) do x
+        return (x[1, 1] + x[2, 2]) / 2
+    end
 
     # IDG
     vimg, vtruncate = 1e-3, 1e-6
@@ -54,51 +56,46 @@
 
     workunits = Pigi.partition(uvdata, paddedgridspec, subgridspec, padding, wstep, Aterms)
     Pigi.applyweights!(workunits, weighter)
-    img = Pigi.invert(workunits, paddedgridspec, taper, subtaper, wrapper)
+    img = Pigi.invert(Pigi.StokesI{precision}, workunits, paddedgridspec, taper, subtaper, wrapper)
 
     img = img[1 + masterpadding:end - masterpadding, 1 + masterpadding:end - masterpadding]
 
-    img = reinterpret(reshape, Complex{precision}, img)
+    img = reinterpret(Complex{precision}, img)
 
     @test maximum(isfinite(x) ? abs(x - y) : 0 for (x, y) in zip(img, expected)) < atol
 
-    # vmin, vmax = extrema(real, expected[1, :, :])
+    # vmin, vmax = extrema(real, expected)
     # plt.subplot(1, 3, 1)
-    # plt.imshow(real.(img[1, :, :]); vmin, vmax)
+    # plt.imshow(real.(img); vmin, vmax)
     # plt.subplot(1, 3, 2)
-    # plt.imshow(real.(expected[1, :, :]); vmin, vmax)
+    # plt.imshow(real.(expected); vmin, vmax)
     # plt.subplot(1, 3, 3)
-    # diff = real.(img[1, :, :] .- expected[1, :, :])
+    # diff = real.(img .- expected)
     # vmin, vmax = extrema(x -> isfinite(x) ? x : 0, diff)
     # plt.imshow(diff; vmin, vmax)
     # plt.colorbar()
     # plt.show()
 end
 
-@testset "Inversion with beam" begin
-    precision = Float64
+@testset "Inversion with beam (precision: $(precision))" for precision in [Float32, Float64]
+    Random.seed!(123456)
     Nbaselines = 10000
-    gridspec = Pigi.GridSpec(2000, 2000, scalelm=deg2rad(1/60))
+    gridspec = Pigi.GridSpec(2000, 2000, scalelm=deg2rad(2/60))
     subgridspec = Pigi.GridSpec(128, 128, scaleuv=gridspec.scaleuv)
 
     # Set up original sky map
     skymap = zeros(SMatrix{2, 2, Complex{precision}, 4}, 2000, 2000)
-    for coord in rand(CartesianIndices((500:1500, 500:1500)), 10)
+    for coord in rand(CartesianIndices((500:1500, 500:1500)), 100)
         skymap[coord] = rand() * one(SMatrix{2, 2, ComplexF64, 4})
     end
 
     # Create Aterms
-    sigmalm = 400 * gridspec.scalelm
-    subAbeam = map(CartesianIndices((-64:63, -64:63))) do xy
-        r = hypot(Tuple(xy)...) * subgridspec.scalelm
-        θ = π / 8
-        return SMatrix{2, 2, Complex{precision}, 4}(cos(θ), sin(θ), -sin(θ), cos(θ)) * sqrt(exp(-r^2 / (2 * sigmalm^2)))
-    end
-    Abeam = map(CartesianIndices((-1000:999, -1000:999))) do xy
-        r = hypot(Tuple(xy)...) * gridspec.scalelm
-        θ = π / 8
-        return SMatrix{2, 2, Complex{precision}, 4}(cos(θ), sin(θ), -sin(θ), cos(θ)) * sqrt(exp(-r^2 / (2 * sigmalm^2)))
-    end
+    beam = Pigi.MWABeam(zeros(Int, 16))
+    coords_radec = Pigi.grid_to_radec(subgridspec, (0., π / 2))
+    coords_altaz = reverse.(coords_radec)
+    subAbeam = Pigi.getresponse(beam, coords_altaz, 150e6)
+
+    Abeam = Pigi.resample(subAbeam, subgridspec, gridspec)
 
     # Apply Aterms to skymap
     map!(skymap, Abeam, skymap) do J, val
@@ -107,8 +104,8 @@ end
 
     # Create UVData by direct FT
     uvdata = Pigi.UVDatum{precision}[]
-    for (u, v, w) in eachcol(rand(3, Nbaselines))
-        u, v = Pigi.px2lambda(u * 1000 + 500, v * 1000 + 500, gridspec)
+    for (u, v, w) in eachcol(randn(3, Nbaselines))
+        u, v = Pigi.px2lambda(u * 100 + 1000, v * 100 + 1000, gridspec)
         w = 200 * w
         push!(uvdata, Pigi.UVDatum{precision}(1, 1, u, v, w, (1, 1, 1, 1) ./ Nbaselines, (0, 0, 0, 0)))
     end
@@ -122,17 +119,26 @@ end
         return invJ * val * invJ'
     end
 
+    power = map(Abeam) do J
+        return real(sum((J * J')[[1, 4]])) / 2
+    end
+
     # IDG
-    wstep = 50
-    padding = 18
-    subtaper = Pigi.mkkbtaper(subgridspec, precision; threshold=1e-6)
+    wstep = 25
+    padding = 16
+    subtaper = Pigi.mkkbtaper(subgridspec, precision; threshold=0)
     taper = Pigi.resample(subtaper, subgridspec, gridspec)
+    subAbeam = convert(Array{Pigi.Comp2x2{precision}}, subAbeam)
     workunits = Pigi.partition(uvdata, gridspec, subgridspec, padding, wstep, subAbeam)
-    img = Pigi.invert(workunits, gridspec, taper, subtaper, CuArray)
+    println("N workunits: ", length(workunits))
+    img = Pigi.invert(Pigi.StokesI{precision}, workunits, gridspec, taper, subtaper, CuArray)
 
-    expected = Pigi.stokesI(expected)[500:1500, 500:1500]
-    img = Pigi.stokesI(img)[500:1500, 500:1500]
+    expected = map((expected .* power)[500:1500, 500:1500]) do x
+        real(x[1, 1] + x[2, 2]) / 2
+    end
+    img = real.(img[500:1500, 500:1500])
 
+    println("Max error: ", maximum(isfinite(x) ? abs(x - y) : 0 for (x, y) in zip(img, expected)))
     @test maximum(isfinite(x) ? abs(x - y) : 0 for (x, y) in zip(img, expected)) < 5e-4
 
     # diff = img - expected

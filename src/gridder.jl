@@ -1,31 +1,33 @@
-function gridder!(grid::AbstractMatrix, workunits::AbstractVector{WorkUnit{T}}, subtaper::Matrix{T}; makepsf::Bool=false) where T
+function gridder!(
+    grid::AbstractMatrix{S},
+    workunits::AbstractVector{WorkUnit{T}},
+    subtaper::Matrix{T};
+    makepsf::Bool=false
+) where {T, S <: OutputType{T}}
     subgridspec = workunits[1].subgridspec
-    subgrid = Matrix{SMatrix{2, 2, Complex{T}, 4}}(undef, subgridspec.Nx, subgridspec.Ny)
+    subgrid = Matrix{S}(undef, subgridspec.Nx, subgridspec.Ny)
 
     for workunit in workunits
-        fill!(subgrid, zero(SMatrix{2, 2, Complex{T}, 4}))
+        fill!(subgrid, zero(S))
         dift!(subgrid, workunit, Val(makepsf))
 
-        # Apply taper and normalise prior to fft. Also apply Aterms if we are not making a PSF.
-        if makepsf
-            map!(subgrid, subgrid, subtaper) do subgrid, t
-                return subgrid * t / (subgridspec.Nx * subgridspec.Ny)
-            end
-        else
-            map!(subgrid, workunit.Aleft, subgrid, workunit.Aright, subtaper) do Aleft, subgrid, Aright, t
-                return inv(Aleft) * subgrid * adjoint(inv(Aright)) * t / (subgridspec.Nx * subgridspec.Ny)
-            end
+        # Apply taper and normalise prior to fft.
+        map!(subgrid, subgrid, subtaper) do subgrid, t
+            return subgrid * t / (subgridspec.Nx * subgridspec.Ny)
         end
 
-        subgridflat = reinterpret(reshape, Complex{T}, subgrid)
-        fft!(subgridflat, (2, 3))
+        fft!(subgrid)
         fftshift!(subgrid)
 
         addsubgrid!(grid, subgrid, workunit)
     end
 end
 
-function dift!(subgrid::Matrix{SMatrix{2, 2, Complex{T}, 4}}, workunit::WorkUnit{T}, ::Val{makepsf}) where {T, makepsf}
+function dift!(
+    subgrid::Matrix{S},
+    workunit::WorkUnit{T},
+    ::Val{makepsf}
+) where {T, S <: OutputType{T}, makepsf}
     lms = fftfreq(workunit.subgridspec.Nx, T(1 / workunit.subgridspec.scaleuv))::Frequencies{T}
     uvdata = workunit.data
 
@@ -33,17 +35,24 @@ function dift!(subgrid::Matrix{SMatrix{2, 2, Complex{T}, 4}}, workunit::WorkUnit
         lpx, mpx = Tuple(idx)
         l, m = lms[lpx], lms[mpx]
 
+        cell = zero(LinearData{T})
         @simd for i in 1:length(uvdata)
-            phase = 2π * 1im * (
+            phase = 2im * T(π) * (
                 (uvdata.u[i] - workunit.u0) * l +
                 (uvdata.v[i] - workunit.v0) * m +
                 (uvdata.w[i] - workunit.w0) * ndash(l, m)
             )
             if makepsf
-                subgrid[lpx, mpx] += uvdata.weights[i] * exp(phase)
+                cell += uvdata.weights[i] * exp(phase)
             else
-                subgrid[lpx, mpx] += uvdata.weights[i] .* uvdata.data[i] * exp(phase)
+                cell += uvdata.weights[i] .* uvdata.data[i] * exp(phase)
             end
+        end
+
+        if makepsf
+            subgrid[idx] = cell
+        else
+            subgrid[idx] = workunit.Aleft[idx], cell, workunit.Aright[idx]
         end
     end
 end

@@ -27,7 +27,7 @@
         65, 65, 0, 0, 0, subgridspec, Aleft, Aright, uvdata
     )
 
-    idggrid = zeros(SMatrix{2, 2, Complex{precision}, 4}, 128, 128)
+    idggrid = zeros(Pigi.LinearData{precision}, 128, 128)
     Pigi.gridder!(idggrid, [workunit], subtaper)
     idggrid = reinterpret(reshape, Complex{precision}, idggrid)
 
@@ -90,7 +90,7 @@ end
     workunit = Pigi.WorkUnit{precision}(
         65, 65, 0, 0, 0, subgridspec, Aleft, Aright, uvdata
     )
-    idggrid = zeros(SMatrix{2, 2, Complex{precision}, 4}, 128, 128)
+    idggrid = zeros(Pigi.LinearData{precision}, 128, 128)
     Pigi.gridder!(idggrid, [workunit], subtaper)
     idggrid = reinterpret(reshape, Complex{precision}, idggrid)
 
@@ -153,7 +153,7 @@ end
     workunit = Pigi.WorkUnit{precision}(
         65, 65, 0, 0, 0, subgridspec, Aleft, Aright, uvdata
     )
-    idggrid = zeros(SMatrix{2, 2, Complex{precision}, 4}, 128, 128)
+    idggrid = zeros(Pigi.LinearData{precision}, 128, 128)
     Pigi.gridder!(idggrid, [workunit], ifftshift(subtaper))
     idggrid = reinterpret(reshape, Complex{precision}, idggrid)
     idggrid = fftshift(ifft(fftshift(idggrid, (2, 3)), (2, 3)), (2, 3)) * subgridspec.Nx * subgridspec.Ny / length(uvdata)

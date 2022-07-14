@@ -1,13 +1,18 @@
-function gridder!(grid::CuMatrix, workunits::AbstractVector{WorkUnit{T}}, subtaper::CuMatrix{T}; makepsf::Bool=false) where T
+function gridder!(
+    grid::CuArray{S},
+    workunits::AbstractVector{WorkUnit{T}},
+    subtaper::CuMatrix{T};
+    makepsf::Bool=false
+) where {T, S <: OutputType{T}}
     subgridspec = workunits[1].subgridspec
-    subgrids = CuArray{SMatrix{2, 2, Complex{T}, 4}, 3}(undef, subgridspec.Nx, subgridspec.Ny, length(workunits))
+    subgrids = CuArray{S}(undef, subgridspec.Nx, subgridspec.Ny, length(workunits))
 
     # A terms are shared amongst work units, so we only have to transfer over the unique arrays.
     # We do this (awkwardly) by hashing them into an ID dictionary.
-    invAterms = IdDict{AbstractMatrix{SMatrix{2, 2, Complex{T}, 4}}, CuMatrix{SMatrix{2, 2, Complex{T}, 4}}}()
+    Aterms = IdDict{AbstractMatrix{Comp2x2{T}}, CuMatrix{Comp2x2{T}}}()
     for workunit in workunits, Aterm in (workunit.Aleft, workunit.Aright)
-        if !haskey(invAterms, Aterm)
-            invAterms[Aterm] = CuArray(inv.(Aterm))
+        if !haskey(Aterms, Aterm)
+            Aterms[Aterm] = CuArray(Aterm)
         end
     end
     CUDA.synchronize()
@@ -19,19 +24,12 @@ function gridder!(grid::CuMatrix, workunits::AbstractVector{WorkUnit{T}}, subtap
             uvdata = replace_storage(CuArray, workunit.data)
 
             # Perform direct IFT
-            gpudift!(subgrid, origin, uvdata, subgridspec, makepsf)
+            Aleft, Aright = Aterms[workunit.Aleft], Aterms[workunit.Aright]
+            gpudift!(subgrid, Aleft, Aright, origin, uvdata, subgridspec, makepsf)
 
             # Apply taper and normalise prior to fft. Also apply Aterms if we are not making a PSF.
-            if makepsf
-                map!(subgrid, subgrid, subtaper) do subgrid, t
-                    return subgrid * t / (subgridspec.Nx * subgridspec.Ny)
-                end
-            else
-                invAleft = invAterms[workunit.Aleft]
-                invAright = invAterms[workunit.Aright]
-                map!(subgrid, invAleft, subgrid, invAright, subtaper) do invAleft, subgrid, invAright, t
-                    return invAleft * subgrid * adjoint(invAright) * t / (subgridspec.Nx * subgridspec.Ny)
-                end
+            map!(subgrid, subgrid, subtaper) do cell, t
+                return cell * t / (subgridspec.Nx * subgridspec.Ny)
             end
         end
     end
@@ -42,16 +40,19 @@ function gridder!(grid::CuMatrix, workunits::AbstractVector{WorkUnit{T}}, subtap
         subgrid = view(subgrids, :, :, i)
 
         # Apply fft
-        subgridflat = reinterpret(reshape, Complex{T}, subgrid)
-        fft!(subgridflat, (2, 3))
+        fft!(subgrid)
         fftshift!(subgrid)
 
         addsubgrid!(grid, subgrid, workunit)
     end
 end
 
-function gpudift!(subgrid::CuMatrix{SMatrix{2, 2, Complex{T}, 4}}, origin, uvdata, subgridspec, makepsf::Bool) where {T}
-    function _gpudift!(subgrid::CuDeviceMatrix{SMatrix{2, 2, Complex{T}, 4}}, origin, uvdata, subgridspec, ::Val{makepsf}) where {T, makepsf}
+function gpudift!(
+    subgrid::CuMatrix{S}, Aleft, Aright, origin, uvdata, subgridspec, makepsf::Bool
+) where {T, S <: OutputType{T}}
+    function _gpudift!(
+        subgrid::CuDeviceMatrix{S}, Aleft, Aright, origin, uvdata, subgridspec, ::Val{makepsf}
+    ) where {T, S <: OutputType{T}, makepsf}
         idx = (blockIdx().x - 1) * blockDim().x + threadIdx().x
         lms = fftfreq(subgridspec.Nx, T(1 / subgridspec.scaleuv))::Frequencies{T}
 
@@ -62,9 +63,9 @@ function gpudift!(subgrid::CuMatrix{SMatrix{2, 2, Complex{T}, 4}}, origin, uvdat
         lpx, mpx = Tuple(CartesianIndices(subgrid)[idx])
         l, m = lms[lpx], lms[mpx]
 
-        cell = SMatrix{2, 2, Complex{T}, 4}(0, 0, 0, 0)
+        cell = zero(LinearData{T})
         for i in 1:length(uvdata)
-            phase = 2π * 1im * (
+            phase = 2im * T(π) * (
                 (uvdata.u[i] - origin.u0) * l +
                 (uvdata.v[i] - origin.v0) * m +
                 (uvdata.w[i] - origin.w0) * ndash(l, m)
@@ -76,18 +77,23 @@ function gpudift!(subgrid::CuMatrix{SMatrix{2, 2, Complex{T}, 4}}, origin, uvdat
             end
         end
 
-        subgrid[idx] = cell
+        if makepsf
+            subgrid[idx] = cell
+        else
+            subgrid[idx] = Aleft[idx], cell, Aright[idx]
+        end
+
         return nothing
     end
 
     kernel = @cuda launch=false _gpudift!(
-        subgrid, origin, uvdata, subgridspec, Val(makepsf)
+        subgrid, Aleft, Aright, origin, uvdata, subgridspec, Val(makepsf)
     )
     config = launch_configuration(kernel.fun)
     threads = min(subgridspec.Nx * subgridspec.Ny, config.threads)
     blocks = cld(subgridspec.Nx * subgridspec.Ny, threads)
     kernel(
-        subgrid, origin, uvdata, subgridspec, Val(makepsf);
+        subgrid, Aleft, Aright, origin, uvdata, subgridspec, Val(makepsf);
         threads, blocks
     )
 end

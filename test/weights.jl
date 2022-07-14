@@ -72,7 +72,7 @@
     Aleft = Aright = ones(SMatrix{2, 2, Complex{precision}, 4}, 128, 128)
     subtaper = ones(precision, 128, 128)
     workunit = Pigi.WorkUnit{precision}(65, 65, 0, 0, 0, gridspec, Aleft, Aright, weighteduvdata)
-    uvgrid = zeros(SMatrix{2, 2, Complex{precision}, 4}, 128, 128)
+    uvgrid = zeros(Pigi.LinearData{precision}, 128, 128)
     Pigi.gridder!(uvgrid, [workunit], subtaper; makepsf=true)
 
     xx = map(uv -> real(uv[1]), uvgrid)

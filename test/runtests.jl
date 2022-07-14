@@ -3,6 +3,7 @@ using DSP: conv
 using FFTW
 using Pigi
 using PyPlot: PyPlot as plt
+using Random
 using StaticArrays
 using StructArrays
 using Test
