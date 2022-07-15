@@ -53,7 +53,7 @@ function gpudft!(uvdata, origin, subgrid, subgridspec, degridop)
 
             data = SMatrix{2, 2, Complex{T}, 4}(0, 0, 0, 0)
             for (mpx, m) in enumerate(lms), (lpx, l) in enumerate(lms)
-                phase = -2π * 1im * (
+                phase = -2im * T(π) * (
                     (u - origin.u0) * l +
                     (v - origin.v0) * m +
                     (w - origin.w0) * ndash(l, m)

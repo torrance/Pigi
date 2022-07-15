@@ -21,7 +21,7 @@ function dft!(workunit::WorkUnit{T}, subgrid::Matrix{SMatrix{2, 2, Complex{T}, 4
 
         data = SMatrix{2, 2, Complex{T}, 4}(0, 0, 0, 0)
         for (mpx, m) in enumerate(lms), (lpx, l) in enumerate(lms)
-            phase = -2π * 1im * (
+            phase = -2im * T(π) * (
                 (uvdatum.u - workunit.u0) * l +
                 (uvdatum.v - workunit.v0) * m +
                 (uvdatum.w - workunit.w0) * ndash(l, m)
