@@ -52,7 +52,10 @@ function dift!(
         if makepsf
             subgrid[idx] = cell
         else
-            subgrid[idx] = workunit.Aleft[idx], cell, workunit.Aright[idx]
+            s::S = LinearData{T}(
+                inv(workunit.Aleft[idx]) * cell * inv(workunit.Aright[idx])'
+            )
+            subgrid[idx] = normalize(s, workunit.Aleft[idx], workunit.Aright[idx])
         end
     end
 end

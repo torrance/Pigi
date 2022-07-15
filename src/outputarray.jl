@@ -19,28 +19,8 @@ end
 Conversion routines between output types and LinearData
 =#
 
-@inline function Base.convert(::Type{LinearData{T}}, (Aleft, data, Aright)::Tuple{Comp2x2{T}, LinearData{T}, Comp2x2{T}}) where T
-    # Calculate instrumental response
-    # No normalization is performed, since we can't know which output we are using
-    instr = (inv(Aleft) * data * inv(Aright)')
-
-    return LinearData{T}(instr)
-end
-
 @inline function Base.convert(::Type{LinearData{T}}, data::StokesI{T}) where T
     return LinearData{T}(data.I, 0, 0, data.I)
-end
-
-@inline function Base.convert(::Type{LinearData{T}}, (Aleft, data, Aright)::Tuple{Comp2x2{T}, StokesI{T}, Comp2x2{T}}) where T
-    # Normalize J based on Stokes I
-    A2 = Aleft * Aright'
-    norm = (real(A2[1, 1]) + real(A2[2, 2])) / 2
-
-    # Calculate instrumental response
-    I = data.I #  / norm
-    instr = (Aleft * LinearData{T}(I, 0, 0, I) * Aright')
-
-    return LinearData{T}(instr)
 end
 
 # TODO: Remove and set UVDatum.data::LinearData
@@ -52,15 +32,19 @@ end
     return StokesI{T}((data.xx + data.yy) / 2)
 end
 
-@inline function Base.convert(::Type{StokesI{T}}, (Aleft, data, Aright)::Tuple{Comp2x2{T}, LinearData{T}, Comp2x2{T}}) where T
-    # Normalize J based on Stokes I
+#=
+Normalization used during inversion to mitigate errors and infinities from nulls
+=#
+
+function normalize(data::StokesI{T}, Aleft::Comp2x2{T}, Aright::Comp2x2{T})::StokesI{T} where T
     A2 = Aleft * Aright'
-    norm = (real(A2[1, 1]) + real(A2[2, 2])) / 2
+    norm = real(A2[1, 1] + A2[2, 2]) / 2
+    return data * norm
+end
 
-    # Calculate instrumental response
-    instr = (inv(Aleft) * data * inv(Aright)') * norm
-
-    return StokesI{T}((instr[1, 1] + instr[2, 2]) / 2)
+# Since there's no sensible normalisation for LinearData, we default to unity
+function normalize(data::LinearData{T}, ::Comp2x2{T}, ::Comp2x2{T})::LinearData{T} where T
+    return data
 end
 
 #=

@@ -80,7 +80,10 @@ function gpudift!(
         if makepsf
             subgrid[idx] = cell
         else
-            subgrid[idx] = Aleft[idx], cell, Aright[idx]
+            s::S = LinearData{T}(
+                inv(Aleft[idx]) * cell * inv(Aright[idx])'
+            )
+            subgrid[idx] = normalize(s, Aleft[idx], Aright[idx])
         end
 
         return nothing
