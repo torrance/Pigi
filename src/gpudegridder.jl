@@ -28,8 +28,8 @@ function degridder!(
             # Apply A terms
             Aleft = Aterms[workunit.Aleft]
             Aright = Aterms[workunit.Aright]
-            subgrid = map(Aleft, subgrid, Aright, subtaper) do Aleft, subgrid, Aright, t
-                return convert(LinearData{T}, (Aleft, subgrid * t, Aright))
+            map!(subgrid, Aleft, subgrid, Aright, subtaper) do Aleft, subgrid, Aright, t
+                return Aleft * subgrid * Aright' * t
             end
 
             uvdata = (
@@ -50,7 +50,7 @@ function gpudft!(uvdata, origin, subgrid, subgridspec, degridop)
         gpuidx = (blockIdx().x - 1) * blockDim().x + threadIdx().x
         stride = gridDim().x * blockDim().x
 
-        lms = fftfreq(subgridspec.Nx, 1 / subgridspec.scaleuv)
+        lms = fftfreq(subgridspec.Nx, T(1 / subgridspec.scaleuv))
 
         for idx in gpuidx:stride:length(uvdata.data)
             u, v, w = uvdata.u[idx], uvdata.v[idx], uvdata.w[idx]

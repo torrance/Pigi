@@ -2,7 +2,7 @@
     subgridspec = Pigi.GridSpec(128, 128, scaleuv=1)
 
     # Create visgrid
-    visgrid = rand(SMatrix{2, 2, Complex{precision}, 4}, subgridspec.Nx, subgridspec.Ny)
+    visgrid = rand(Pigi.LinearData{precision}, subgridspec.Nx, subgridspec.Ny)
 
     # Create uvw sample points
     uvws = rand(3, 5000) .* [100 100 20;]' .- [50 50 10;]'

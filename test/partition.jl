@@ -59,7 +59,7 @@ end
 end
 
 @testset "Extract subgrid" for wrapper in [Array, CuArray]
-    mastergrid = rand(SMatrix{2, 2, ComplexF64, 4}, 1000, 1000)
+    mastergrid = rand(Pigi.LinearData{Float64}, 1000, 1000)
 
     expected = mastergrid[231 - 32:231 + 31, 785 - 32:785 + 31]
 

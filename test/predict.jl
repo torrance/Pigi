@@ -1,4 +1,4 @@
-@testset "Prediction: $(wrapper)" for wrapper in [CuArray]
+@testset "Prediction: $(wrapper)" for wrapper in [Array, CuArray]
     precision = Float64
     gridspec = Pigi.GridSpec(2000, 2000, scaleuv=1)
 

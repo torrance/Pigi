@@ -3,23 +3,22 @@ function degridder!(workunits::AbstractVector{WorkUnit{T}}, grid::AbstractMatrix
         subgrid = extractsubgrid(grid, workunit)
 
         fftshift!(subgrid)
-        subgridflat = reinterpret(reshape, Complex{T}, subgrid)
-        ifft!(subgridflat, (2, 3))
+        ifft!(subgrid)
 
         map!(subgrid, workunit.Aleft, subgrid, workunit.Aright, subtaper) do Aleft, subgrid, Aright, t
-            return Aleft * subgrid * adjoint(Aright) * t
+            return Aleft * subgrid * Aright' * t
         end
         dft!(workunit, subgrid, degridop)
     end
 end
 
-function dft!(workunit::WorkUnit{T}, subgrid::Matrix{SMatrix{2, 2, Complex{T}, 4}}, degridop) where T
-    lms = fftfreq(workunit.subgridspec.Nx, 1 / workunit.subgridspec.scaleuv)
+function dft!(workunit::WorkUnit{T}, subgrid::Matrix{LinearData{T}}, degridop) where T
+    lms = fftfreq(workunit.subgridspec.Nx, T(1 / workunit.subgridspec.scaleuv))
 
     Threads.@threads for i in eachindex(workunit.data)
         uvdatum = workunit.data[i]
 
-        data = SMatrix{2, 2, Complex{T}, 4}(0, 0, 0, 0)
+        data = zero(LinearData{T})
         for (mpx, m) in enumerate(lms), (lpx, l) in enumerate(lms)
             phase = -2im * T(π) * (
                 (uvdatum.u - workunit.u0) * l +

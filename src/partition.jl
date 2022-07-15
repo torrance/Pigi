@@ -121,8 +121,8 @@ function addsubgrid!(mastergrid::CuMatrix, subgrid::CuMatrix, workunit::WorkUnit
     kernel(mastergrid, subgrid, u0px, v0px, width; threads, blocks)
 end
 
-function extractsubgrid(mastergrid::Matrix{T}, workunit::WorkUnit) where {T}
-    subgrid = zeros(T, workunit.subgridspec.Nx, workunit.subgridspec.Ny)
+function extractsubgrid(mastergrid::Matrix{S}, workunit::WorkUnit{T}) where {T, S <: OutputType{T}}
+    subgrid = zeros(LinearData{T}, workunit.subgridspec.Nx, workunit.subgridspec.Ny)
 
     u0px = workunit.u0px
     v0px = workunit.v0px
@@ -161,7 +161,7 @@ function extractsubgrid(mastergrid::CuMatrix{S}, workunit::WorkUnit{T}) where {T
         return nothing
     end
 
-    subgrid = CUDA.zeros(S, workunit.subgridspec.Nx, workunit.subgridspec.Ny)
+    subgrid = CUDA.zeros(LinearData{T}, workunit.subgridspec.Nx, workunit.subgridspec.Ny)
 
     u0px = workunit.u0px
     v0px = workunit.v0px

@@ -209,9 +209,9 @@ Function: predict!()
     Memory estimate: 2.44 GiB, allocs estimate: 479952
     Note: get benchmarks working again; unknown changes
 2022/07/15 : Nimbus
-    Time (mean ± σ): 14.428 s ± 323.226 ms GC (mean ± σ): 0.29% ± 0.16%
-    Memory estimate: 639.14 MiB, allocs estimate: 392837
-    Note: use StokesI, but gridder still suboptimal
+    Time (mean ± σ): 8.924 s ± 264.739 ms GC (mean ± σ): 0.46% ± 0.25%
+    Memory estimate: 644.92 MiB, allocs estimate: 435547
+    Note: use StokesI, ensure consistent precision throughout
 =#
 begin
     println("Reading mset...")
