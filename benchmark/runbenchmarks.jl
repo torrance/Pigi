@@ -96,13 +96,14 @@ begin
     Aleft = ones(SMatrix{2, 2, Complex{precision}, 4}, 128, 128)
     Aright = ones(SMatrix{2, 2, Complex{precision}, 4}, 128, 128)
 
-    taper = Pigi.mkkbtaper(subgridspec)
+    subtaper = Pigi.mkkbtaper(subgridspec, precision)
 
-    workunit = Pigi.WorkUnit{precision}(
+    workunits = [Pigi.WorkUnit{precision}(
         0, 0, 0, 0, 0, subgridspec, Aleft, Aright, uvdata
-    )
+    )]
+    mastergrid = zeros(SMatrix{2, 2, Complex{precision}, 4}, 128, 128)
 
-    b = @benchmark Pigi.gridder($workunit, Array) evals=1 samples=10 seconds=60
+    b = @benchmark Pigi.gridder!(mastergrid, $workunits, subtaper) evals=1 samples=10 seconds=60
     show(stdout, MIME"text/plain"(), b)
     println()
 end
@@ -203,10 +204,14 @@ Function: predict!()
     Time (mean ± σ): 22.880 s ± 339.722 ms GC (mean ± σ): 1.56% ± 0.75%
     Memory estimate: 2.44 GiB, allocs estimate: 518681
     Note: remove intermdiate data transfers from host <-> device
-2022/03/23 : Nimbus
+2022/07/15 : Nimbus
     Time (mean ± σ): 19.649 s ± 317.612 ms GC (mean ± σ): 1.63% ± 0.79%
     Memory estimate: 2.44 GiB, allocs estimate: 479952
     Note: get benchmarks working again; unknown changes
+2022/07/15 : Nimbus
+    Time (mean ± σ): 14.428 s ± 323.226 ms GC (mean ± σ): 0.29% ± 0.16%
+    Memory estimate: 639.14 MiB, allocs estimate: 392837
+    Note: use StokesI, but gridder still suboptimal
 =#
 begin
     println("Reading mset...")
@@ -231,8 +236,8 @@ begin
     println("Done.")
 
     # Create random sky grid
-    grid = zeros(SMatrix{2, 2, ComplexF32, 4}, 9000, 9000)
-    grid[rand(1:9000 * 9000, 6000)] .= rand(SMatrix{2, 2, ComplexF32, 4}, 6000)
+    grid = zeros(Pigi.StokesI{Float32}, 9000, 9000)
+    grid[rand(1:9000 * 9000, 6000)] .= rand(Pigi.StokesI{Float32}, 6000)
 
     # Compile CUDA kernel
     println("Compiling CUDA kernel...")

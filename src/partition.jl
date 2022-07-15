@@ -141,7 +141,7 @@ function extractsubgrid(mastergrid::Matrix{T}, workunit::WorkUnit) where {T}
     return subgrid
 end
 
-function extractsubgrid(mastergrid::CuMatrix{T}, workunit::WorkUnit) where {T}
+function extractsubgrid(mastergrid::CuMatrix{S}, workunit::WorkUnit{T}) where {T, S <: OutputType{T}}
     function _extractsubgrid!(subgrid, mastergrid, u0px, v0px, width)
         idx = blockDim().x * (blockIdx().x - 1) + threadIdx().x
 
@@ -161,7 +161,7 @@ function extractsubgrid(mastergrid::CuMatrix{T}, workunit::WorkUnit) where {T}
         return nothing
     end
 
-    subgrid = CUDA.zeros(T, workunit.subgridspec.Nx, workunit.subgridspec.Ny)
+    subgrid = CUDA.zeros(S, workunit.subgridspec.Nx, workunit.subgridspec.Ny)
 
     u0px = workunit.u0px
     v0px = workunit.v0px

@@ -75,10 +75,10 @@ function _idft!(dft::CuDeviceMatrix{SMatrix{2, 2, Complex{T}, 4}}, uvdata::Struc
     return nothing
 end
 
-function dft!(uvdata::StructVector{Pigi.UVDatum{T}}, img::Matrix{SMatrix{2, 2, Complex{T}, 4}}, gridspec::Pigi.GridSpec) where T
+function dft!(uvdata::StructVector{Pigi.UVDatum{T}}, img::AbstractMatrix{S}, gridspec::Pigi.GridSpec) where {T, S}
     idxs = findall(x -> !iszero(x), img)
     for (i, uvdatum) in enumerate(uvdata)
-        data = SMatrix{2, 2, Complex{T}, 4}(0, 0, 0, 0)
+        data = zero(S)
         for idx in idxs
             lpx, mpx = Tuple(idx)
             l, m = Pigi.px2sky(lpx, mpx, gridspec)

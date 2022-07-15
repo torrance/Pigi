@@ -1,8 +1,13 @@
-function degridder!(workunits::AbstractVector{WorkUnit{T}}, grid::CuMatrix, subtaper::CuMatrix{T}, degridop) where T
+function degridder!(
+    workunits::AbstractVector{WorkUnit{T}},
+    grid::CuMatrix{S},
+    subtaper::CuMatrix{T},
+    degridop
+) where {T, S <: OutputType{T}}
 
     # A terms are shared amongst work units, so we only have to transfer over the unique arrays.
     # We do this (awkwardly) by hashing them into an ID dictionary.
-    Aterms = IdDict{AbstractMatrix{SMatrix{2, 2, Complex{T}, 4}}, CuMatrix{SMatrix{2, 2, Complex{T}, 4}}}()
+    Aterms = IdDict{AbstractMatrix{Comp2x2{T}}, CuMatrix{Comp2x2{T}}}()
     for workunit in workunits, Aterm in (workunit.Aleft, workunit.Aright)
         if !haskey(Aterms, Aterm)
             Aterms[Aterm] = CuArray(Aterm)
@@ -11,21 +16,20 @@ function degridder!(workunits::AbstractVector{WorkUnit{T}}, grid::CuMatrix, subt
 
     Base.@sync for workunit in workunits
         # We do the ifft in the default stream, due to garbage issues the fft when run on multiple streams.
-        # Once this is done, we have off the rest of the work to a separate stream.
+        # Once this is done, we pass off the rest of the work to a separate stream.
         CUDA.@sync begin
             subgrid = extractsubgrid(grid, workunit)
 
             fftshift!(subgrid)
-            subgridflat = reinterpret(reshape, Complex{T}, subgrid)
-            ifft!(subgridflat, (2, 3))
+            ifft!(subgrid)
         end
 
         Base.@async CUDA.@sync begin
             # Apply A terms
             Aleft = Aterms[workunit.Aleft]
             Aright = Aterms[workunit.Aright]
-            map!(subgrid, Aleft, subgrid, Aright, subtaper) do Aleft, subgrid, Aright, t
-                return Aleft * subgrid * adjoint(Aright) * t
+            subgrid = map(Aleft, subgrid, Aright, subtaper) do Aleft, subgrid, Aright, t
+                return convert(LinearData{T}, (Aleft, subgrid * t, Aright))
             end
 
             uvdata = (
@@ -42,7 +46,7 @@ function degridder!(workunits::AbstractVector{WorkUnit{T}}, grid::CuMatrix, subt
 end
 
 function gpudft!(uvdata, origin, subgrid, subgridspec, degridop)
-    function _gpudft!(uvdata, origin, subgrid::CuDeviceMatrix{SMatrix{2, 2, Complex{T}, 4}}, subgridspec, degridop) where T
+    function _gpudft!(uvdata, origin, subgrid::CuDeviceMatrix{LinearData{T}}, subgridspec, degridop) where T
         gpuidx = (blockIdx().x - 1) * blockDim().x + threadIdx().x
         stride = gridDim().x * blockDim().x
 
@@ -51,7 +55,7 @@ function gpudft!(uvdata, origin, subgrid, subgridspec, degridop)
         for idx in gpuidx:stride:length(uvdata.data)
             u, v, w = uvdata.u[idx], uvdata.v[idx], uvdata.w[idx]
 
-            data = SMatrix{2, 2, Complex{T}, 4}(0, 0, 0, 0)
+            data = zero(LinearData{T})
             for (mpx, m) in enumerate(lms), (lpx, l) in enumerate(lms)
                 phase = -2im * T(π) * (
                     (u - origin.u0) * l +

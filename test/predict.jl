@@ -3,11 +3,11 @@
     gridspec = Pigi.GridSpec(2000, 2000, scaleuv=1)
 
     # Create template skymap (Jy / px) and associated GridSpec
-    skymap = zeros(SMatrix{2, 2, Complex{precision}, 4}, gridspec.Nx, gridspec.Ny)
+    skymap = zeros(Pigi.StokesI{precision}, gridspec.Nx, gridspec.Ny)
     for (x, y) in zip(rand(700:1300, 1000), rand(700:1300, 1000))
-        skymap[x, y] = [1 0; 0 1]
+        skymap[x, y] = Pigi.StokesI{precision}(1)
     end
-    skymap[501, 501] = [1 0; 0 1]
+    skymap[501, 501] = Pigi.StokesI{precision}(1)
 
     # Create uvw sample points
     uvws = rand(3, 5000) .* [1000 1000 500;]' .- [500 500 250;]'
@@ -68,9 +68,9 @@ end
     subgridspec = Pigi.GridSpec(128, 128, scaleuv=gridspec.scaleuv)
 
     # Set up original sky map
-    skymap = zeros(SMatrix{2, 2, Complex{precision}, 4}, 2000, 2000)
+    skymap = zeros(Pigi.StokesI{precision}, 2000, 2000)
     for coord in rand(CartesianIndices((500:1500, 500:1500)), 10)
-        skymap[coord] = rand() * one(SMatrix{2, 2, ComplexF64, 4})
+        skymap[coord] = Pigi.StokesI{precision}(rand())
     end
 
     # Create Aterms
@@ -110,8 +110,12 @@ end
 
     # Calcuate expected by direct FT
     expected = deepcopy(uvdata)
-    map!(skymap, Abeam, skymap) do J, val
-        return J * val * J'
+
+    # Normalize Abeam for Stokes I and apply to sky map
+    skymap = map(Abeam, skymap) do J, val
+        J2 = J * J'
+        norm = (real(J2[1, 1]) + real(J2[2, 2])) / 2
+        return J * convert(Pigi.LinearData{precision}, val) * J'
     end
     dft!(expected, skymap, gridspec)
 
