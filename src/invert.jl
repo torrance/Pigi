@@ -13,8 +13,8 @@ function invert(
     img = zeros(S, gridspec.Nx, gridspec.Ny)
 
     # Create the iterators for standard ordering (used to apply w-correction)
-    ls = fftfreq(gridspec.Nx, 1 / gridspec.scaleuv)
-    ms = fftfreq(gridspec.Ny, 1 / gridspec.scaleuv)
+    ls = fftfreq(gridspec.Nx, T(1 / gridspec.scaleuv))
+    ms = fftfreq(gridspec.Ny, T(1 / gridspec.scaleuv))
 
     wlayer = CUDA.Mem.pin(Array{S}(undef, gridspec.Nx, gridspec.Ny))
     wlayerd = wrapper{S}(undef, gridspec.Nx, gridspec.Ny)
@@ -39,7 +39,7 @@ function invert(
             map!(wlayerd, wlayerd, CartesianIndices(wlayerd)) do val, idx
                 lpx, mpx = Tuple(idx)
                 l, m = ls[lpx], ms[mpx]
-                return val * exp(2π * 1im * w0 * ndash(l, m)) * length(wlayerd)
+                return val * exp(2im * T(π) * w0 * ndash(l, m)) * length(wlayerd)
             end
 
             copy!(wlayer, wlayerd)
