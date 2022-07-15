@@ -203,6 +203,10 @@ Function: predict!()
     Time (mean ± σ): 22.880 s ± 339.722 ms GC (mean ± σ): 1.56% ± 0.75%
     Memory estimate: 2.44 GiB, allocs estimate: 518681
     Note: remove intermdiate data transfers from host <-> device
+2022/03/23 : Nimbus
+    Time (mean ± σ): 19.649 s ± 317.612 ms GC (mean ± σ): 1.63% ± 0.79%
+    Memory estimate: 2.44 GiB, allocs estimate: 479952
+    Note: get benchmarks working again; unknown changes
 =#
 begin
     println("Reading mset...")
@@ -220,8 +224,10 @@ begin
     wstep = 200
 
     println("Partitioning data...")
-    taper = Pigi.mkkbtaper(gridspec)
-    workunits = Pigi.partition(uvdata, gridspec, subgridspec, padding, wstep, (l, m) -> 1)
+    subtaper = Pigi.mkkbtaper(subgridspec, Float32)
+    taper = Pigi.resample(subtaper, subgridspec, gridspec)
+    Aterms = ones(Pigi.Comp2x2{Float32}, 96, 96)
+    workunits = Pigi.partition(uvdata, gridspec, subgridspec, padding, wstep, Aterms)
     println("Done.")
 
     # Create random sky grid
@@ -230,11 +236,11 @@ begin
 
     # Compile CUDA kernel
     println("Compiling CUDA kernel...")
-    Pigi.predict!(workunits[1:1], grid, gridspec, taper, CuArray; degridop=Pigi.degridop_replace)
+    Pigi.predict!(workunits[1:1], grid, gridspec, taper, subtaper, CuArray; degridop=Pigi.degridop_replace)
     println("Done.")
 
     b = @benchmark begin
-        Pigi.predict!(workunits, grid, gridspec, taper, CuArray; degridop=Pigi.degridop_replace)
+        Pigi.predict!(workunits, grid, gridspec, taper, subtaper, CuArray; degridop=Pigi.degridop_replace)
     end evals=1 samples=5 seconds=300
     show(stdout, MIME"text/plain"(), b)
     println()
