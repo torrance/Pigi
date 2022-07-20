@@ -151,3 +151,111 @@ end
     # plt.colorbar()
     # plt.show()
 end
+
+@testset "Inversion with multiple beams (precision: $(precision))" for precision in [Float32, Float64]
+    Random.seed!(123456)
+    Nbaselines = 20000
+    imgsize = 1200
+
+    paddingfactor = Pigi.taperpadding(1e-3, 1e-6)
+    masterpadding = round(Int, (paddingfactor - 1) * imgsize) ÷ 2
+    gridspec = Pigi.GridSpec(imgsize + 2 * masterpadding, imgsize + 2 * masterpadding, scalelm=scalelm=deg2rad(1.8/60))
+    subgridspec = Pigi.GridSpec(128, 128, scaleuv=gridspec.scaleuv)
+
+    # Set up original sky map
+    skymap = zeros(SMatrix{2, 2, Complex{precision}, 4}, gridspec.Nx, gridspec.Ny)
+    offset = CartesianIndex(masterpadding, masterpadding)
+    for coord in rand(CartesianIndices((1:imgsize, 1:imgsize)), 100)
+        skymap[coord + offset] = one(SMatrix{2, 2, ComplexF64, 4})
+    end
+
+    # Create Aterms for two beams
+    beam = Pigi.MWABeam(Int[0,0,0,0,1,1,1,1,2,2,2,2,3,3,3,3])
+    coords_radec = Pigi.grid_to_radec(subgridspec, (0., π / 2))
+    coords_altaz = reverse.(coords_radec)
+    subAbeam1 = Pigi.getresponse(beam, coords_altaz, 150e6)
+    Abeam1 = Pigi.resample(subAbeam1, subgridspec, gridspec)
+
+    skymap1 = map(Abeam1, skymap) do J, val
+        return J * val * J'
+    end
+
+    beam = Pigi.MWABeam(zeros(Int, 16))
+    coords_radec = Pigi.grid_to_radec(subgridspec, (0., π / 2))
+    coords_altaz = reverse.(coords_radec)
+    subAbeam2 = Pigi.getresponse(beam, coords_altaz, 150e6)
+    Abeam2 = Pigi.resample(subAbeam2, subgridspec, gridspec)
+
+    skymap2 = map(Abeam2, skymap) do J, val
+        return J * val * J'
+    end
+
+    # Create UVData by direct FT
+    uvdata = Pigi.UVDatum{precision}[]
+    for (u, v, w) in eachcol(randn(3, Nbaselines))
+        u, v = Pigi.px2lambda(u * 100 + gridspec.Nx / 2, v * 100 + gridspec.Ny / 2, gridspec)
+        w = 0 * w  # WAS 200
+        push!(uvdata, Pigi.UVDatum{precision}(1, 1, u, v, w, (1, 1, 1, 1) ./ Nbaselines, (0, 0, 0, 0)))
+    end
+    uvdata[1] = Pigi.UVDatum{precision}(1, 1, 0, 0, 0, (1, 1, 1, 1) ./ Nbaselines, (0, 0, 0, 0))
+    uvdata = StructArray(uvdata)
+
+    idxs1 = rand(Bool[true, true, false], Nbaselines)
+    idxs1 = rand(Bool[true], Nbaselines)
+    idxs2 = (!).(idxs1)
+
+    dft!(view(uvdata, idxs1), skymap1, gridspec)
+    dft!(view(uvdata, idxs2), skymap2, gridspec)
+
+    # Create expected dirty image by direct FT
+    expected1 = zeros(SMatrix{2, 2, Complex{precision}, 4}, gridspec.Nx, gridspec.Ny)
+    idft!(expected1, uvdata[idxs1], gridspec, precision(length(uvdata)))
+    map!(expected1, expected1, Abeam1) do val, J
+        invJ = inv(J)
+        val *= sum(real, (J * J')[[1, 4]]) / 2
+        return invJ * val * invJ'
+    end
+
+    expected2 = zeros(SMatrix{2, 2, Complex{precision}, 4}, gridspec.Nx, gridspec.Ny)
+    idft!(expected2, uvdata[idxs2], gridspec, precision(length(uvdata)))
+    map!(expected2, expected2, Abeam2) do val, J
+        invJ = inv(J)
+        val *= sum(real, (J * J')[[1, 4]]) / 2
+        return invJ * val * invJ'
+    end
+
+    expected = (expected1 + expected2)[1 + masterpadding:end - masterpadding, 1 + masterpadding:end - masterpadding]
+    expected = map(expected) do x
+        real(x[1, 1] + x[2, 2]) / 2
+    end
+
+    # IDG
+    wstep = 25
+    padding = 16
+
+    subtaper = Pigi.mkkbtaper(subgridspec, precision; threshold=1e-6)
+    taper = Pigi.resample(subtaper, subgridspec, gridspec)
+
+    subAbeam1 = convert(Array{Pigi.Comp2x2{precision}}, subAbeam1)
+    workunits1 = Pigi.partition(uvdata[idxs1], gridspec, subgridspec, padding, wstep, subAbeam1)
+    subAbeam2 = convert(Array{Pigi.Comp2x2{precision}}, subAbeam2)
+    workunits2 = Pigi.partition(uvdata[idxs2], gridspec, subgridspec, padding, wstep, subAbeam2)
+    workunits = vcat(workunits1, workunits2)
+    println("N workunits: ", length(workunits))
+
+    img = Pigi.invert(Pigi.StokesI{precision}, workunits, gridspec, taper, subtaper, CuArray)
+    img = real.(img)[1 + masterpadding:end - masterpadding, 1 + masterpadding:end - masterpadding]
+
+    println("Max error: ", maximum(isfinite(x) ? abs(x - y) : 0 for (x, y) in zip(img, expected)))
+    @test maximum(isfinite(x) ? abs(x - y) : 0 for (x, y) in zip(img, expected)) < 5e-4
+
+    # diff = img - expected
+    # plt.subplot(1, 3, 1)
+    # plt.imshow(expected)
+    # plt.subplot(1, 3, 2)
+    # plt.imshow(img; vmin=minimum(expected), vmax=maximum(expected))
+    # plt.subplot(1, 3, 3)
+    # plt.imshow(diff, vmin=-1e-8, vmax=1e-8)
+    # plt.colorbar()
+    # plt.show()
+end
