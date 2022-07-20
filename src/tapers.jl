@@ -1,55 +1,31 @@
-function mkkbtaper(gridspec, ::Type{precision}; alpha=14, threshold=1e-4) where {precision <: AbstractFloat}
-    kbnorm = besseli(0, π * alpha)
-    # We want the taper to reach threshold at edge of the image
-    # This can't be too small, otherwise we encounter significant floating point
-    # errors at Float32, but can't be too large or else we truncate the taper too severely
-    # (and require significant padding).
-    rmax = 0.5
-    for r in 0:1e-2:0.5
-        if besseli(0, π * alpha * sqrt(1 - 4 * r^2)) / kbnorm < threshold
-            rmax = r
-            break
-        end
-    end
-    rnorm  = sqrt((gridspec.Nx ÷ 2)^2 + (gridspec.Ny ÷ 2)^2) * gridspec.scalelm / rmax
+function kaiserbessel(gridspec::GridSpec, ::Type{T}; alpha=8.6)::Matrix{T} where {T <: AbstractFloat}
+    function kb1D(n, N)
+        x = n / N - 0.5
 
-    taper = ones(precision, gridspec.Nx, gridspec.Ny)
-
-    for lm in CartesianIndices(taper)
-        lpx, mpx = Tuple(lm)
-        l, m = px2sky(lpx, mpx, gridspec)
-        r2 = (l^2 + m^2) / rnorm^2
-        if r2 > 0.25
-            taper[lm] *= 0
-        else
-            taper[lm] *= besseli(0, π * alpha * sqrt(1 - 4 * r2)) / kbnorm
-        end
-    end
-
-    return taper
-end
-
-function taperpadding(vimg, vtruncate; alpha=14)
-    function kbtaper(r)
-        r2 = r^2
-
-        if r2 > 0.25
+        if x < -0.5 || x > 0.5
             return 0.
         else
-            return besseli(0, π * alpha * sqrt(1 - 4 * r2)) / besseli(0, π * alpha)
+            return besseli(0, π * alpha * sqrt(1 - 4 * x^2)) / besseli(0, π * alpha)
         end
     end
 
-    rimg, rtruncate = 0, 0.5
-    for r in range(0, 0.5, length=2000)
-        t = kbtaper(r)
-        if t > vimg
-            rimg = r
-        end
-        if t > vtruncate
-            rtruncate = r
+    return map(CartesianIndices((1:gridspec.Nx,  1:gridspec.Ny))) do xy
+        x, y = Tuple(xy)
+        return kb1D(x - 1.5, gridspec.Nx - 1) * kb1D(y - 1.5, gridspec.Ny - 1)
+    end
+end
+
+function blackmanharris(gridspec::GridSpec, ::Type{T})::Matrix{T} where {T <: AbstractFloat}
+    function blackmanharris1D(n, N)
+        if n < 0 || n >= N
+            return 0.
+        else
+            return 0.35875 - 0.48829 * cos(2π * (n / N)) + 0.14128 * cos(4π * (n / N)) - 0.01168 * cos(6π * (n / N))
         end
     end
 
-    return rtruncate / rimg
+    return map(CartesianIndices((1:gridspec.Nx, 1:gridspec.Ny))) do xy
+        x, y = Tuple(xy)
+        return blackmanharris1D(x - 1.5, gridspec.Nx - 1) * blackmanharris1D(y - 1.5, gridspec.Ny - 1)
+    end
 end

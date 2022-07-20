@@ -1,8 +1,8 @@
-@testset "Simple inversion: $(wrapper), $(precision)" for wrapper in [Array, CuArray], (precision, atol) in [(Float32, 6e-4), (Float64, 6e-4)]
+@testset "Simple inversion: $(wrapper), $(precision)" for wrapper in [Array, CuArray], (precision, atol) in [(Float32, 1e-9), (Float64, 1e-9)]
     gridspec = Pigi.GridSpec(2000, 2000, scalelm=0.5u"arcminute")
 
     padding = 18
-    wstep = 100
+    wstep = 25
 
     # Source locations in radians, wrt to phase center, with x degree FOV
     sources = deg2rad.(
@@ -35,9 +35,7 @@
     end
 
     # IDG
-    vimg, vtruncate = 1e-3, 1e-6
-    paddingfactor = Pigi.taperpadding(vimg, vtruncate)
-
+    paddingfactor = 1.5
     masterpadding = round(Int, (paddingfactor - 1) * gridspec.Nx / 2)
     paddedgridspec = Pigi.GridSpec(
         gridspec.Nx + 2 * masterpadding,
@@ -50,7 +48,7 @@
 
     weighter = Pigi.Natural(precision, uvdata, paddedgridspec)
 
-    subtaper = Pigi.mkkbtaper(subgridspec, precision, threshold=vtruncate)
+    subtaper = Pigi.kaiserbessel(subgridspec, precision)
     taper = Pigi.resample(subtaper, subgridspec, paddedgridspec)
     Aterms = ones(SMatrix{2, 2, Complex{precision}, 4}, subgridspec.Nx, subgridspec.Ny)
 
@@ -126,7 +124,7 @@ end
     # IDG
     wstep = 25
     padding = 16
-    subtaper = Pigi.mkkbtaper(subgridspec, precision; threshold=0)
+    subtaper = Pigi.kaiserbessel(subgridspec, precision)
     taper = Pigi.resample(subtaper, subgridspec, gridspec)
     subAbeam = convert(Array{Pigi.Comp2x2{precision}}, subAbeam)
     workunits = Pigi.partition(uvdata, gridspec, subgridspec, padding, wstep, subAbeam)
@@ -139,7 +137,7 @@ end
     img = real.(img[500:1500, 500:1500])
 
     println("Max error: ", maximum(isfinite(x) ? abs(x - y) : 0 for (x, y) in zip(img, expected)))
-    @test maximum(isfinite(x) ? abs(x - y) : 0 for (x, y) in zip(img, expected)) < 5e-4
+    @test maximum(isfinite(x) ? abs(x - y) : 0 for (x, y) in zip(img, expected)) < 1e-9
 
     # diff = img - expected
     # plt.subplot(1, 3, 1)
@@ -157,7 +155,7 @@ end
     Nbaselines = 20000
     imgsize = 1200
 
-    paddingfactor = Pigi.taperpadding(1e-3, 1e-6)
+    paddingfactor = 1.5
     masterpadding = round(Int, (paddingfactor - 1) * imgsize) ÷ 2
     gridspec = Pigi.GridSpec(imgsize + 2 * masterpadding, imgsize + 2 * masterpadding, scalelm=scalelm=deg2rad(1.8/60))
     subgridspec = Pigi.GridSpec(128, 128, scaleuv=gridspec.scaleuv)
@@ -194,7 +192,7 @@ end
     uvdata = Pigi.UVDatum{precision}[]
     for (u, v, w) in eachcol(randn(3, Nbaselines))
         u, v = Pigi.px2lambda(u * 100 + gridspec.Nx / 2, v * 100 + gridspec.Ny / 2, gridspec)
-        w = 0 * w  # WAS 200
+        w = 200 * w
         push!(uvdata, Pigi.UVDatum{precision}(1, 1, u, v, w, (1, 1, 1, 1) ./ Nbaselines, (0, 0, 0, 0)))
     end
     uvdata[1] = Pigi.UVDatum{precision}(1, 1, 0, 0, 0, (1, 1, 1, 1) ./ Nbaselines, (0, 0, 0, 0))
@@ -233,7 +231,7 @@ end
     wstep = 25
     padding = 16
 
-    subtaper = Pigi.mkkbtaper(subgridspec, precision; threshold=1e-6)
+    subtaper = Pigi.kaiserbessel(subgridspec, precision)
     taper = Pigi.resample(subtaper, subgridspec, gridspec)
 
     subAbeam1 = convert(Array{Pigi.Comp2x2{precision}}, subAbeam1)

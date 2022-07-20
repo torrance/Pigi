@@ -138,7 +138,7 @@ end
     end
     println("Done.")
 
-    subtaper = Pigi.mkkbtaper(subgridspec, precision)
+    subtaper = Pigi.kaiserbessel(subgridspec, precision)
 
     # Calculate expected output
     expected = zeros(SMatrix{2, 2, Complex{precision}, 4}, subgridspec.Nx, subgridspec.Ny)

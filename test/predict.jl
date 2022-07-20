@@ -1,5 +1,4 @@
-@testset "Prediction: $(wrapper)" for wrapper in [Array, CuArray]
-    precision = Float64
+@testset "Prediction: $(wrapper) with precision $(precision)" for wrapper in [Array, CuArray], precision in [Float32, Float64]
     gridspec = Pigi.GridSpec(2000, 2000, scaleuv=1)
 
     # Create template skymap (Jy / px) and associated GridSpec
@@ -18,7 +17,7 @@
 
     # Predict using IDG
     subgridspec = Pigi.GridSpec(64, 64, scaleuv=gridspec.scaleuv)
-    subtaper = Pigi.mkkbtaper(subgridspec, precision, threshold=0)
+    subtaper = Pigi.kaiserbessel(subgridspec, precision)
     taper = Pigi.resample(subtaper, subgridspec, gridspec)
     padding = 15
     Aterms = ones(SMatrix{2, 2, Complex{precision}, 4}, subgridspec.Nx, subgridspec.Ny)
@@ -34,7 +33,7 @@
     uvdatadft = deepcopy(uvdata)
     @time dft!(uvdatadft, skymap, gridspec)
 
-    @test maximum(sum(abs.(x[1].data - x[2].data)) for x in zip(uvdata, uvdatadft)) < 1e-4
+    @test maximum(sum(abs.(x[1].data - x[2].data)) for x in zip(uvdata, uvdatadft)) < 1e-6
 
     # # Plot images
     # expected = zeros(SMatrix{2, 2, Complex{precision}, 4}, gridspec.Nx, gridspec.Ny)
@@ -98,7 +97,7 @@ end
     # Predict using IDG
     wstep = 50
     padding = 15
-    subtaper = Pigi.mkkbtaper(subgridspec, precision, threshold=1e-6)
+    subtaper = Pigi.kaiserbessel(subgridspec, precision)
     taper = Pigi.resample(subtaper, subgridspec, gridspec)
     workunits = Pigi.partition(uvdata, gridspec, subgridspec, padding, wstep, subAbeam)
     Pigi.predict!(workunits, skymap, gridspec, taper, subtaper, CuArray)
@@ -119,7 +118,7 @@ end
     end
     dft!(expected, skymap, gridspec)
 
-    @test maximum(sum(abs, x[1].data - x[2].data) for x in zip(uvdata, expected)) < 1e-4
+    @test maximum(sum(abs, x[1].data - x[2].data) for x in zip(uvdata, expected)) < 1e-6
 
     # # Plot images
     # expectedmap = zeros(SMatrix{2, 2, Complex{precision}, 4}, gridspec.Nx, gridspec.Ny)

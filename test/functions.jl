@@ -48,7 +48,7 @@ function _idft!(dft::Matrix{SMatrix{2, 2, Complex{T}, 4}}, uvdata::StructVector{
         val = zero(SMatrix{2, 2, ComplexF64, 4})
         for uvdatum in uvdata
             val += uvdatum.data * exp(
-                2π * 1im * (uvdatum.u * l + uvdatum.v * m + uvdatum.w * n)
+                2im * T(π) * (uvdatum.u * l + uvdatum.v * m + uvdatum.w * n)
             )
         end
         dft[lpx, mpx] = val / normfactor
@@ -66,7 +66,7 @@ function _idft!(dft::CuDeviceMatrix{SMatrix{2, 2, Complex{T}, 4}}, uvdata::Struc
         val = zero(SMatrix{2, 2, Complex{T}, 4})
         for uvdatum in uvdata
             val += uvdatum.data * exp(
-                2π * 1im * (uvdatum.u * l + uvdatum.v * m + uvdatum.w * n)
+                2im * T(π) * (uvdatum.u * l + uvdatum.v * m + uvdatum.w * n)
             )
         end
         dft[lpx, mpx] = val / normfactor
@@ -82,8 +82,10 @@ function dft!(uvdata::StructVector{Pigi.UVDatum{T}}, img::AbstractMatrix{S}, gri
         for idx in idxs
             lpx, mpx = Tuple(idx)
             l, m = Pigi.px2sky(lpx, mpx, gridspec)
+            l, m = T(l), T(m)
+
             data += img[lpx, mpx] * exp(
-                -2π * 1im * (uvdatum.u * l + uvdatum.v * m + uvdatum.w * Pigi.ndash(l, m))
+                -2im * T(π) * (uvdatum.u * l + uvdatum.v * m + uvdatum.w * Pigi.ndash(l, m))
             )
         end
 

@@ -1,7 +1,7 @@
 @testset "GPU Gridding" for (precision, atol) in [(Float32, 1e-5), (Float64, 1e-8)]
     subgridspec = Pigi.GridSpec(96, 96, scaleuv=1)
 
-    subtaper = Pigi.mkkbtaper(subgridspec, precision)
+    subtaper = Pigi.kaiserbessel(subgridspec, precision)
     Aleft = Aright = ones(SMatrix{2, 2, Complex{precision}, 4}, subgridspec.Nx, subgridspec.Ny)
 
     uvdata = StructVector{Pigi.UVDatum{precision}}(undef, 0)
