@@ -1,4 +1,4 @@
-@testset "Prediction: $(wrapper) with precision $(precision)" for wrapper in [Array, CuArray], precision in [Float32, Float64]
+@testset "Prediction: $(wrapper) with precision $(precision)" for wrapper in [Array, CuArray], (precision, atol) in [(Float32, 1e-5), (Float64, 1e-6)]
     gridspec = Pigi.GridSpec(2000, 2000, scaleuv=1)
 
     # Create template skymap (Jy / px) and associated GridSpec
@@ -33,7 +33,7 @@
     uvdatadft = deepcopy(uvdata)
     @time dft!(uvdatadft, skymap, gridspec)
 
-    @test maximum(sum(abs.(x[1].data - x[2].data)) for x in zip(uvdata, uvdatadft)) < 1e-6
+    @test maximum(sum(abs.(x[1].data - x[2].data)) for x in zip(uvdata, uvdatadft)) < atol
 
     # # Plot images
     # expected = zeros(SMatrix{2, 2, Complex{precision}, 4}, gridspec.Nx, gridspec.Ny)

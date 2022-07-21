@@ -1,4 +1,4 @@
-@testset "Simple inversion: $(wrapper), $(precision)" for wrapper in [Array, CuArray], (precision, atol) in [(Float32, 1e-9), (Float64, 1e-9)]
+@testset "Simple inversion: $(wrapper), $(precision)" for wrapper in [Array, CuArray], (precision, atol) in [(Float32, 5e-5), (Float64, 1e-9)]
     gridspec = Pigi.GridSpec(2000, 2000, scalelm=0.5u"arcminute")
 
     padding = 18
@@ -75,7 +75,7 @@
     # plt.show()
 end
 
-@testset "Inversion with beam (precision: $(precision))" for precision in [Float32, Float64]
+@testset "Inversion with beam (precision: $(precision))" for (precision, atol) in [(Float32, 5e-4), (Float64, 5e-5)]
     Random.seed!(123456)
     Nbaselines = 10000
     gridspec = Pigi.GridSpec(2000, 2000, scalelm=deg2rad(2/60))
@@ -137,7 +137,7 @@ end
     img = real.(img[500:1500, 500:1500])
 
     println("Max error: ", maximum(isfinite(x) ? abs(x - y) : 0 for (x, y) in zip(img, expected)))
-    @test maximum(isfinite(x) ? abs(x - y) : 0 for (x, y) in zip(img, expected)) < 1e-9
+    @test maximum(isfinite(x) ? abs(x - y) : 0 for (x, y) in zip(img, expected)) < atol
 
     # diff = img - expected
     # plt.subplot(1, 3, 1)
@@ -150,7 +150,7 @@ end
     # plt.show()
 end
 
-@testset "Inversion with multiple beams (precision: $(precision))" for precision in [Float32, Float64]
+@testset "Inversion with multiple beams (precision: $(precision))" for (precision, atol) in [(Float32, 5e-5), (Float64, 1e-6)]
     Random.seed!(123456)
     Nbaselines = 20000
     imgsize = 1200
@@ -245,7 +245,7 @@ end
     img = real.(img)[1 + masterpadding:end - masterpadding, 1 + masterpadding:end - masterpadding]
 
     println("Max error: ", maximum(isfinite(x) ? abs(x - y) : 0 for (x, y) in zip(img, expected)))
-    @test maximum(isfinite(x) ? abs(x - y) : 0 for (x, y) in zip(img, expected)) < 5e-4
+    @test maximum(isfinite(x) ? abs(x - y) : 0 for (x, y) in zip(img, expected)) < 5e-5
 
     # diff = img - expected
     # plt.subplot(1, 3, 1)

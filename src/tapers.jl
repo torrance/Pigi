@@ -1,4 +1,12 @@
-function kaiserbessel(gridspec::GridSpec, ::Type{T}; alpha=8.6)::Matrix{T} where {T <: AbstractFloat}
+function kaiserbessel(gridspec::GridSpec, ::Type{Float32}; alpha=4.2)::Matrix{Float32}
+    return kaiserbessel(gridspec, Float32, alpha)
+end
+
+function kaiserbessel(gridspec::GridSpec, ::Type{Float64}; alpha=10)::Matrix{Float64}
+    return kaiserbessel(gridspec, Float64, alpha)
+end
+
+function kaiserbessel(gridspec::GridSpec, ::Type{T}, alpha)::Matrix{T} where {T <: AbstractFloat}
     function kb1D(n, N)
         x = n / N - 0.5
 
