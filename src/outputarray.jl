@@ -36,13 +36,27 @@ end
 Normalization used during inversion to mitigate errors and infinities from nulls
 =#
 
-function normalize(data::StokesI{T}, Aleft::Comp2x2{T}, Aright::Comp2x2{T})::StokesI{T} where T
-    A2 = Aleft * Aright'
-    norm = real(A2[1, 1] + A2[2, 2]) / 2
-    return data * norm
+function normalize(data::StokesI{T}, Aleft::Comp2x2{S}, Aright::Comp2x2{S})::StokesI{T} where {T, S}
+    invAleft = inv(Aleft)
+    invAright = inv(Aright')
+
+    selectors = (
+        Real2x2{T}(1, 0, 0, 0),
+        Real2x2{T}(0, 1, 0, 0),
+        Real2x2{T}(0, 0, 1, 0),
+        Real2x2{T}(0, 0, 0, 1),
+    )
+
+    norm = zero(S)
+    for selector in selectors
+        J2 = invAleft * selector * invAright
+        norm += abs(J2[1].re + J2[4].re) + abs(J2[1].im + J2[4].im)
+    end
+
+    return data / T(norm)
 end
 
-# Since there's no sensible normalisation for LinearData, we default to unity
+# Currently no normalization is performed for LinearData
 function normalize(data::LinearData{T}, ::Comp2x2{T}, ::Comp2x2{T})::LinearData{T} where T
     return data
 end
