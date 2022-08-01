@@ -1,4 +1,4 @@
-@testset "Simple inversion: $(wrapper), $(precision)" for wrapper in [Array, CuArray], (precision, atol) in [(Float32, 5e-5), (Float64, 1e-9)]
+@testset "Simple inversion: $(wrapper), $(precision)" for wrapper in [Array, CuArray], (precision, atol) in [(Float32, 5e-5), (Float64, 5e-10)]
     gridspec = Pigi.GridSpec(2000, 2000, scalelm=0.5u"arcminute")
 
     padding = 18
@@ -49,7 +49,7 @@
     weighter = Pigi.Natural(precision, uvdata, paddedgridspec)
 
     subtaper = Pigi.kaiserbessel(subgridspec, precision)
-    taper = Pigi.resample(subtaper, subgridspec, paddedgridspec)
+    taper = Pigi.kaiserbessel(paddedgridspec, precision)
     Aterms = ones(SMatrix{2, 2, Complex{precision}, 4}, subgridspec.Nx, subgridspec.Ny)
 
     workunits = Pigi.partition(uvdata, paddedgridspec, subgridspec, padding, wstep, Aterms)
@@ -60,6 +60,7 @@
 
     img = reinterpret(Complex{precision}, img)
 
+    println("Maximum: ", maximum(isfinite(x) ? abs(x - y) : 0 for (x, y) in zip(img, expected)))
     @test maximum(isfinite(x) ? abs(x - y) : 0 for (x, y) in zip(img, expected)) < atol
 
     # vmin, vmax = extrema(real, expected)
@@ -89,11 +90,14 @@ end
 
     # Create Aterms
     beam = Pigi.MWABeam(zeros(Int, 16))
+
     coords_radec = Pigi.grid_to_radec(subgridspec, (0., π / 2))
     coords_altaz = reverse.(coords_radec)
     subAbeam = Pigi.getresponse(beam, coords_altaz, 150e6)
 
-    Abeam = Pigi.resample(subAbeam, subgridspec, gridspec)
+    coords_radec = Pigi.grid_to_radec(gridspec, (0., π / 2))
+    coords_altaz = reverse.(coords_radec)
+    Abeam = Pigi.getresponse(beam, coords_altaz, 150e6)
 
     # Apply Aterms to skymap
     map!(skymap, Abeam, skymap) do J, val
@@ -112,28 +116,22 @@ end
 
     expected = zeros(SMatrix{2, 2, Complex{precision}, 4}, 2000, 2000)
     idft!(expected, uvdata, gridspec, precision(length(uvdata)))
-    map!(expected, expected, Abeam) do val, J
-        invJ = inv(J)
-        return invJ * val * invJ'
-    end
-
-    power = map(Abeam) do J
-        return real(sum((J * J')[[1, 4]])) / 2
+    expected = map(expected, Abeam) do data, J
+        s::Pigi.StokesI{precision} = Pigi.LinearData{precision}(inv(J) * data * inv(J)')
+        return Pigi.normalize(s, J, J)
     end
 
     # IDG
     wstep = 25
     padding = 16
     subtaper = Pigi.kaiserbessel(subgridspec, precision)
-    taper = Pigi.resample(subtaper, subgridspec, gridspec)
+    taper = Pigi.kaiserbessel(gridspec, precision)
     subAbeam = convert(Array{Pigi.Comp2x2{precision}}, subAbeam)
     workunits = Pigi.partition(uvdata, gridspec, subgridspec, padding, wstep, subAbeam)
     println("N workunits: ", length(workunits))
     img = Pigi.invert(Pigi.StokesI{precision}, workunits, gridspec, taper, subtaper, CuArray)
 
-    expected = map((expected .* power)[500:1500, 500:1500]) do x
-        real(x[1, 1] + x[2, 2]) / 2
-    end
+    expected = real.(expected[500:1500, 500:1500])
     img = real.(img[500:1500, 500:1500])
 
     println("Max error: ", maximum(isfinite(x) ? abs(x - y) : 0 for (x, y) in zip(img, expected)))
@@ -169,20 +167,28 @@ end
 
     # Create Aterms for two beams
     beam = Pigi.MWABeam(Int[0,0,0,0,1,1,1,1,2,2,2,2,3,3,3,3])
+
     coords_radec = Pigi.grid_to_radec(subgridspec, (0., π / 2))
     coords_altaz = reverse.(coords_radec)
     subAbeam1 = Pigi.getresponse(beam, coords_altaz, 150e6)
-    Abeam1 = Pigi.resample(subAbeam1, subgridspec, gridspec)
+
+    coords_radec = Pigi.grid_to_radec(gridspec, (0., π / 2))
+    coords_altaz = reverse.(coords_radec)
+    Abeam1 = Pigi.getresponse(beam, coords_altaz, 150e6)
 
     skymap1 = map(Abeam1, skymap) do J, val
         return J * val * J'
     end
 
     beam = Pigi.MWABeam(zeros(Int, 16))
+
     coords_radec = Pigi.grid_to_radec(subgridspec, (0., π / 2))
     coords_altaz = reverse.(coords_radec)
     subAbeam2 = Pigi.getresponse(beam, coords_altaz, 150e6)
-    Abeam2 = Pigi.resample(subAbeam2, subgridspec, gridspec)
+
+    coords_radec = Pigi.grid_to_radec(gridspec, (0., π / 2))
+    coords_altaz = reverse.(coords_radec)
+    Abeam2 = Pigi.getresponse(beam, coords_altaz, 150e6)
 
     skymap2 = map(Abeam2, skymap) do J, val
         return J * val * J'
@@ -208,31 +214,26 @@ end
     # Create expected dirty image by direct FT
     expected1 = zeros(SMatrix{2, 2, Complex{precision}, 4}, gridspec.Nx, gridspec.Ny)
     idft!(expected1, uvdata[idxs1], gridspec, precision(length(uvdata)))
-    map!(expected1, expected1, Abeam1) do val, J
-        invJ = inv(J)
-        val *= sum(real, (J * J')[[1, 4]]) / 2
-        return invJ * val * invJ'
+    expected1 = map(expected1, Abeam1) do data, J
+        s::Pigi.StokesI{precision} = Pigi.LinearData{precision}(inv(J) * data * inv(J)')
+        return Pigi.normalize(s, J, J)
     end
 
     expected2 = zeros(SMatrix{2, 2, Complex{precision}, 4}, gridspec.Nx, gridspec.Ny)
     idft!(expected2, uvdata[idxs2], gridspec, precision(length(uvdata)))
-    map!(expected2, expected2, Abeam2) do val, J
-        invJ = inv(J)
-        val *= sum(real, (J * J')[[1, 4]]) / 2
-        return invJ * val * invJ'
+    expected2 = map(expected2, Abeam2) do data, J
+        s::Pigi.StokesI{precision} = Pigi.LinearData{precision}(inv(J) * data * inv(J)')
+        return Pigi.normalize(s, J, J)
     end
 
-    expected = (expected1 + expected2)[1 + masterpadding:end - masterpadding, 1 + masterpadding:end - masterpadding]
-    expected = map(expected) do x
-        real(x[1, 1] + x[2, 2]) / 2
-    end
+    expected = real.(expected1 + expected2)[1 + masterpadding:end - masterpadding, 1 + masterpadding:end - masterpadding]
 
     # IDG
     wstep = 25
     padding = 16
 
     subtaper = Pigi.kaiserbessel(subgridspec, precision)
-    taper = Pigi.resample(subtaper, subgridspec, gridspec)
+    taper = Pigi.kaiserbessel(gridspec, precision)
 
     subAbeam1 = convert(Array{Pigi.Comp2x2{precision}}, subAbeam1)
     workunits1 = Pigi.partition(uvdata[idxs1], gridspec, subgridspec, padding, wstep, subAbeam1)
