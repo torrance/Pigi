@@ -1,4 +1,4 @@
-@testset "Prediction: $(wrapper) with precision $(precision)" for wrapper in [Array, CuArray], (precision, atol) in [(Float32, 1e-5), (Float64, 1e-6)]
+@testset "Prediction: $(wrapper) with precision $(precision)" for wrapper in [Array, CuArray], (precision, atol) in [(Float32, 1e-5), (Float64, 1e-7)]
     gridspec = Pigi.GridSpec(2000, 2000, scaleuv=1)
 
     # Create template skymap (Jy / px) and associated GridSpec
@@ -18,7 +18,7 @@
     # Predict using IDG
     subgridspec = Pigi.GridSpec(64, 64, scaleuv=gridspec.scaleuv)
     subtaper = Pigi.kaiserbessel(subgridspec, precision)
-    taper = Pigi.resample(subtaper, subgridspec, gridspec)
+    taper = Pigi.kaiserbessel(gridspec, precision)
     padding = 15
     Aterms = ones(SMatrix{2, 2, Complex{precision}, 4}, subgridspec.Nx, subgridspec.Ny)
     workunits = Pigi.partition(uvdata, gridspec, subgridspec, padding, 25, Aterms)
@@ -33,6 +33,7 @@
     uvdatadft = deepcopy(uvdata)
     @time dft!(uvdatadft, skymap, gridspec)
 
+    println("Maximum error: ", maximum(sum(abs.(x[1].data - x[2].data)) for x in zip(uvdata, uvdatadft)))
     @test maximum(sum(abs.(x[1].data - x[2].data)) for x in zip(uvdata, uvdatadft)) < atol
 
     # # Plot images
