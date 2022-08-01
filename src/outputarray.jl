@@ -52,6 +52,7 @@ function normalize(data::StokesI{T}, Aleft::Comp2x2{S}, Aright::Comp2x2{S})::Sto
         J2 = invAleft * selector * invAright
         norm += abs(J2[1].re + J2[4].re) + abs(J2[1].im + J2[4].im)
     end
+    norm /= 2
 
     return data / T(norm)
 end
