@@ -1,4 +1,4 @@
-@testset "Simple inversion: $(wrapper), $(precision)" for wrapper in [Array, CuArray], (precision, atol) in [(Float32, 5e-5), (Float64, 5e-10)]
+@testset "Simple inversion: $(wrapper), $(precision)" for wrapper in [Array, CuArray], (precision, atol) in [(Float32, 5e-5), (Float64, 1e-10)]
     gridspec = Pigi.GridSpec(2000, 2000, scalelm=0.5u"arcminute")
 
     padding = 18
@@ -76,7 +76,8 @@
     # plt.show()
 end
 
-@testset "Inversion with beam (precision: $(precision))" for (precision, atol) in [(Float32, 5e-4), (Float64, 5e-5)]
+@testset "Inversion with $(beamtype) beam" for (beamtype, atol) in [(:fakebeam, 1e-9), (:mwabeam, 2.5e-4)]
+    precision = Float64
     Random.seed!(123456)
     Nbaselines = 10000
     gridspec = Pigi.GridSpec(2000, 2000, scalelm=deg2rad(2/60))
@@ -89,15 +90,20 @@ end
     end
 
     # Create Aterms
-    beam = Pigi.MWABeam(zeros(Int, 16))
+    if beamtype == :fakebeam
+        subAbeam = fakebeam(subgridspec)
+        Abeam = fakebeam(gridspec)
+    elseif beamtype == :mwabeam
+        beam = Pigi.MWABeam(zeros(Int, 16))
 
-    coords_radec = Pigi.grid_to_radec(subgridspec, (0., π / 2))
-    coords_altaz = reverse.(coords_radec)
-    subAbeam = Pigi.getresponse(beam, coords_altaz, 150e6)
+        coords_radec = Pigi.grid_to_radec(subgridspec, (0., π / 2))
+        coords_altaz = reverse.(coords_radec)
+        subAbeam = Pigi.getresponse(beam, coords_altaz, 150e6)
 
-    coords_radec = Pigi.grid_to_radec(gridspec, (0., π / 2))
-    coords_altaz = reverse.(coords_radec)
-    Abeam = Pigi.getresponse(beam, coords_altaz, 150e6)
+        coords_radec = Pigi.grid_to_radec(gridspec, (0., π / 2))
+        coords_altaz = reverse.(coords_radec)
+        Abeam = Pigi.getresponse(beam, coords_altaz, 150e6)
+    end
 
     # Apply Aterms to skymap
     map!(skymap, Abeam, skymap) do J, val
@@ -134,8 +140,8 @@ end
     expected = real.(expected[500:1500, 500:1500])
     img = real.(img[500:1500, 500:1500])
 
-    println("Max error: ", maximum(isfinite(x) ? abs(x - y) : 0 for (x, y) in zip(img, expected)))
-    @test maximum(isfinite(x) ? abs(x - y) : 0 for (x, y) in zip(img, expected)) < atol
+    err = maximum(((a, b),) -> abs(a - b), zip(expected, img))
+    @test err < atol
 
     # diff = img - expected
     # plt.subplot(1, 3, 1)
@@ -148,7 +154,7 @@ end
     # plt.show()
 end
 
-@testset "Inversion with multiple beams (precision: $(precision))" for (precision, atol) in [(Float32, 5e-5), (Float64, 1e-6)]
+@testset "Inversion with multiple beams (precision: $(precision))" for (precision, atol) in [(Float32, 1e-5), (Float64, 5e-9)]
     Random.seed!(123456)
     Nbaselines = 20000
     imgsize = 1200
@@ -165,30 +171,15 @@ end
         skymap[coord + offset] = one(SMatrix{2, 2, ComplexF64, 4})
     end
 
-    # Create Aterms for two beams
-    beam = Pigi.MWABeam(Int[0,0,0,0,1,1,1,1,2,2,2,2,3,3,3,3])
-
-    coords_radec = Pigi.grid_to_radec(subgridspec, (0., π / 2))
-    coords_altaz = reverse.(coords_radec)
-    subAbeam1 = Pigi.getresponse(beam, coords_altaz, 150e6)
-
-    coords_radec = Pigi.grid_to_radec(gridspec, (0., π / 2))
-    coords_altaz = reverse.(coords_radec)
-    Abeam1 = Pigi.getresponse(beam, coords_altaz, 150e6)
+    subAbeam1 = fakebeam(subgridspec)
+    Abeam1 = fakebeam(gridspec)
 
     skymap1 = map(Abeam1, skymap) do J, val
         return J * val * J'
     end
 
-    beam = Pigi.MWABeam(zeros(Int, 16))
-
-    coords_radec = Pigi.grid_to_radec(subgridspec, (0., π / 2))
-    coords_altaz = reverse.(coords_radec)
-    subAbeam2 = Pigi.getresponse(beam, coords_altaz, 150e6)
-
-    coords_radec = Pigi.grid_to_radec(gridspec, (0., π / 2))
-    coords_altaz = reverse.(coords_radec)
-    Abeam2 = Pigi.getresponse(beam, coords_altaz, 150e6)
+    subAbeam2 = fakebeam(subgridspec; l0=deg2rad(1), m0=deg2rad(1))
+    Abeam2 = fakebeam(gridspec; l0=deg2rad(1), m0=deg2rad(1))
 
     skymap2 = map(Abeam2, skymap) do J, val
         return J * val * J'
@@ -245,8 +236,8 @@ end
     img = Pigi.invert(Pigi.StokesI{precision}, workunits, gridspec, taper, subtaper, CuArray)
     img = real.(img)[1 + masterpadding:end - masterpadding, 1 + masterpadding:end - masterpadding]
 
-    println("Max error: ", maximum(isfinite(x) ? abs(x - y) : 0 for (x, y) in zip(img, expected)))
-    @test maximum(isfinite(x) ? abs(x - y) : 0 for (x, y) in zip(img, expected)) < 5e-5
+    err = maximum(((a, b),) -> abs(a - b), zip(expected, img))
+    @test err < atol
 
     # diff = img - expected
     # plt.subplot(1, 3, 1)
@@ -254,7 +245,7 @@ end
     # plt.subplot(1, 3, 2)
     # plt.imshow(img; vmin=minimum(expected), vmax=maximum(expected))
     # plt.subplot(1, 3, 3)
-    # plt.imshow(diff, vmin=-1e-8, vmax=1e-8)
+    # plt.imshow(diff, vmin=-1e-5, vmax=1e-5)
     # plt.colorbar()
     # plt.show()
 end

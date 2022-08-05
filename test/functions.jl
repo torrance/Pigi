@@ -92,3 +92,26 @@ function dft!(uvdata::StructVector{Pigi.UVDatum{T}}, img::AbstractMatrix{S}, gri
         uvdata.data[i] = data
     end
 end
+
+function fakebeam(gridspec; l0=0., m0=0.)
+    delta1l = (gridspec.Nx ÷ 2) * gridspec.scalelm * 0.25
+    delta1m = (gridspec.Ny ÷ 2) * gridspec.scalelm * 0.3
+
+    delta2l = (gridspec.Nx ÷ 2) * gridspec.scalelm * 0.35
+    delta2m = (gridspec.Ny ÷ 2) * gridspec.scalelm * 0.4
+
+
+    return map(CartesianIndices((1:gridspec.Nx, 1:gridspec.Ny))) do lmpx
+        lpx, mpx = Tuple(lmpx)
+        l, m = Pigi.px2sky(lpx, mpx, gridspec)
+
+        J = Pigi.Comp2x2{Float64}(
+            sqrt(exp(-(l - l0)^2 / delta1l^2) * exp(-(m - m0)^2 / delta1m^2)), 0,
+            0, sqrt(exp(-(l - l0)^2 / delta2l^2) * exp(-(m - m0)^2 / delta2m^2))
+        )
+
+        J *= Pigi.Real2x2{Float64}(cos(l * m), -sin(l * m), sin(l * m), cos(l * m))
+
+        return J
+    end
+end
