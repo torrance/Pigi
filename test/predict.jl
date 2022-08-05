@@ -1,4 +1,4 @@
-@testset "Prediction: $(wrapper) with precision $(precision)" for wrapper in [Array, CuArray], (precision, atol) in [(Float32, 1e-5), (Float64, 1e-7)]
+@testset "Prediction: $(wrapper) with precision $(precision)" for wrapper in [Array, CuArray], (precision, atol) in [(Float32, 5e-3), (Float64, 1e-8)]
     gridspec = Pigi.GridSpec(2000, 2000, scaleuv=1)
 
     # Create template skymap (Jy / px) and associated GridSpec
@@ -6,7 +6,7 @@
     for (x, y) in zip(rand(700:1300, 1000), rand(700:1300, 1000))
         skymap[x, y] = Pigi.StokesI{precision}(1)
     end
-    skymap[501, 501] = Pigi.StokesI{precision}(1)
+    skymap[1001, 1001] = Pigi.StokesI{precision}(1)
 
     # Create uvw sample points
     uvws = rand(3, 5000) .* [1000 1000 500;]' .- [500 500 250;]'
@@ -16,10 +16,10 @@
     end
 
     # Predict using IDG
-    subgridspec = Pigi.GridSpec(64, 64, scaleuv=gridspec.scaleuv)
+    subgridspec = Pigi.GridSpec(96, 96, scaleuv=gridspec.scaleuv)
     subtaper = Pigi.kaiserbessel(subgridspec, precision)
     taper = Pigi.kaiserbessel(gridspec, precision)
-    padding = 15
+    padding = 17
     Aterms = ones(SMatrix{2, 2, Complex{precision}, 4}, subgridspec.Nx, subgridspec.Ny)
     workunits = Pigi.partition(uvdata, gridspec, subgridspec, padding, 25, Aterms)
     @time Pigi.predict!(workunits, skymap, gridspec, taper, subtaper, wrapper)
@@ -33,8 +33,8 @@
     uvdatadft = deepcopy(uvdata)
     @time dft!(uvdatadft, skymap, gridspec)
 
-    println("Maximum error: ", maximum(sum(abs.(x[1].data - x[2].data)) for x in zip(uvdata, uvdatadft)))
-    @test maximum(sum(abs.(x[1].data - x[2].data)) for x in zip(uvdata, uvdatadft)) < atol
+    println("Maximum error: ", maximum(sum(abs, x[1].data - x[2].data) for x in zip(uvdata, uvdatadft)))
+    @test maximum(sum(abs, x[1].data - x[2].data) for x in zip(uvdata, uvdatadft)) < atol
 
     # # Plot images
     # expected = zeros(SMatrix{2, 2, Complex{precision}, 4}, gridspec.Nx, gridspec.Ny)
@@ -97,7 +97,7 @@ end
 
     # Predict using IDG
     wstep = 50
-    padding = 15
+    padding = 17
     subtaper = Pigi.kaiserbessel(subgridspec, precision)
     taper = Pigi.resample(subtaper, subgridspec, gridspec)
     workunits = Pigi.partition(uvdata, gridspec, subgridspec, padding, wstep, subAbeam)
