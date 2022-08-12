@@ -18,7 +18,7 @@
     img_flat = reinterpret(precision, img)
     img_flat .= conv(expectedcomponentmap_flat, psf_flat)[1 + 35:end - 34, 1 + 35:end - 34]
 
-    componentmap, iter = Pigi.clean!(copy(img), psf, [100e6], mgain=1, threshold=1e-2)
+    componentmap, iter = Pigi.clean!(copy(img), psf, [100e6], GPUArray; mgain=1, threshold=1e-2)
 
 
     restored = conv(reinterpret(precision, componentmap), psf_flat)[1 + 35:end - 34, 1 + 35:end - 34]
@@ -64,7 +64,7 @@ end
         img_flat[i, :, :] .= conv(expectedcomponentmap_flat[i, :, :], psf_flat[i, :, :])[1 + 35:end - 34, 1 + 35:end - 34]
     end
 
-    componentmap, iter = Pigi.clean!(copy(img), psf, freqs, mgain=1, threshold=5e-3, gain=0.01, degree=1)
+    componentmap, iter = Pigi.clean!(copy(img), psf, freqs, GPUArray; mgain=1, threshold=5e-3, gain=0.01, degree=1)
     componentmap_flat = reinterpret(reshape, precision, componentmap)
 
     restored = similar(img_flat)
@@ -80,7 +80,7 @@ end
 
 @testset "findabsmax()" for precision in [Float32, Float64]
     arr = rand(SVector{4, precision}, 9000, 9000)
-    arrd = CuArray(arr)
+    arrd = GPUArray(arr)
 
     val1, idx1 = findmax(abs ∘ sum, arr)
     idx2, val2, absval2 = Pigi.findabsmax(arrd)

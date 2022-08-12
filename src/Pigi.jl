@@ -1,14 +1,18 @@
 module Pigi
+    using AMDGPU
     using CUDA
+    using CUDAKernels
     using Distributed
     using DSP: conv
     using DSP.Util: nextfastfft
     using FITSIO: FITS
     using Formatting
     using FFTW
+    using KernelAbstractions
     using LsqFit: curve_fit, coef
     using Polynomials: fit
     using PyCall
+    using ROCKernels
     using SpecialFunctions: besseli
     using StaticArrays
     using Statistics: mean, median
@@ -19,6 +23,7 @@ module Pigi
 
     include("constants.jl")
     include("typealiases.jl")
+    include("deviceabstractions.jl")
     include("uvdatum.jl")
     include("gridspec.jl")
     include("outputarray.jl")
@@ -33,8 +38,6 @@ module Pigi
     include("predict.jl")
     include("clean.jl")
     include("psf.jl")
-    include("gpugridder.jl")
-    include("gpudegridder.jl")
     include("distributed.jl")
     include("coordinates.jl")
     include("mwabeam.jl")

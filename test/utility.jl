@@ -5,7 +5,7 @@
     @test all(expected .== arr)
 
     arr = rand(SMatrix{2, 2, ComplexF64, 4}, 4000, 4000)
-    arrd = CuArray(arr)
+    arrd = GPUArray(arr)
     expected = fftshift(arr)
     Pigi.fftshift!(arr)
     Pigi.fftshift!(arrd)

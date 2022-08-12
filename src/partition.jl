@@ -75,29 +75,8 @@ function partition(
 end
 
 function addsubgrid!(mastergrid::AbstractMatrix, subgrid::AbstractMatrix, workunit::WorkUnit)
-    u0px = workunit.u0px
-    v0px = workunit.v0px
-    width = workunit.subgridspec.Nx ÷ 2
-
-    for (j, vpx) in enumerate(v0px - width:v0px + width - 1)
-        if 1 <= vpx <= size(mastergrid)[2]
-            for (i, upx) in enumerate(u0px - width:u0px + width - 1)
-                if 1 <= upx <= size(mastergrid)[1]
-                    mastergrid[upx, vpx] += subgrid[i, j]
-                end
-            end
-        end
-    end
-end
-
-function addsubgrid!(mastergrid::CuMatrix, subgrid::CuMatrix, workunit::WorkUnit)
-    function _addsubgrid!(mastergrid::CuDeviceMatrix, subgrid::CuDeviceMatrix, u0px, v0px, width)
-        idx = blockDim().x * (blockIdx().x - 1) + threadIdx().x
-
-        if idx > length(subgrid)
-            return nothing
-        end
-
+    @kernel function _addsubgrid!(mastergrid, subgrid, u0px, v0px, width)
+        idx = @index(Global)
         xpx, ypx = Tuple(CartesianIndices(subgrid)[idx])
 
         upx = xpx + u0px - width
@@ -106,49 +85,23 @@ function addsubgrid!(mastergrid::CuMatrix, subgrid::CuMatrix, workunit::WorkUnit
         if 1 <= upx <= size(mastergrid, 1) && 1 <= vpx <= size(mastergrid, 2)
             mastergrid[upx, vpx] += subgrid[xpx, ypx]
         end
-
-        return nothing
     end
 
     u0px = workunit.u0px
     v0px = workunit.v0px
     width = workunit.subgridspec.Nx ÷ 2 + 1
 
-    kernel = @cuda launch=false _addsubgrid!(mastergrid, subgrid, u0px, v0px, width)
-    config = launch_configuration(kernel.fun)
-    threads = min(config.threads, length(subgrid))
-    blocks = cld(length(subgrid), threads)
-    kernel(mastergrid, subgrid, u0px, v0px, width; threads, blocks)
+    kernel = _addsubgrid!(kernelconf(subgrid)...)
+    wait(
+        kernel(mastergrid, subgrid, u0px, v0px, width; ndrange=length(subgrid))
+    )
+
+    return nothing
 end
 
-function extractsubgrid(mastergrid::Matrix{S}, workunit::WorkUnit{T}) where {T, S <: OutputType{T}}
-    subgrid = zeros(LinearData{T}, workunit.subgridspec.Nx, workunit.subgridspec.Ny)
-
-    u0px = workunit.u0px
-    v0px = workunit.v0px
-    width = workunit.subgridspec.Nx ÷ 2
-
-    for (j, vpx) in enumerate(v0px - width:v0px + width - 1)
-        if 1 <= vpx <= size(mastergrid)[2]
-            for (i, upx) in enumerate(u0px - width:u0px + width - 1)
-                if 1 <= upx <= size(mastergrid)[1]
-                    subgrid[i, j] = mastergrid[upx, vpx]
-                end
-            end
-        end
-    end
-
-    return subgrid
-end
-
-function extractsubgrid(mastergrid::CuMatrix{S}, workunit::WorkUnit{T}) where {T, S <: OutputType{T}}
-    function _extractsubgrid!(subgrid, mastergrid, u0px, v0px, width)
-        idx = blockDim().x * (blockIdx().x - 1) + threadIdx().x
-
-        if idx > length(subgrid)
-            return nothing
-        end
-
+function extractsubgrid(mastergrid::AbstractMatrix{S}, workunit::WorkUnit{T}) where {T, S <: OutputType{T}}
+    @kernel function _extractsubgrid!(subgrid, mastergrid, u0px, v0px, width)
+        idx = @index(Global)
         xpx, ypx = Tuple(CartesianIndices(subgrid)[idx])
 
         upx = xpx + u0px - width
@@ -157,21 +110,19 @@ function extractsubgrid(mastergrid::CuMatrix{S}, workunit::WorkUnit{T}) where {T
         if 1 <= upx <= size(mastergrid, 1) && 1 <= vpx <= size(mastergrid, 2)
             subgrid[xpx, ypx] = mastergrid[upx, vpx]
         end
-
-        return nothing
     end
 
-    subgrid = CUDA.zeros(LinearData{T}, workunit.subgridspec.Nx, workunit.subgridspec.Ny)
+    subgrid = similar(mastergrid, LinearData{T}, workunit.subgridspec.Nx, workunit.subgridspec.Ny)
+    fill!(subgrid, zero(LinearData{T}))
 
     u0px = workunit.u0px
     v0px = workunit.v0px
     width = workunit.subgridspec.Nx ÷ 2 + 1
 
-    kernel = @cuda launch=false _extractsubgrid!(subgrid, mastergrid, u0px, v0px, width)
-    config = launch_configuration(kernel.fun)
-    threads = min(config.threads, length(subgrid))
-    blocks = cld(length(subgrid), threads)
-    kernel(subgrid, mastergrid, u0px, v0px, width; threads, blocks)
+    kernel = _extractsubgrid!(kernelconf(subgrid)...)
+    wait(
+        kernel(subgrid, mastergrid, u0px, v0px, width; ndrange=length(subgrid))
+    )
 
     return subgrid
 end

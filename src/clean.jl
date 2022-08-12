@@ -1,9 +1,9 @@
-function clean!(img::Array{SVector{N, T}, 2}, psf::Array{SVector{N, T}, 2}, freqs::Vector; gain=0.1, mgain=0.8, threshold=0., niter::Int=typemax(Int), degree=-1) where {N, T}
+function clean!(img::Array{SVector{N, T}, 2}, psf::Array{SVector{N, T}, 2}, freqs::Vector, ::Type{wrapper}; gain=0.1, mgain=0.8, threshold=0., niter::Int=typemax(Int), degree=-1) where {N, T, wrapper}
     components = similar(img)
     fill!(components, zero(SVector{N, T}))
 
-    imgd = CuArray(img)
-    psfd = CuArray(psf)
+    imgd = wrapper(img)
+    psfd = wrapper(psf)
 
     threshold = max((1 - mgain) * maximum(abs ∘ sum, img) / N, threshold)
     println("Cleaning to threshold: $(threshold)")
@@ -45,8 +45,6 @@ function clean!(img::Array{SVector{N, T}, 2}, psf::Array{SVector{N, T}, 2}, freq
     end
 
     copy!(img, imgd)
-    CUDA.unsafe_free!(imgd)
-    CUDA.unsafe_free!(psfd)
 
     return components, iter
 end

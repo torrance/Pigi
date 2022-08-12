@@ -1,4 +1,5 @@
-@testset "Simple inversion: $(wrapper), $(precision)" for wrapper in [Array, CuArray], (precision, atol) in [(Float32, 5e-5), (Float64, 1e-10)]
+@testset "Simple inversion: $(wrapper), $(precision)" for wrapper in [Array, GPUArray], (precision, atol) in [(Float32, 5e-5), (Float64, 1e-10)]
+
     gridspec = Pigi.GridSpec(2000, 2000, scalelm=0.5u"arcminute")
 
     padding = 18
@@ -29,7 +30,7 @@
 
     # Calculate expected output
     expected = zeros(SMatrix{2, 2, Complex{precision}, 4}, gridspec.Nx, gridspec.Ny)
-    @time idft!(expected, uvdata, gridspec, precision(length(uvdata)))
+    @time idft!(expected, uvdata, gridspec, precision(length(uvdata)), GPUArray)
     expected = map(expected) do x
         return (x[1, 1] + x[2, 2]) / 2
     end
@@ -121,7 +122,7 @@ end
     dft!(uvdata, skymap, gridspec)
 
     expected = zeros(SMatrix{2, 2, Complex{precision}, 4}, 2000, 2000)
-    idft!(expected, uvdata, gridspec, precision(length(uvdata)))
+    idft!(expected, uvdata, gridspec, precision(length(uvdata)), GPUArray)
     expected = map(expected, Abeam) do data, J
         s::Pigi.StokesI{precision} = Pigi.LinearData{precision}(inv(J) * data * inv(J)')
         return Pigi.normalize(s, J, J)
@@ -135,7 +136,7 @@ end
     subAbeam = convert(Array{Pigi.Comp2x2{precision}}, subAbeam)
     workunits = Pigi.partition(uvdata, gridspec, subgridspec, padding, wstep, subAbeam)
     println("N workunits: ", length(workunits))
-    img = Pigi.invert(Pigi.StokesI{precision}, workunits, gridspec, taper, subtaper, CuArray)
+    img = Pigi.invert(Pigi.StokesI{precision}, workunits, gridspec, taper, subtaper, GPUArray)
 
     expected = real.(expected[500:1500, 500:1500])
     img = real.(img[500:1500, 500:1500])
@@ -204,14 +205,14 @@ end
 
     # Create expected dirty image by direct FT
     expected1 = zeros(SMatrix{2, 2, Complex{precision}, 4}, gridspec.Nx, gridspec.Ny)
-    idft!(expected1, uvdata[idxs1], gridspec, precision(length(uvdata)))
+    idft!(expected1, uvdata[idxs1], gridspec, precision(length(uvdata)), GPUArray)
     expected1 = map(expected1, Abeam1) do data, J
         s::Pigi.StokesI{precision} = Pigi.LinearData{precision}(inv(J) * data * inv(J)')
         return Pigi.normalize(s, J, J)
     end
 
     expected2 = zeros(SMatrix{2, 2, Complex{precision}, 4}, gridspec.Nx, gridspec.Ny)
-    idft!(expected2, uvdata[idxs2], gridspec, precision(length(uvdata)))
+    idft!(expected2, uvdata[idxs2], gridspec, precision(length(uvdata)), GPUArray)
     expected2 = map(expected2, Abeam2) do data, J
         s::Pigi.StokesI{precision} = Pigi.LinearData{precision}(inv(J) * data * inv(J)')
         return Pigi.normalize(s, J, J)
@@ -233,7 +234,7 @@ end
     workunits = vcat(workunits1, workunits2)
     println("N workunits: ", length(workunits))
 
-    img = Pigi.invert(Pigi.StokesI{precision}, workunits, gridspec, taper, subtaper, CuArray)
+    img = Pigi.invert(Pigi.StokesI{precision}, workunits, gridspec, taper, subtaper, GPUArray)
     img = real.(img)[1 + masterpadding:end - masterpadding, 1 + masterpadding:end - masterpadding]
 
     err = maximum(((a, b),) -> abs(a - b), zip(expected, img))

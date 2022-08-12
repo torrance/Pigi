@@ -162,6 +162,10 @@ Function: invert()
     Time (mean ± σ): 9.548 s ± 171.065 ms GC (mean ± σ): 0.45% ± 0.22%
     Memory estimate: 1.24 GiB, allocs estimate: 540758
     Note: use StokesI <: OutputType; precalculate taper; force π to use precision
+2022/08/12 : Nimbus
+    Time (mean ± σ): 9.248 s ± 65.708 ms GC (mean ± σ): 0.47% ± 0.08%
+    Memory estimate: 1.25 GiB, allocs estimate: 954698
+    Note: switch to KernelAbstractions
 =#
 begin
     println("Reading mset...")
@@ -179,8 +183,8 @@ begin
     wstep = 200
 
     println("Partitioning data...")
-    subtaper = Pigi.mkkbtaper(subgridspec, Float32)
-    taper = Pigi.resample(subtaper, subgridspec, gridspec)
+    subtaper = Pigi.kaiserbessel(subgridspec, Float32)
+    taper = Pigi.kaiserbessel(gridspec, Float32)
     Aterms = zeros(Pigi.Comp2x2{Float32}, 96, 96)
     workunits = Pigi.partition(uvdata, gridspec, subgridspec, padding, wstep, Aterms)
     println("Done.")
@@ -189,7 +193,9 @@ begin
     Pigi.invert(Pigi.StokesI{Float32}, workunits[1:1], gridspec, taper, subtaper, CuArray)
     println("Done.")
 
-    b = @benchmark Pigi.invert(Pigi.StokesI{Float32}, workunits, gridspec, taper, subtaper, CuArray) evals=1 samples=5 seconds=300
+    b = @benchmark begin
+        Pigi.invert(Pigi.StokesI{Float32}, workunits, gridspec, taper, subtaper, CuArray)
+    end evals=1 samples=10 seconds=300 setup=GC.gc(true)
     show(stdout, MIME"text/plain"(), b)
     println()
 end
@@ -212,6 +218,10 @@ Function: predict!()
     Time (mean ± σ): 8.924 s ± 264.739 ms GC (mean ± σ): 0.46% ± 0.25%
     Memory estimate: 644.92 MiB, allocs estimate: 435547
     Note: use StokesI, ensure consistent precision throughout
+2022/08/12 : Nimbus
+    Time (mean ± σ): 9.451 s ± 108.966 ms GC (mean ± σ): 0.00% ± 0.00%
+    Memory estimate: 668.44 MiB, allocs estimate: 971481
+    Note: switch to KernelAbstractions
 =#
 begin
     println("Reading mset...")
@@ -229,8 +239,8 @@ begin
     wstep = 200
 
     println("Partitioning data...")
-    subtaper = Pigi.mkkbtaper(subgridspec, Float32)
-    taper = Pigi.resample(subtaper, subgridspec, gridspec)
+    subtaper = Pigi.kaiserbessel(subgridspec, Float32)
+    taper = Pigi.kaiserbessel(gridspec, Float32)
     Aterms = ones(Pigi.Comp2x2{Float32}, 96, 96)
     workunits = Pigi.partition(uvdata, gridspec, subgridspec, padding, wstep, Aterms)
     println("Done.")
@@ -246,7 +256,7 @@ begin
 
     b = @benchmark begin
         Pigi.predict!(workunits, grid, gridspec, taper, subtaper, CuArray; degridop=Pigi.degridop_replace)
-    end evals=1 samples=5 seconds=300
+    end evals=1 samples=10 seconds=300 setup=GC.gc(true)
     show(stdout, MIME"text/plain"(), b)
     println()
 end

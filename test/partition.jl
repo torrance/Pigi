@@ -31,7 +31,7 @@
     @test -23.9 > minimum(vs .- 19.5) > -24
 end
 
-@testset "Add subgrid" for wrapper in [Array, CuArray]
+@testset "Add subgrid" for wrapper in [Array, GPUArray]
     subgridspec = Pigi.GridSpec(64, 64, scaleuv=1)
     Aleft = Aright = ones(SMatrix{2, 2, ComplexF64, 4}, 64, 64)
     workunit = Pigi.WorkUnit(346, 346, 0., 0., 0., subgridspec, Aleft, Aright, StructVector{Pigi.UVDatum{Float64}}(undef, 0))
@@ -58,7 +58,7 @@ end
     @test Array(master) == expected
 end
 
-@testset "Extract subgrid" for wrapper in [Array, CuArray]
+@testset "Extract subgrid" for wrapper in [Array, GPUArray]
     mastergrid = rand(Pigi.LinearData{Float64}, 1000, 1000)
 
     expected = mastergrid[231 - 32:231 + 31, 785 - 32:785 + 31]

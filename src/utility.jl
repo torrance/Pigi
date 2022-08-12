@@ -19,26 +19,8 @@ end
 function fftshift!(arr::AbstractMatrix)
     @assert all(iseven(x) for x in size(arr)) "fftshift!() must operate on arrays with even dimensions"
 
-    Nx, Ny = size(arr)
-    shiftx, shifty = Nx ÷ 2, Ny ÷ 2
-
-    for j1 in 1:shifty
-        for i1 in 1:Nx
-            i2 = mod1(i1 + shiftx, Nx)
-            j2 = j1 + shifty
-            arr[i1, j1], arr[i2, j2] = arr[i2, j2], arr[i1, j1]
-        end
-    end
-end
-
-function fftshift!(arr::CuMatrix)
-    @assert all(iseven(x) for x in size(arr)) "fftshift!() must operate on arrays with even dimensions"
-
-    function _fftshift!(arr::CuDeviceMatrix, shiftx, shifty, Nx)
-        idx = blockDim().x * (blockIdx().x - 1) + threadIdx().x
-        if idx > Nx * shifty
-            return nothing
-        end
+    @kernel function _fftshift!(arr::AbstractMatrix, shiftx, shifty, Nx)
+        idx = @index(Global)
 
         i1 = mod1(idx, Nx)
         j1 = div(idx - 1, Nx) + 1
@@ -47,18 +29,15 @@ function fftshift!(arr::CuMatrix)
         j2 = j1 + shifty
 
         arr[i1, j1], arr[i2, j2] = arr[i2, j2], arr[i1, j1]
-
-        return nothing
     end
 
     Nx, Ny = size(arr)
     shiftx, shifty = Nx ÷ 2, Ny ÷ 2
 
-    kernel = @cuda launch=false _fftshift!(arr, shiftx, shifty, Nx)
-    config = launch_configuration(kernel.fun)
-    threads = min(config.threads, Nx * shifty)
-    blocks = cld(Nx * shifty, threads)
-    kernel(arr, shiftx, shifty, Nx; threads, blocks)
+    kernel = _fftshift!(kernelconf(arr)...)
+    wait(
+        kernel(arr, shiftx, shifty, Nx; ndrange=Nx * shifty)
+    )
 end
 
 function permute2vector(input::NTuple{N, Array{T, D}}) where {N, T, D}

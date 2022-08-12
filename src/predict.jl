@@ -31,7 +31,7 @@ function predict!(
     for w0 in unique(workunit.w0 for workunit in workunits)
         println("Processing w=$(w0) layer...")
 
-        t_preprocess += @elapsed CUDA.@sync begin
+        t_preprocess += @elapsed begin
             copy!(wlayerd, img)
 
             # w-layer decorrection
@@ -46,11 +46,14 @@ function predict!(
             # Revert back to zero centering the power since extract subgrid
             # and degridder! expect this ordering
             fftshift!(wlayerd)
+
+            CUDA.synchronize()
         end
 
-        t_degrid += @elapsed CUDA.@sync begin
+        t_degrid += @elapsed begin
             wworkunits = [wu for wu in workunits if wu.w0 == w0]
             Pigi.degridder!(wworkunits, wlayerd, subtaper, degridop)
+            CUDA.synchronize()
         end
     end
     println("Elapsed degridding: $(t_degrid) Elapsed w-layer pre-processing: $(t_preprocess)")

@@ -142,7 +142,7 @@ end
 
     # Calculate expected output
     expected = zeros(SMatrix{2, 2, Complex{precision}, 4}, subgridspec.Nx, subgridspec.Ny)
-    @time idft!(expected, uvdata, subgridspec, precision(length(uvdata)))
+    @time idft!(expected, uvdata, subgridspec, precision(length(uvdata)), GPUArray)
     expected .*= subtaper
     expected = reinterpret(reshape, Complex{precision}, expected)
 

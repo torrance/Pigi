@@ -16,7 +16,7 @@ function invert(
     ls = fftfreq(gridspec.Nx, T(1 / gridspec.scaleuv))
     ms = fftfreq(gridspec.Ny, T(1 / gridspec.scaleuv))
 
-    wlayer = CUDA.Mem.pin(Array{S}(undef, gridspec.Nx, gridspec.Ny))
+    wlayer = pagelock(wrapper, Array{S}(undef, gridspec.Nx, gridspec.Ny))
     wlayerd = wrapper{S}(undef, gridspec.Nx, gridspec.Ny)
 
     # Use standard ordering for taper
@@ -25,10 +25,11 @@ function invert(
     for w0 in unique(wu.w0 for wu in workunits)
         println("Processing w=$(w0) layer...")
 
-        t_grid += @elapsed CUDA.@sync begin
+        t_grid += @elapsed begin
             fill!(wlayerd, zero(S))
             wworkunits = [wu for wu in workunits if wu.w0 == w0]
             gridder!(wlayerd, wworkunits, subtaper; makepsf)
+            CUDA.synchronize()
         end
 
         t_postprocess += @elapsed begin

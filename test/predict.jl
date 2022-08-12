@@ -1,4 +1,4 @@
-@testset "Prediction: $(wrapper) with precision $(precision)" for wrapper in [Array, CuArray], (precision, atol) in [(Float32, 5e-3), (Float64, 1e-8)]
+@testset "Prediction: $(wrapper) with precision $(precision)" for wrapper in [Array, GPUArray], (precision, atol) in [(Float32, 5e-3), (Float64, 1e-8)]
     gridspec = Pigi.GridSpec(2000, 2000, scaleuv=1)
 
     # Create template skymap (Jy / px) and associated GridSpec
