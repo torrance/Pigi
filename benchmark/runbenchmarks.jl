@@ -13,10 +13,14 @@ println("Running benchmarks...")
 2021/11/09 : Nimbus
     Time (mean ± σ): 15.936 s ± 134.312 ms GC (mean ± σ): 0.00% ± 0.00%
     Memory estimate: 9.06 MiB, allocs estimate: 86217
-2022/02/07 Nimbus
+2022/02/07 : Nimbus
     Time (mean ± σ): 15.375 s ± 279.428 ms GC (mean ± σ): 0.00% ± 0.00%
     Memory estimate: 12.41 MiB, allocs estimate: 85526
     Note: upgrade to Julia 1.7.1
+2022/09/27 : Pigi
+    Time (mean ± σ): 6.816 s ± 117.504 ms GC (mean ± σ): 0.00% ± 0.00%
+    Memory estimate: 12.32 MiB, allocs estimate: 83009
+    Note: moved to Pigi
 =#
 begin
     path = "../testdata/1215555160/1215555160.ms"
