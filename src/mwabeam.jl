@@ -23,7 +23,7 @@ function MWABeam(delays::Vector{T}, amps::Vector{S}=ones(16)) where {T <: Intege
     @assert length(amps) == 16 "Amps must have 16 values"
 
     beamptr = Ref{Ptr{Nothing}}()
-    errno = @ccall hyperbeam.new_fee_beam(mwabeamhdf5::Cstring, beamptr::Ptr{Ptr{Cvoid}}, C_NULL::Ptr)::Int
+    errno = @ccall hyperbeam.new_fee_beam(mwabeamhdf5::Cstring, beamptr::Ptr{Ptr{Cvoid}}, C_NULL::Ptr{Cvoid})::Int
 
     if errno != 0
         throw(ErrorException("An error occurred loading the MWA beam"))
