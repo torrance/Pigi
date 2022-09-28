@@ -26,7 +26,7 @@ end
     path = "../../testdata/1215555160/1215555160.ms"
 
     mset = Pigi.MeasurementSet(path, chanstart=1, chanstop=96)
-    uvdata = collect(Pigi.read(mset))
+    uvdata = collect(mset)
 
     time = Pigi.meantime(mset, uvdata)
     freq = Pigi.meanfreq(mset, uvdata)

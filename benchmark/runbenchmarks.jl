@@ -21,11 +21,15 @@ println("Running benchmarks...")
     Time (mean ± σ): 6.816 s ± 117.504 ms GC (mean ± σ): 0.00% ± 0.00%
     Memory estimate: 12.32 MiB, allocs estimate: 83009
     Note: moved to Pigi
+2022/09/28 : Pigi
+    Time (mean ± σ): 4.064 s ± 202.042 ms GC (mean ± σ): 0.03% ± 0.06%
+    Memory estimate: 28.91 MiB, allocs estimate: 104637
+    Note: using iterator pattern, not channels
 =#
 begin
     path = "../testdata/1215555160/1215555160.ms"
     mset = Pigi.MeasurementSet(path, chanstart=1, chanstop=192)
-    b = @benchmark sum(1 for uvdatum in Pigi.read($mset)) evals=1 samples=3 seconds=60
+    b = @benchmark sum(1 for uvdatum in $mset) evals=1 samples=3 seconds=60
     show(stdout, MIME"text/plain"(), b)
     println()
 end

@@ -95,51 +95,85 @@ function MeasurementSet(
     )
 end
 
-function read(mset::MeasurementSet; precision::Type=Float64, datacol=nothing)
-    if datacol === nothing
-        datacol = "CORRECTED_DATA" in mset.tbl.colnames() ? "CORRECTED_DATA" :  "DATA"
+Base.IteratorSize(::Type{MeasurementSet}) = Base.SizeUnknown()
+Base.IteratorEltype(::Type{MeasurementSet}) = Base.HasEltype()
+Base.eltype(::Type{MeasurementSet}) = UVDatum{Float64}
+
+@inline function Base.iterate(mset::MeasurementSet)
+    chunksize = 1000
+
+    return iterate(
+        mset,
+        (1 - chunksize, 0, UVDatum{Float64}[]),
+    )
+end
+
+@inline function Base.iterate(mset::MeasurementSet, (rowstart, cacheoffset, cache))
+    chunksize = 1000
+
+    cacheoffset += 1
+
+    # Check if the cache is exhausted.
+    # This is a while loop, as it is possible that _buildcache returns an empty cache
+    # if all entries are flagged.
+    while (cacheoffset > length(cache))
+        rowstart += chunksize
+        cacheoffset = 1
+
+        # First, check if we're all done.
+        if rowstart > mset.nrows
+            return nothing
+        end
+
+        # Otherwise, it's time to rebuild the cache.
+        rowstop = min(rowstart + chunksize - 1, mset.nrows)
+
+        empty!(cache)
+        sizehint!(cache, chunksize * length(mset.chanstart:mset.chanstop))
+        _buildcache(mset, rowstart, rowstop, cache)
     end
 
-    nbatch = 1000  # Rows of measurement set to read from disk at a time
+    return cache[cacheoffset], (rowstart, cacheoffset, cache)
+end
+
+
+function _buildcache(mset::MeasurementSet, startrow, rowend, cache::Vector{UVDatum{T}}) where T
+    # Default to using CORRECTED_DATA if present
+    datacol = "CORRECTED_DATA" in mset.tbl.colnames() ? "CORRECTED_DATA" :  "DATA"
 
     # Convert channel selection from 1-indexing to Python's 0-indexing
     chanstart = mset.chanstart - 1
     chanstop = mset.chanstop - 1
 
-    ch = Channel{UVDatum{precision}}(10000) do ch
-        for startrow in 1:nbatch:mset.nrows
-            startrow -= 1  # Convert from 1 indexing to Python's 0-indexing
+    nrow = length(startrow:rowend)
+    startrow -= 1  # Convert from 1 indexing to Python's 0-indexing
 
-            uvw = PermutedDimsArray(PyCall.pycall(
-                mset.tbl.getcol, PyCall.PyArray, "UVW", startrow=startrow, nrow=nbatch
-            ), (2, 1))
-            flagrow = PyCall.pycall(
-                mset.tbl.getcol, PyCall.PyArray, "FLAG_ROW", startrow=startrow, nrow=nbatch
-            )
-            weight = PermutedDimsArray(PyCall.pycall(
-                mset.tbl.getcol, PyCall.PyArray, "WEIGHT", startrow=startrow, nrow=nbatch
-            ), (2, 1))
-            flag = PermutedDimsArray(PyCall.pycall(
-                mset.tbl.getcolslice, PyCall.PyArray, "FLAG",
-                startrow=startrow, nrow=nbatch, blc=(chanstart, -1), trc=(chanstop, -1)
-            ), (3, 2, 1))
-            weightspectrum = PermutedDimsArray(PyCall.pycall(
-                mset.tbl.getcolslice, PyCall.PyArray, "WEIGHT_SPECTRUM",
-                startrow=startrow, nrow=nbatch, blc=(chanstart, -1), trc=(chanstop, -1)
-            ), (3, 2, 1))
-            data = PermutedDimsArray(PyCall.pycall(
-                mset.tbl.getcolslice, PyCall.PyArray, datacol,
-                startrow=startrow, nrow=nbatch, blc=(chanstart, -1), trc=(chanstop, -1)
-            ), (3, 2, 1))
+    uvw = PermutedDimsArray(PyCall.pycall(
+        mset.tbl.getcol, PyCall.PyArray, "UVW"; startrow, nrow
+    ), (2, 1))
+    flagrow = PyCall.pycall(
+        mset.tbl.getcol, PyCall.PyArray, "FLAG_ROW"; startrow, nrow
+    )
+    weight = PermutedDimsArray(PyCall.pycall(
+        mset.tbl.getcol, PyCall.PyArray, "WEIGHT"; startrow, nrow
+    ), (2, 1))
+    flag = PermutedDimsArray(PyCall.pycall(
+        mset.tbl.getcolslice, PyCall.PyArray, "FLAG";
+        startrow, nrow, blc=(chanstart, -1), trc=(chanstop, -1)
+    ), (3, 2, 1))
+    weightspectrum = PermutedDimsArray(PyCall.pycall(
+        mset.tbl.getcolslice, PyCall.PyArray, "WEIGHT_SPECTRUM";
+        startrow, nrow, blc=(chanstart, -1), trc=(chanstop, -1)
+    ), (3, 2, 1))
+    data = PermutedDimsArray(PyCall.pycall(
+        mset.tbl.getcolslice, PyCall.PyArray, datacol;
+        startrow, nrow, blc=(chanstart, -1), trc=(chanstop, -1)
+    ), (3, 2, 1))
 
-            _msetread(ch, startrow, mset.lambdas, uvw, flagrow, weight, flag, weightspectrum, data, precision, mset.ignoreflagged)
-        end
-    end
-
-    return ch
+    _msetread(cache, startrow, mset.lambdas, uvw, flagrow, weight, flag, weightspectrum, data, T, mset.ignoreflagged)
 end
 
-function _msetread(ch, startrow, lambdas, uvw, flagrow, weight, flag, weightspectrum, data, ::Type{T}, ignoreflagged) where T
+function _msetread(cache, startrow, lambdas, uvw, flagrow, weight, flag, weightspectrum, data, ::Type{T}, ignoreflagged) where T
     tmpdata = zero(MMatrix{2, 2, Complex{T}, 4})
     tmpweights = zero(MMatrix{2, 2, T, 4})
 
@@ -172,9 +206,9 @@ function _msetread(ch, startrow, lambdas, uvw, flagrow, weight, flag, weightspec
         end
 
         if w >= 0
-            put!(ch, UVDatum{T}(startrow + row, chan, u, v, w, tmpweights, tmpdata))
+            push!(cache, UVDatum{T}(startrow + row, chan, u, v, w, tmpweights, tmpdata))
         else
-            put!(ch, UVDatum{T}(startrow + row, chan, -u, -v, -w, adjoint(tmpweights), adjoint(tmpdata)))
+            push!(cache, UVDatum{T}(startrow + row, chan, -u, -v, -w, adjoint(tmpweights), adjoint(tmpdata)))
         end
     end
 end
