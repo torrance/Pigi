@@ -25,11 +25,15 @@ println("Running benchmarks...")
     Time (mean ± σ): 4.064 s ± 202.042 ms GC (mean ± σ): 0.03% ± 0.06%
     Memory estimate: 28.91 MiB, allocs estimate: 104637
     Note: using iterator pattern, not channels
+2022/09/29 : Pigi
+    Time  (mean ± σ): 3.025 s ± 6.513 ms GC (mean ± σ): 0.81% ± 0.12%
+    Memory estimate: 2.17 GiB, allocs estimate: 270999
+    Note: switch to Casacore.jl, memory allocations tracked by Julia
 =#
 begin
     path = "../testdata/1215555160/1215555160.ms"
     mset = Pigi.MeasurementSet(path, chanstart=1, chanstop=192)
-    b = @benchmark sum(1 for uvdatum in $mset) evals=1 samples=3 seconds=60
+    b = @benchmark sum(1 for uvdatum in $mset) evals=1 samples=5 seconds=60
     show(stdout, MIME"text/plain"(), b)
     println()
 end
@@ -48,7 +52,7 @@ begin
     path = "../testdata/1215555160/1215555160.ms"
     mset = Pigi.MeasurementSet(path, chanstart=1, chanstop=384)
     println("Mset opened...")
-    uvdata = collect(Pigi.read(mset))
+    uvdata = collect(mset)
     println(typeof(uvdata))
     println("Done.")
 

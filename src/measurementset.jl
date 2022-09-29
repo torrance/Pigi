@@ -1,5 +1,5 @@
 struct MeasurementSet
-    tbl::PyCall.PyObject
+    tbl::Table
     timestart::Float64
     timestop::Float64
     chanstart::Int
@@ -42,8 +42,7 @@ function MeasurementSet(
     autocorrelations=false,
     ignoreflagged=true
 )
-    PyCasaTable = PyCall.pyimport("casacore.tables")
-    tbl = PyCasaTable.table(path, ack=false)
+    tbl = Table(path)
 
     # Apply additional filters
     conditions = String[]
@@ -57,23 +56,31 @@ function MeasurementSet(
         push!(conditions, "not FLAG_ROW")
     end
     if length(conditions) != 0
-        tbl = PyCasaTable.taql("select * from \$1 where " * join(conditions, " and "), tables=[tbl])
+        tbl = taql("select * from \$1 where " * join(conditions, " and "), tbl)
     end
 
-    freqs = tbl.SPECTRAL_WINDOW.getcellslice("CHAN_FREQ", 0, chanstart - 1, chanstop - 1)
+    if chanstart == 0 && chanstop == 0
+        # Select entire range
+        freqs = tbl.SPECTRAL_WINDOW[:CHAN_FREQ][1]
+        chanstart = 1
+        chanstop = length(freqs)
+    else
+        freqs = tbl.SPECTRAL_WINDOW[:CHAN_FREQ][chanstart:chanstop, 1]
+    end
+
     lambdas = c ./ freqs
-    ra0, dec0 = tbl.FIELD.getcell("PHASE_DIR", 0)[1, :]
+    ra0, dec0 = tbl.FIELD[:PHASE_DIR][1]
 
     # Get time information
-    times = tbl.getcol("TIME")
+    times = tbl[:TIME][:]
     timesteps = unique(times)
     sort!(timesteps)
 
-    ants1 = tbl.getcol("ANTENNA1")
-    ants2 = tbl.getcol("ANTENNA2")
+    ants1 = tbl[:ANTENNA1][:]
+    ants2 = tbl[:ANTENNA2][:]
 
     # Get MWA phase delays
-    delays = tbl.MWA_TILE_POINTING.getcell("DELAYS", 0)
+    delays = tbl.MWA_TILE_POINTING[:DELAYS][1]
 
     return MeasurementSet(
         tbl,
@@ -81,7 +88,7 @@ function MeasurementSet(
         timestop,
         chanstart,
         chanstop,
-        tbl.nrows(),
+        size(tbl, 1),
         length(freqs),
         freqs,
         lambdas,
@@ -130,67 +137,44 @@ end
 
         empty!(cache)
         sizehint!(cache, chunksize * length(mset.chanstart:mset.chanstop))
-        _buildcache(mset, rowstart, rowstop, cache)
+        buildcache(mset, rowstart, rowstop, cache)
     end
 
     return cache[cacheoffset], (rowstart, cacheoffset, cache)
 end
 
-
-function _buildcache(mset::MeasurementSet, startrow, rowend, cache::Vector{UVDatum{T}}) where T
+function buildcache(mset::MeasurementSet, rowstart, rowstop, cache::Vector{UVDatum{T}}) where T
     # Default to using CORRECTED_DATA if present
-    datacol = "CORRECTED_DATA" in mset.tbl.colnames() ? "CORRECTED_DATA" :  "DATA"
+    datacol = :CORRECTED_DATA in propertynames(mset.tbl) ? :CORRECTED_DATA :  :DATA
 
-    # Convert channel selection from 1-indexing to Python's 0-indexing
-    chanstart = mset.chanstart - 1
-    chanstop = mset.chanstop - 1
+    rowrange = rowstart:rowstop
+    chanrange = mset.chanstart:mset.chanstop
 
-    nrow = length(startrow:rowend)
-    startrow -= 1  # Convert from 1 indexing to Python's 0-indexing
+    # We provide type assertions to ensure this function is fully typed inferred
+    uvw = mset.tbl[:UVW][:, rowrange]::Matrix{Float64}
+    flagrow = mset.tbl[:FLAG_ROW][rowrange]::Vector{Bool}
+    weight = mset.tbl[:WEIGHT][1:4, rowrange]::Matrix{Float32}
+    flag = mset.tbl[:FLAG][1:4, chanrange, rowrange]::Array{Bool, 3}
+    weightspectrum = mset.tbl[:WEIGHT_SPECTRUM][:, chanrange, rowrange]::Array{Float32, 3}
+    data = mset.tbl[datacol][:, chanrange, rowrange]::Array{ComplexF32, 3}
 
-    uvw = PermutedDimsArray(PyCall.pycall(
-        mset.tbl.getcol, PyCall.PyArray, "UVW"; startrow, nrow
-    ), (2, 1))
-    flagrow = PyCall.pycall(
-        mset.tbl.getcol, PyCall.PyArray, "FLAG_ROW"; startrow, nrow
-    )
-    weight = PermutedDimsArray(PyCall.pycall(
-        mset.tbl.getcol, PyCall.PyArray, "WEIGHT"; startrow, nrow
-    ), (2, 1))
-    flag = PermutedDimsArray(PyCall.pycall(
-        mset.tbl.getcolslice, PyCall.PyArray, "FLAG";
-        startrow, nrow, blc=(chanstart, -1), trc=(chanstop, -1)
-    ), (3, 2, 1))
-    weightspectrum = PermutedDimsArray(PyCall.pycall(
-        mset.tbl.getcolslice, PyCall.PyArray, "WEIGHT_SPECTRUM";
-        startrow, nrow, blc=(chanstart, -1), trc=(chanstop, -1)
-    ), (3, 2, 1))
-    data = PermutedDimsArray(PyCall.pycall(
-        mset.tbl.getcolslice, PyCall.PyArray, datacol;
-        startrow, nrow, blc=(chanstart, -1), trc=(chanstop, -1)
-    ), (3, 2, 1))
-
-    _msetread(cache, startrow, mset.lambdas, uvw, flagrow, weight, flag, weightspectrum, data, T, mset.ignoreflagged)
-end
-
-function _msetread(cache, startrow, lambdas, uvw, flagrow, weight, flag, weightspectrum, data, ::Type{T}, ignoreflagged) where T
     tmpdata = zero(MMatrix{2, 2, Complex{T}, 4})
     tmpweights = zero(MMatrix{2, 2, T, 4})
 
-    for row in axes(data, 3), chan in axes(data, 2)
-        u = uvw[1, row] / lambdas[chan]
-        v = -uvw[2, row] / lambdas[chan]
-        w = uvw[3, row] / lambdas[chan]
+    for (irow, row) in enumerate(rowrange), chan in chanrange
+        u = uvw[1, irow] / mset.lambdas[chan]
+        v = -uvw[2, irow] / mset.lambdas[chan]
+        w = uvw[3, irow] / mset.lambdas[chan]
 
         # We use (pol, idx) pair to convert from row-major (4,) data/weight data
         # into column-major (2, 2) shape.
         for (pol, idx) in enumerate((1, 3, 2, 4))
-            d = data[pol, chan, row]
+            d = data[pol, chan, irow]
             vw = (
-                !flag[pol, chan, row] *
-                !flagrow[row] *
-                weight[pol, row] *
-                weightspectrum[pol, chan, row]
+                !flag[pol, chan, irow] *
+                !flagrow[irow] *
+                weight[pol, irow] *
+                weightspectrum[pol, chan, irow]
             )
             if !isfinite(vw) || !isfinite(d)
                 tmpdata[idx] = 0
@@ -201,14 +185,14 @@ function _msetread(cache, startrow, lambdas, uvw, flagrow, weight, flag, weights
             end
         end
 
-        if ignoreflagged && iszero(tmpweights)
+        if mset.ignoreflagged && iszero(tmpweights)
             continue
         end
 
         if w >= 0
-            push!(cache, UVDatum{T}(startrow + row, chan, u, v, w, tmpweights, tmpdata))
+            push!(cache, UVDatum{T}(row, chan, u, v, w, tmpweights, tmpdata))
         else
-            push!(cache, UVDatum{T}(startrow + row, chan, -u, -v, -w, adjoint(tmpweights), adjoint(tmpdata)))
+            push!(cache, UVDatum{T}(row, chan, -u, -v, -w, adjoint(tmpweights), adjoint(tmpdata)))
         end
     end
 end

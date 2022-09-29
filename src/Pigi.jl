@@ -1,5 +1,6 @@
 module Pigi
     using AMDGPU
+    using Casacore.Tables: Table, taql
     using CUDA
     using CUDAKernels
     using Distributed
