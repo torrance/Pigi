@@ -68,6 +68,26 @@ begin
 end
 
 #=
+RA/Dec -> Alt/Az conversion
+
+2021/10/10 : Pigi
+    Time  (mean ± σ):   26.526 ms ± 797.260 μs  ┊ GC (mean ± σ):  0.16% ± 0.80%
+    Memory estimate: 3.00 MiB, allocs estimate: 104
+    Note: using Astropy
+=#
+begin
+    frame = Pigi.MWAFrame(1234567)
+    coords_radec = Matrix{Tuple{Float64, Float64}}(undef, 256, 256)
+    map!(coords_radec, coords_radec) do _
+        (tuple(rand(2)...) .- (0, 0.5)) .* (2π, π/2)
+    end
+
+    b = @benchmark Pigi.radec_to_altaz(frame, coords_radec)
+    show(stdout, MIME"text/plain"(), b)
+    println()
+end
+
+#=
 2021/11/09 : Nimbus
     Time (mean ± σ): 4.568 s ± 16.015 ms GC (mean ± σ): 0.00% ± 0.00%
     Memory estimate: 2.00 MiB, allocs estimate: 54
