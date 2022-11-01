@@ -4,12 +4,9 @@ const hyperbeam = "/home/ubuntu/mwa_hyperbeam/target/release/libmwa_hyperbeam.so
 
 
 function MWAFrame(mjd)
-    AstropyCoords = PyCall.pyimport("astropy.coordinates")
-    AstropyTime = PyCall.pyimport("astropy.time")
-
-    obstime = AstropyTime.Time(mjd, format="mjd")
-    location = AstropyCoords.EarthLocation.from_geodetic(lon="116:40:14.93", lat="-26:42:11.95", height=377.8)
-    return AltAzFrame(AstropyCoords.AltAz(;location, obstime))
+    epoch = Measures.Epoch(Measures.Epochs.UTC, mjd * u"d")
+    location = Measures.Position(:MWA32T)
+    return (epoch, location)
 end
 
 struct MWABeam

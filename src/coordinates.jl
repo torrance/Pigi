@@ -1,7 +1,3 @@
-struct AltAzFrame
-    obj::PyObject
-end
-
 function lm_to_radec(l, m, origin)
     ra0, dec0 = origin
     n = sqrt(1 - l^2 - m^2)
@@ -10,15 +6,17 @@ function lm_to_radec(l, m, origin)
     return ra, dec
 end
 
-function radec_to_altaz(frame::AltAzFrame, coords::AbstractArray{NTuple{2, Float64}})
-    ras, decs = map(first, coords), map(last, coords)
+function radec_to_azel(frame, coords::AbstractArray{NTuple{2, Float64}})
+    direction = zero(Measures.Direction)
+    c = Measures.Converter(Measures.Directions.J2000, Measures.Directions.AZEL, frame...)
 
-    AstropyCoords = PyCall.pyimport("astropy.coordinates")
-    coord = AstropyCoords.SkyCoord(ras, decs, unit=("rad", "rad"))
-    altaz = coord.transform_to(frame.obj)
-
-    res = map((alt, az) -> (deg2rad(alt), deg2rad(az)), altaz.alt, altaz.az)
-    return reshape(res, size(coords))
+    return map(coords) do (ra, dec)
+        direction.type = Measures.Directions.J2000
+        direction.long = ra
+        direction.lat = dec
+        mconvert!(direction, direction, c)
+        return direction.long, direction.lat
+    end
 end
 
 function grid_to_radec(gridspec::GridSpec, origin::NTuple{2, Float64})

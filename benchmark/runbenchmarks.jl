@@ -70,10 +70,14 @@ end
 #=
 RA/Dec -> Alt/Az conversion
 
-2021/10/10 : Pigi
-    Time  (mean ± σ):   26.526 ms ± 797.260 μs  ┊ GC (mean ± σ):  0.16% ± 0.80%
+2022/10/10 : Pigi
+    Time (mean ± σ): 26.526 ms ± 797.260 μs GC (mean ± σ):0.16% ± 0.80%
     Memory estimate: 3.00 MiB, allocs estimate: 104
     Note: using Astropy
+2022/11/01 : Pigi
+    Time (mean ± σ): 171.652 ms ± 3.403 ms GC (mean ± σ): 0.00% ± 0.00%
+    Memory estimate: 1.00 MiB, allocs estimate: 11
+    Note: pure Casacore
 =#
 begin
     frame = Pigi.MWAFrame(1234567)
@@ -82,7 +86,7 @@ begin
         (tuple(rand(2)...) .- (0, 0.5)) .* (2π, π/2)
     end
 
-    b = @benchmark Pigi.radec_to_altaz(frame, coords_radec)
+    b = @benchmark Pigi.radec_to_azel(frame, coords_radec)
     show(stdout, MIME"text/plain"(), b)
     println()
 end
