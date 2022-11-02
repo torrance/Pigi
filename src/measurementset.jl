@@ -42,7 +42,7 @@ function MeasurementSet(
     autocorrelations=false,
     ignoreflagged=true
 )
-    tbl = Table(path)
+    tbl = Table(path, Tables.Old)
 
     # Apply additional filters
     conditions = String[]
