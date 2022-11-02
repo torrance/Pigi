@@ -61,8 +61,9 @@ begin
     subgridspec = Pigi.GridSpec(64, 64, scaleuv=gridspec.scaleuv)
     padding = 8
     wstep = 10
+    Aterms = zeros(Pigi.Comp2x2{Float64}, 64, 64)
 
-    b = @benchmark Pigi.partition($uvdata, $gridspec, $subgridspec, $padding, $wstep, (l, m) -> 1) evals=1 samples=5 seconds=60
+    b = @benchmark Pigi.partition($uvdata, $gridspec, $subgridspec, $padding, $wstep, $Aterms) evals=1 samples=5 seconds=60
     show(stdout, MIME"text/plain"(), b)
     println()
 end
