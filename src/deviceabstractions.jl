@@ -19,7 +19,7 @@ function pagelock(::Type{CuArray}, a::Array)
 end
 
 function pagelock(::Type{ROCArray}, a::Array)
-    ptr = AMDGPU.mem.lock(a)
+    ptr = AMDGPU.Mem.lock(a)
     finalizer(a) do _
         AMDGPU.Mem.unlock(ptr)
     end
