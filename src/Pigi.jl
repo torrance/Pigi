@@ -1,6 +1,7 @@
 module Pigi
     using AMDGPU
-    using Casacore.Tables: Table, taql
+    using Casacore.Measures
+    using Casacore.Tables: Tables, Table, taql
     using CUDA
     using CUDAKernels
     using Distributed
@@ -12,7 +13,6 @@ module Pigi
     using KernelAbstractions
     using LsqFit: curve_fit, coef
     using Polynomials: fit
-    using PyCall
     using ROCKernels
     using SpecialFunctions: besseli
     using StaticArrays
