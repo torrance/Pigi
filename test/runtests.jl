@@ -5,6 +5,7 @@ using DSP: conv
 using FFTW
 using KernelAbstractions
 using Pigi
+using PyCall
 using PyPlot: PyPlot as plt
 using Random
 using ROCKernels
@@ -39,4 +40,5 @@ include("functions.jl")
     include("gpudegridder.jl")
     include("utility.jl")
     include("mwabeam.jl")
+    include("coordinates.jl")
 end
