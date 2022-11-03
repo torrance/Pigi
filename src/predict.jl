@@ -47,13 +47,13 @@ function predict!(
             # and degridder! expect this ordering
             fftshift!(wlayerd)
 
-            CUDA.synchronize()
+            synchronize(wrapper)
         end
 
         t_degrid += @elapsed begin
             wworkunits = [wu for wu in workunits if wu.w0 == w0]
             Pigi.degridder!(wworkunits, wlayerd, subtaper, degridop)
-            CUDA.synchronize()
+            synchronize(wrapper)
         end
     end
     println("Elapsed degridding: $(t_degrid) Elapsed w-layer pre-processing: $(t_preprocess)")

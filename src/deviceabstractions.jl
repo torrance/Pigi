@@ -38,3 +38,16 @@ end
 function getwrapper(::ROCArray)
     return ROCArray
 end
+
+function synchronize(::Union{Type{Array}, Type{SubArray}})
+    return nothing
+end
+
+function synchronize(::Type{CuArray})
+    return CUDA.synchronize()
+end
+
+function synchronize(::Type{ROCArray})
+    status = AMDGPU.HIP.hipStreamSynchronize(C_NULL)
+    @assert status == AMDGPU.HSA.STATUS_SUCCESS
+end

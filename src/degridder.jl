@@ -21,7 +21,7 @@ function degridder!(
         subgrid = extractsubgrid(grid, workunit)
         fftshift!(subgrid)
         ifft!(subgrid)
-        CUDA.synchronize()
+        synchronize(wrapper)
 
         Base.@async begin
             # Apply A terms

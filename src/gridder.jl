@@ -16,7 +16,7 @@ function gridder!(
             Aterms[Aterm] = wrapper(Aterm)
         end
     end
-    CUDA.synchronize()
+    synchronize(wrapper)
 
     Base.@sync for (i, workunit) in enumerate(workunits)
         Base.@async begin
@@ -33,7 +33,7 @@ function gridder!(
                 return cell * t / (subgridspec.Nx * subgridspec.Ny)
             end
 
-            CUDA.synchronize()
+            synchronize(wrapper)
         end
     end
 

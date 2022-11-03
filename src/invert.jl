@@ -29,7 +29,7 @@ function invert(
             fill!(wlayerd, zero(S))
             wworkunits = [wu for wu in workunits if wu.w0 == w0]
             gridder!(wlayerd, wworkunits, subtaper; makepsf)
-            CUDA.synchronize()
+            synchronize(wrapper)
         end
 
         t_postprocess += @elapsed begin
