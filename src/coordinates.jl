@@ -15,7 +15,7 @@ function radec_to_azel(frame, coords::AbstractArray{NTuple{2, Float64}})
         direction.long = ra
         direction.lat = dec
         mconvert!(direction, direction, c)
-        return direction.long, direction.lat
+        return ustrip(Float64, u"rad", direction.long), ustrip(Float64, u"rad", direction.lat)
     end
 end
 

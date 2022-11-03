@@ -1,7 +1,5 @@
-# TODO: Add these as artifacts
-const mwabeamhdf5 = "/home/ubuntu/mwa_full_embedded_element_pattern.h5"
-const hyperbeam = "/home/ubuntu/mwa_hyperbeam/target/release/libmwa_hyperbeam.so"
-
+const hyperbeam = :libmwa_hyperbeam
+const mwabeamhdf5 = joinpath(artifact"mwabeam", "mwa_full_embedded_element_pattern.h5")
 
 function MWAFrame(mjd)
     epoch = Measures.Epoch(Measures.Epochs.UTC, mjd * u"d")
@@ -20,7 +18,7 @@ function MWABeam(delays::Vector{T}, amps::Vector{S}=ones(16)) where {T <: Intege
     @assert length(amps) == 16 "Amps must have 16 values"
 
     beamptr = Ref{Ptr{Nothing}}()
-    errno = @ccall hyperbeam.new_fee_beam(mwabeamhdf5::Cstring, beamptr::Ptr{Ptr{Cvoid}}, C_NULL::Ptr{Cvoid})::Int
+    errno = @ccall hyperbeam.new_fee_beam(mwabeamhdf5::Cstring, beamptr::Ptr{Ptr{Cvoid}})::Int
 
     if errno != 0
         throw(ErrorException("An error occurred loading the MWA beam"))
@@ -29,12 +27,13 @@ function MWABeam(delays::Vector{T}, amps::Vector{S}=ones(16)) where {T <: Intege
     return MWABeam(convert(Array{UInt32}, delays), convert(Array{Float64}, amps), beamptr[])
 end
 
-function getresponse(beam::MWABeam, altaz::AbstractArray{NTuple{2, Float64}}, freq::Float64; normtozenith=true, parallacticangle=true)
-    N = length(altaz)
-    zas = map(x -> π/2 - first(x), altaz)  # Convert altitude to zenith angle
-    azs = map(last , altaz)
+function getresponse(beam::MWABeam, azel::AbstractArray{NTuple{2, Float64}}, freq::Float64; normtozenith=true, parallacticangle=true)
+    N = length(azel)
+    azs = map(first, azel)
+    zas = map(x -> π/2 - last(x), azel)  # Convert altitude to zenith angle
 
-    responseptr = Ref{Ptr{SMatrix{2, 2, ComplexF64, 4}}}()
+    response = zeros(SMatrix{2, 2, ComplexF64, 4}, size(azel))
+    mwa_latitude = Ref(ustrip(Float64, u"rad", lat(Measures.Position(:MWA32T))))
 
     errno = @ccall hyperbeam.calc_jones_array(
         beam.ptr::Ptr{Cvoid},
@@ -44,18 +43,16 @@ function getresponse(beam::MWABeam, altaz::AbstractArray{NTuple{2, Float64}}, fr
         round(UInt32, freq)::UInt32,
         beam.delays::Ptr{UInt32},
         beam.amps::Ptr{Float64},
-        16::Int32,
+        length(beam.amps)::Int32,  # num_amps
         normtozenith::UInt8,
-        parallacticangle::UInt8,
-        responseptr::Ptr{Ptr{SMatrix{2, 2, ComplexF64, 4}}},
-        C_NULL::Ptr{Cvoid},
+        mwa_latitude::Ptr{Float64},
+        0::UInt8,  # iau_order
+        response::Ptr{SMatrix{2, 2, ComplexF64, 4}},
     )::Int32
 
     if errno != 0
         throw(ErrorException("An error occurred calculating MWA Jones matrices"))
     end
-
-    response = unsafe_wrap(Array{SMatrix{2, 2, ComplexF64, 4}, ndims(altaz)}, responseptr[], size(altaz), own=true)
 
     # Response matrices are row major. Transform to column major.
     map!(transpose, response, response)

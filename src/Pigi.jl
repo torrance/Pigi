@@ -12,13 +12,14 @@ module Pigi
     using FFTW
     using KernelAbstractions
     using LsqFit: curve_fit, coef
+    using Pkg.Artifacts: @artifact_str
     using Polynomials: fit
     using ROCKernels
     using SpecialFunctions: besseli
     using StaticArrays
     using Statistics: mean, median
     using StructArrays
-    using Unitful: Quantity, uconvert, @u_str
+    using Unitful: Quantity, @u_str, ustrip
 
     import AbstractFFTs: fft, ifft
 

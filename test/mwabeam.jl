@@ -1,24 +1,14 @@
-@testset "MWAFrame" begin
-    frame = Pigi.MWAFrame(5039601370.0 / (24 * 3600))
-    alt, az = Pigi.radec_to_altaz(frame, [(0., 0.)])[1]
-    @test alt ≈ 0.7903214637847765
-    @test az ≈ 1.0346009564373215
-
-    coords = map(_ -> (rand() - 0.5, rand() - 0.5), CartesianIndices((100, 100)))
-    altazs = Pigi.radec_to_altaz(frame, coords)
-    @test size(altazs) == size(coords)
-end
-
 @testset "MWA Beam" begin
     beam = Pigi.MWABeam(zeros(Int, 16))
-    altaz = map(_ -> (π/2 * rand(), 2π * rand()), CartesianIndices((64, 64)))
-    altaz[1] = (π/2, 0.)
+    azel = map(_ -> (2π * rand(), π/2 * rand()), CartesianIndices((64, 64)))
+    azel[1] = (0., π/2)
 
-    A = Pigi.getresponse(beam, altaz, 150e6)
+    A = Pigi.getresponse(beam, azel, 150e6)
 
-    @test size(A) == size(altaz)
+    @test size(A) == size(azel)
     @test all(isapprox.(A[1], [
-        9.70412770e-01 + 2.41451974e-01im -2.50532447e-04 - 1.23543867e-04im; -2.46913343e-04 - 1.17224631e-04im 9.70210262e-01 + 2.42264416e-01im
+        0.9702102620742318 + 0.24226441621882988im -0.00024691334309719337 - 0.00011722463144868201im
+        -0.0002505324468245751 - 0.00012354386674326775im 0.9704127699647864 + 0.24145197429151424im
     ], rtol=1e-4))
 end
 
@@ -38,9 +28,9 @@ end
     gridspec = Pigi.GridSpec(1000, 1000, scaleuv=subgridspec.scaleuv)
 
     coords_radec = Pigi.grid_to_radec(subgridspec, Tuple(mset.phasecenter))
-    coords_altaz = Pigi.radec_to_altaz(mwaframe, coords_radec)
+    coords_azel = Pigi.radec_to_azel(mwaframe, coords_radec)
 
-    beamgrid = Pigi.getresponse(mwabeam, coords_altaz, freq)
+    beamgrid = Pigi.getresponse(mwabeam, coords_azel, freq)
 
     power = map(beamgrid) do A
         real(sum((A * A')[[1, 4]])) / 2
