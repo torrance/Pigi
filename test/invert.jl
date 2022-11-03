@@ -97,13 +97,11 @@ end
     elseif beamtype == :mwabeam
         beam = Pigi.MWABeam(zeros(Int, 16))
 
-        coords_radec = Pigi.grid_to_radec(subgridspec, (0., π / 2))
-        coords_altaz = reverse.(coords_radec)
-        subAbeam = Pigi.getresponse(beam, coords_altaz, 150e6)
+        coords = Pigi.grid_to_radec(subgridspec, (0., π / 2))
+        subAbeam = Pigi.getresponse(beam, coords, 150e6)
 
-        coords_radec = Pigi.grid_to_radec(gridspec, (0., π / 2))
-        coords_altaz = reverse.(coords_radec)
-        Abeam = Pigi.getresponse(beam, coords_altaz, 150e6)
+        coords = Pigi.grid_to_radec(gridspec, (0., π / 2))
+        Abeam = Pigi.getresponse(beam, coords, 150e6)
     end
 
     # Apply Aterms to skymap
