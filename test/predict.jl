@@ -101,7 +101,7 @@ end
     subtaper = Pigi.kaiserbessel(subgridspec, precision)
     taper = Pigi.resample(subtaper, subgridspec, gridspec)
     workunits = Pigi.partition(uvdata, gridspec, subgridspec, padding, wstep, subAbeam)
-    Pigi.predict!(workunits, skymap, gridspec, taper, subtaper, CuArray)
+    Pigi.predict!(workunits, skymap, gridspec, taper, subtaper, GPUArray)
 
     uvdata = StructVector{Pigi.UVDatum{precision}}(undef, 0)
     for workunit in workunits

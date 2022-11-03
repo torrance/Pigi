@@ -16,11 +16,12 @@ using Unitful
 using UnitfulAngles
 
 if has_cuda_gpu()
-    GPUArray = CuArray
+    const GPUArray = CuArray
 elseif has_rocm_gpu()
-    GPUArray = ROCArray
+    const GPUArray = ROCArray
 else
-    error("No known GPU available for tests")
+    const GPUArray = Array
+    println(stderr, "No GPU available for tests; defaulting to CPU")
 end
 
 include("functions.jl")
