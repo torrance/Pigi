@@ -38,9 +38,8 @@ function idft!(grid::AbstractMatrix{SMatrix{2, 2, Complex{T}, 4}},  uvdata::Stru
     uvdatad = replace_storage(wrapper, uvdata)
 
     kernel = _idft!(Pigi.kernelconf(gridd)...)
-    wait(
-        kernel(gridd, uvdatad, gridspec, normfactor; ndrange=length(grid))
-    )
+    kernel(gridd, uvdatad, gridspec, normfactor; ndrange=length(grid))
+    KernelAbstractions.synchronize(Pigi.kernelconf(gridd)[begin])
 
     # Copy result back from device.
     copyto!(grid, gridd)

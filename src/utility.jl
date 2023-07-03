@@ -35,9 +35,8 @@ function fftshift!(arr::AbstractMatrix)
     shiftx, shifty = Nx ÷ 2, Ny ÷ 2
 
     kernel = _fftshift!(kernelconf(arr)...)
-    wait(
-        kernel(arr, shiftx, shifty, Nx; ndrange=Nx * shifty)
-    )
+    kernel(arr, shiftx, shifty, Nx; ndrange=Nx * shifty)
+    KernelAbstractions.synchronize(kernelconf(arr)[begin])
 end
 
 function permute2vector(input::NTuple{N, Array{T, D}}) where {N, T, D}

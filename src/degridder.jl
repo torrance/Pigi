@@ -64,9 +64,8 @@ function gpudft!(uvdata, origin, subgrid, subgridspec, degridop)
     end
 
     kernel = _gpudft!(kernelconf(subgrid)...)
-    wait(
-        kernel(uvdata, origin, subgrid, subgridspec, degridop; ndrange=length(uvdata.data))
-    )
+    kernel(uvdata, origin, subgrid, subgridspec, degridop; ndrange=length(uvdata.data))
+    KernelAbstractions.synchronize(kernelconf(subgrid)[begin])
 end
 
 @inline function degridop_replace(_, new)

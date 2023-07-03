@@ -87,7 +87,6 @@ function gpudift!(
     end
 
     kernel = _gpudift!(kernelconf(subgrid)...)
-    wait(
-        kernel(subgrid, Aleft, Aright, origin, uvdata, subgridspec, Val(makepsf); ndrange=length(subgrid))
-    )
+    kernel(subgrid, Aleft, Aright, origin, uvdata, subgridspec, Val(makepsf); ndrange=length(subgrid))
+    KernelAbstractions.synchronize(kernelconf(subgrid)[begin])
 end

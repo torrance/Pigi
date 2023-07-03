@@ -1,9 +1,6 @@
 module Pigi
-    using AMDGPU
     using Casacore.Measures
     using Casacore.Tables: Tables, Table, taql
-    using CUDA
-    using CUDAKernels
     using Distributed
     using DSP: conv
     using DSP.Util: nextfastfft
@@ -14,7 +11,6 @@ module Pigi
     using LsqFit: curve_fit, coef
     using Pkg.Artifacts: @artifact_str
     using Polynomials: fit
-    using ROCKernels
     using SpecialFunctions: besseli
     using StaticArrays
     using Statistics: mean, median

@@ -92,9 +92,8 @@ function addsubgrid!(mastergrid::AbstractMatrix, subgrid::AbstractMatrix, workun
     width = workunit.subgridspec.Nx ÷ 2 + 1
 
     kernel = _addsubgrid!(kernelconf(subgrid)...)
-    wait(
-        kernel(mastergrid, subgrid, u0px, v0px, width; ndrange=length(subgrid))
-    )
+    kernel(mastergrid, subgrid, u0px, v0px, width; ndrange=length(subgrid))
+    KernelAbstractions.synchronize(kernelconf(subgrid)[begin])
 
     return nothing
 end
@@ -120,9 +119,8 @@ function extractsubgrid(mastergrid::AbstractMatrix{S}, workunit::WorkUnit{T}) wh
     width = workunit.subgridspec.Nx ÷ 2 + 1
 
     kernel = _extractsubgrid!(kernelconf(subgrid)...)
-    wait(
-        kernel(subgrid, mastergrid, u0px, v0px, width; ndrange=length(subgrid))
-    )
+    kernel(subgrid, mastergrid, u0px, v0px, width; ndrange=length(subgrid))
+    KernelAbstractions.synchronize(kernelconf(subgrid)[begin])
 
     return subgrid
 end
