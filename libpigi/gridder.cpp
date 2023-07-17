@@ -105,15 +105,7 @@ void gridder(
     GPUArray<T, 2> subgrid({(size_t) subgridspec.Nx, (size_t) subgridspec.Ny});
 
     // Make FFT plan
-    hipfftHandle plan {};
-    int rank[] {(int) subgridspec.Ny, (int) subgridspec.Nx}; // COL MAJOR
-    HIPFFTCHECK( hipfftPlanMany(
-        &plan, 2, rank,
-        rank, T::size(), 1,
-        rank, T::size(), 1,
-        fftType(subgrid.data()), T::size()
-    ) );
-    HIPFFTCHECK( hipfftSetStream(plan, hipStreamPerThread) );
+    auto plan = fftPlan(subgridspec, subgrid.data());
 
     for (const WorkUnit<S>& workunit : workunits) {
         UVWOrigin origin {workunit.u0, workunit.v0, workunit.w0};
@@ -149,9 +141,7 @@ void gridder(
         }
 
         // FFT
-        fftshift(subgrid.data(), subgridspec);
-        fftExec(plan, subgrid.data(), HIPFFT_FORWARD);
-        fftshift(subgrid.data(), subgridspec);
+        fftExec(plan, subgrid.data(), subgridspec, HIPFFT_FORWARD);
 
         // Add back to master grid
         {

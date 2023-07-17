@@ -3,6 +3,7 @@
 #include <hip/hip_runtime.h>
 #include <hipfft/hipfft.h>
 
+#include "hip.cpp"
 #include "gridspec.cpp"
 #include "outputtypes.cpp"
 
@@ -35,31 +36,101 @@ void fftshift(T* grid, GridSpec gridspec) {
     );
 }
 
-auto fftExec(hipfftHandle plan, LinearData<double>* grid, int direction) { 
-    return hipfftExecZ2Z(
-        plan, 
-        (hipfftDoubleComplex*) grid,
-        (hipfftDoubleComplex*) grid,
-        direction
-    );
-}
-auto fftExec(hipfftHandle plan, StokesI<float>* grid, int direction) { 
-    return hipfftExecC2C(
-        plan, 
-        (hipfftComplex*) grid,
-        (hipfftComplex*) grid,
-        direction
-    );
-}
-auto fftExec(hipfftHandle plan, StokesI<double>* grid, int direction) { 
-    return hipfftExecZ2Z(
-        plan, 
-        (hipfftDoubleComplex*) grid,
-        (hipfftDoubleComplex*) grid,
-        direction
-    );
+hipfftHandle fftPlan(GridSpec gridspec, [[maybe_unused]] LinearData<float>* _) {
+    hipfftHandle plan {};
+    int rank[] {(int) gridspec.Ny, (int) gridspec.Nx}; // COL MAJOR
+    HIPFFTCHECK( hipfftPlanMany(
+        &plan, 2, rank,
+        rank, 4, 1,
+        rank, 4, 1,
+        HIPFFT_C2C, 4
+    ) );
+    HIPFFTCHECK( hipfftSetStream(plan, hipStreamPerThread) );
+
+    return plan;
 }
 
-auto fftType(LinearData<double>* grid) { return HIPFFT_Z2Z; }
-auto fftType(StokesI<float>* grid) { return HIPFFT_C2C; }
-auto fftType(StokesI<double>* grid) { return HIPFFT_Z2Z; }
+hipfftHandle fftPlan(GridSpec gridspec, [[maybe_unused]] LinearData<double>* _) {
+    hipfftHandle plan {};
+    int rank[] {(int) gridspec.Ny, (int) gridspec.Nx}; // COL MAJOR
+    HIPFFTCHECK( hipfftPlanMany(
+        &plan, 2, rank,
+        rank, 4, 1,
+        rank, 4, 1,
+        HIPFFT_Z2Z, 4
+    ) );
+    HIPFFTCHECK( hipfftSetStream(plan, hipStreamPerThread) );
+
+    return plan;
+}
+
+hipfftHandle fftPlan(GridSpec gridspec, [[maybe_unused]] StokesI<float>* _) {
+    hipfftHandle plan {};
+    int rank[] {(int) gridspec.Ny, (int) gridspec.Nx}; // COL MAJOR
+    HIPFFTCHECK( hipfftPlanMany(
+        &plan, 2, rank,
+        rank, 1, 1,
+        rank, 1, 1,
+        HIPFFT_C2C, 1
+    ) );
+    HIPFFTCHECK( hipfftSetStream(plan, hipStreamPerThread) );
+
+    return plan;
+}
+
+hipfftHandle fftPlan(GridSpec gridspec, [[maybe_unused]] StokesI<double>* _) {
+    hipfftHandle plan {};
+    int rank[] {(int) gridspec.Ny, (int) gridspec.Nx}; // COL MAJOR
+    HIPFFTCHECK( hipfftPlanMany(
+        &plan, 2, rank,
+        rank, 1, 1,
+        rank, 1, 1,
+        HIPFFT_Z2Z, 1
+    ) );
+    HIPFFTCHECK( hipfftSetStream(plan, hipStreamPerThread) );
+
+    return plan;
+}
+
+auto fftExec(hipfftHandle plan, LinearData<float>* grid, GridSpec gridspec, int direction) { 
+    fftshift(grid, gridspec);
+    hipfftExecC2C(
+        plan, 
+        (hipfftComplex*) grid,
+        (hipfftComplex*) grid,
+        direction
+    );
+    fftshift(grid, gridspec);
+}
+
+auto fftExec(hipfftHandle plan, LinearData<double>* grid, GridSpec gridspec, int direction) { 
+    fftshift(grid, gridspec);
+    hipfftExecZ2Z(
+        plan, 
+        (hipfftDoubleComplex*) grid,
+        (hipfftDoubleComplex*) grid,
+        direction
+    );
+    fftshift(grid, gridspec);
+}
+
+auto fftExec(hipfftHandle plan, StokesI<float>* grid, GridSpec gridspec, int direction) {
+    fftshift(grid, gridspec);
+    hipfftExecC2C(
+        plan, 
+        (hipfftComplex*) grid,
+        (hipfftComplex*) grid,
+        direction
+    );
+    fftshift(grid, gridspec);
+}
+auto fftExec(hipfftHandle plan, StokesI<double>* grid, GridSpec gridspec, int direction) {
+    fftshift(grid, gridspec);
+    hipfftExecZ2Z(
+        plan, 
+        (hipfftDoubleComplex*) grid,
+        (hipfftDoubleComplex*) grid,
+        direction
+    );
+    fftshift(grid, gridspec);
+}

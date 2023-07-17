@@ -44,16 +44,7 @@ Matrix<T<S>> invert(
     GPUMatrix<T<S>> wlayerd {{(size_t) gridspec.Nx, (size_t) gridspec.Ny}};
     GPUMatrix<S> subtaperd {subtaper};
 
-    // Construct FFT plan
-    hipfftHandle plan {};
-    int rank[] {(int) gridspec.Ny, (int) gridspec.Nx}; // COL MAJOR
-    HIPFFTCHECK( hipfftPlanMany(
-        &plan, 2, rank,
-        rank, T<S>::size(), 1,
-        rank, T<S>::size(), 1,
-        fftType(wlayerd.data()), T<S>::size()
-    ) );
-    HIPFFTCHECK( hipfftSetStream(plan, hipStreamPerThread) );
+    auto plan = fftPlan(gridspec, wlayerd.data());
 
     // Get unique w terms
     std::vector<S> ws(workunits.size());
@@ -80,9 +71,7 @@ Matrix<T<S>> invert(
         gridder<T<S>, S>(wlayerd, wworkunits, subtaperd);
 
         // FFT the full wlayer
-        fftshift(wlayerd.data(), gridspec);
-        fftExec(plan, wlayerd.data(), HIPFFT_BACKWARD);
-        fftshift(wlayerd.data(), gridspec);
+        fftExec(plan, wlayerd.data(), gridspec, HIPFFT_BACKWARD);
 
         // Apply w correction
         {
