@@ -4,5 +4,5 @@ LDFLAGS = -shared -fPIC -L/opt/rocm-5.5.0/lib -lamdhip64 -lhipfft -lhipblas -L/u
 
 all: libpigi.so
 
-libpigi.so: libpigi.cpp
-	$(CXX) -o $@ $(CXXFLAGS) $(LDFLAGS) $^
+libpigi.so: *.cpp
+	$(CXX) -o $@ $(CXXFLAGS) $(LDFLAGS) libpigi.cpp

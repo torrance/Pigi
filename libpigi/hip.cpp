@@ -26,3 +26,21 @@ inline void hipfftcheck(hipfftResult res, const char* file, int line) {
         abort();
     }
 }
+
+template <typename T>
+auto getKernelConfig(T fn, int N, size_t sharedMem=0) {
+    static int nblocksmax, nthreads;
+
+    [[maybe_unused]] static auto _ = [&]() {
+        fmt::println("Calculating kernel configuration...");
+        HIPCHECK( hipOccupancyMaxPotentialBlockSize(
+            &nblocksmax, &nthreads, fn, sharedMem, 0 
+        ) );
+        fmt::println("Recommended launch config: blocksmax={}, threads={}", nblocksmax, nthreads);
+        return true;
+    }();
+
+    return std::make_tuple(
+        std::min<int>(nblocksmax, N / nthreads + 1), nthreads
+    );
+};

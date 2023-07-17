@@ -2,27 +2,36 @@
 
 #include <array>
 #include <iostream>
+#include <vector>
+
+#include <fmt/format.h>
 
 #include "hip.cpp"
 
 template <int N>
-struct Dims {
-    std::array<size_t, N> dims;
-    size_t size() const;
+class Dims {
+public:
+    Dims() : dims({}) {}
 
-    template <typename... Ts>
-    Dims(Ts... dims) : dims({static_cast<size_t>(dims)...}) {}
+    Dims<1>(size_t a) : dims({a}) {}
+    Dims<1>(long long a) : dims({static_cast<size_t>(a)}) {}
+
+    Dims<2>(size_t a, size_t b) : dims({a, b}) {}
+    Dims<2>(long long a, long long b) : dims({static_cast<size_t>(a), static_cast<size_t>(b)}) {}
 
     bool operator==(const Dims<N>& other) const {
         return dims == other.dims;
     }
+
+    size_t size() const;
+    size_t size(int i) const { return dims.at(i); }
+
+private:
+    std::array<size_t, N> dims;
 };
 
-template <>
-size_t Dims<1>::size() const { return dims[0]; }
-
-template <>
-size_t Dims<2>::size() const { return dims[0] * dims[1]; }
+template<> size_t Dims<1>::size() const { return dims[0]; }
+template<> size_t Dims<2>::size() const { return dims[0] * dims[1]; }
 
 template <typename T, int N>
 class NdSpan {
@@ -30,12 +39,13 @@ public:
     NdSpan(T* ptr, Dims<N> dims) : dims(dims), ptr(ptr) {}
 
     NdSpan<T, 1>(std::vector<T> vec) : dims(vec.size()), ptr(vec.data()) {}
+    NdSpan<T, 1>(T* start, T* end) : dims(end - start), ptr(start) {}
 
     T operator[](size_t i) const { return ptr[i]; }
     T& operator[](size_t i) { return ptr[i]; }
 
     size_t size() const { return dims.size(); }
-    size_t size(int i) const { return dims.dims[i]; }
+    size_t size(int i) const { return dims.size(i); }
     Dims<N> shape() const { return dims; }
 
     T* data() const { return ptr; }
@@ -57,8 +67,8 @@ template <typename T, int N>
 class GPUArray {
 public:
     explicit GPUArray(Dims<N> dims) : dims(dims) {
-        HIPCHECK( hipMalloc(&ptr, size() * sizeof(T)) );
-        HIPCHECK( hipMemset(ptr, 0, size() * sizeof(T)) );
+        HIPCHECK( hipMallocAsync(&ptr, size() * sizeof(T), hipStreamPerThread) );
+        HIPCHECK( hipMemsetAsync(ptr, 0, size() * sizeof(T), hipStreamPerThread) );
     }
 
     explicit GPUArray(NdSpan<T, N> span) : dims(span.shape()) {
@@ -87,8 +97,8 @@ public:
                 abort();
         }
 
-        HIPCHECK( hipMalloc(&ptr, dims.size() * sizeof(T)) );
-        HIPCHECK( hipMemcpy(ptr, span.data(), dims.size() * sizeof(T), kind) );
+        HIPCHECK( hipMallocAsync(&ptr, dims.size() * sizeof(T), hipStreamPerThread) );
+        HIPCHECK( hipMemcpyAsync(ptr, span.data(), dims.size() * sizeof(T), kind, hipStreamPerThread) );
     }
 
     GPUArray(const GPUArray<T, N>& other) = delete;
@@ -101,16 +111,16 @@ public:
     }
 
     ~GPUArray() {
-        HIPCHECK( hipFree(ptr) );
+        HIPCHECK( hipFreeAsync(ptr, hipStreamPerThread) );
     }
 
     T* data() const { return ptr; }
     size_t size() const { return dims.size(); }
-    size_t size(int i) const { return dims.dims[i]; }
+    size_t size(int i) const { return dims.size(i); }
     Dims<N> shape() const { return dims; }
 
     void zero() {
-        HIPCHECK( hipMemset(ptr, 0, dims.size() * sizeof(T)) );
+        HIPCHECK( hipMemsetAsync(ptr, 0, dims.size() * sizeof(T), hipStreamPerThread) );
     }
 
 private:
@@ -188,7 +198,7 @@ public:
 
     T* data() const { return ptr; }
     size_t size() const { return dims.size(); }
-    size_t size(int i) const { return dims.dims[i]; }
+    size_t size(int i) const { return dims.size(i); }
     Dims<N> shape() const { return dims; }
 
 private:
