@@ -32,17 +32,17 @@ void wcorrect(T* grid, GridSpec gridspec, S w0) {
 }
 
 template<template<typename> typename T, typename S>
-Matrix<T<S>> invert(
+HostMatrix<T<S>> invert(
     const SpanVector<WorkUnit<S>> workunits,
     const GridSpec gridspec,
     const SpanMatrix<S> taper,
     const SpanMatrix<S> subtaper
 ) {
-    Matrix<T<S>> img {{(size_t) gridspec.Nx, (size_t) gridspec.Ny}};
-    Matrix<T<S>> wlayer {{(size_t) gridspec.Nx, (size_t) gridspec.Ny}};
+    HostMatrix<T<S>> img {{(size_t) gridspec.Nx, (size_t) gridspec.Ny}};
+    HostMatrix<T<S>> wlayer {{(size_t) gridspec.Nx, (size_t) gridspec.Ny}};
 
-    GPUMatrix<T<S>> wlayerd {{(size_t) gridspec.Nx, (size_t) gridspec.Ny}};
-    GPUMatrix<S> subtaperd {subtaper};
+    DeviceMatrix<T<S>> wlayerd {{(size_t) gridspec.Nx, (size_t) gridspec.Ny}};
+    DeviceMatrix<S> subtaperd {subtaper};
 
     auto plan = fftPlan(gridspec, wlayerd.data());
 

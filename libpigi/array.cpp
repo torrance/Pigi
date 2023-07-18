@@ -11,7 +11,7 @@
 template <int N>
 class Dims {
 public:
-    Dims() : dims({}) {}
+    Dims(std::array<size_t, N> dims) : dims(dims) {}
 
     Dims<1>(size_t a) : dims({a}) {}
     Dims<1>(long long a) : dims({static_cast<size_t>(a)}) {}
@@ -25,35 +25,31 @@ public:
 
     size_t size() const;
     size_t size(int i) const { return dims.at(i); }
+    auto shape() const { return dims; }
 
 private:
-    std::array<size_t, N> dims;
+    std::array<size_t, N> dims {};
 };
 
 template<> size_t Dims<1>::size() const { return dims[0]; }
 template<> size_t Dims<2>::size() const { return dims[0] * dims[1]; }
 
 template <typename T, int N>
-class NdSpan {
+class NdSpan : public Dims<N> {
 public:
-    NdSpan(T* ptr, Dims<N> dims) : dims(dims), ptr(ptr) {}
+    NdSpan(T* ptr, Dims<N> dims) : Dims<N>(dims), ptr(ptr) {}
 
-    NdSpan<T, 1>(std::vector<T> vec) : dims(vec.size()), ptr(vec.data()) {}
-    NdSpan<T, 1>(T* start, T* end) : dims(end - start), ptr(start) {}
+    NdSpan<T, 1>(std::vector<T> vec) : Dims<1>(vec.size()), ptr(vec.data()) {}
+    NdSpan<T, 1>(T* start, T* end) : Dims<1>(end - start), ptr(start) {}
 
     T operator[](size_t i) const { return ptr[i]; }
     T& operator[](size_t i) { return ptr[i]; }
 
-    size_t size() const { return dims.size(); }
-    size_t size(int i) const { return dims.size(i); }
-    Dims<N> shape() const { return dims; }
-
     T* data() const { return ptr; }
     T* begin() const { return ptr; }
-    T* end() const { return ptr + size(); }
+    T* end() const { return ptr + this->size(); }
 
 private:
-    Dims<N> dims;
     T* ptr;
 };
 
@@ -64,14 +60,14 @@ template <typename T>
 using SpanMatrix = NdSpan<T, 2>;
 
 template <typename T, int N>
-class GPUArray {
+class DeviceArray : public Dims<N> {
 public:
-    explicit GPUArray(Dims<N> dims) : dims(dims) {
-        HIPCHECK( hipMallocAsync(&ptr, size() * sizeof(T), hipStreamPerThread) );
-        HIPCHECK( hipMemsetAsync(ptr, 0, size() * sizeof(T), hipStreamPerThread) );
+    explicit DeviceArray(Dims<N> dims) : Dims<N>(dims) {
+        HIPCHECK( hipMallocAsync(&ptr, this->size() * sizeof(T), hipStreamPerThread) );
+        HIPCHECK( hipMemsetAsync(ptr, 0, this->size() * sizeof(T), hipStreamPerThread) );
     }
 
-    explicit GPUArray(NdSpan<T, N> span) : dims(span.shape()) {
+    explicit DeviceArray(NdSpan<T, N> span) : Dims<N>(span.shape()) {
         hipPointerAttribute_t attrs {};
         auto err = hipPointerGetAttributes(&attrs, span.data());
 
@@ -97,69 +93,64 @@ public:
                 abort();
         }
 
-        HIPCHECK( hipMallocAsync(&ptr, dims.size() * sizeof(T), hipStreamPerThread) );
-        HIPCHECK( hipMemcpyAsync(ptr, span.data(), dims.size() * sizeof(T), kind, hipStreamPerThread) );
+        HIPCHECK( hipMallocAsync(&ptr, this->size() * sizeof(T), hipStreamPerThread) );
+        HIPCHECK( hipMemcpyAsync(ptr, span.data(), this->size() * sizeof(T), kind, hipStreamPerThread) );
     }
 
-    GPUArray(const GPUArray<T, N>& other) = delete;
-    GPUArray(GPUArray<T, N>&& other) = delete;
-    void operator=(const GPUArray<T, N>& other) = delete;
-    void operator=(GPUArray<T, N>&& other) = delete;
+    DeviceArray(const DeviceArray<T, N>& other) = delete;
+    void operator=(const DeviceArray<T, N>& other) = delete;
+    void operator=(DeviceArray<T, N>&& other) = delete;
+
+    DeviceArray(DeviceArray<T, N>&& other) = default;
 
     operator NdSpan<T, N>() const {
-        return NdSpan<T, N>(ptr, dims);
+        return NdSpan<T, N>(ptr, this->shape());
     }
 
-    ~GPUArray() {
+    ~DeviceArray() {
         HIPCHECK( hipFreeAsync(ptr, hipStreamPerThread) );
     }
 
     T* data() const { return ptr; }
-    size_t size() const { return dims.size(); }
-    size_t size(int i) const { return dims.size(i); }
-    Dims<N> shape() const { return dims; }
 
     void zero() {
-        HIPCHECK( hipMemsetAsync(ptr, 0, dims.size() * sizeof(T), hipStreamPerThread) );
+        HIPCHECK( hipMemsetAsync(ptr, 0, this->size() * sizeof(T), hipStreamPerThread) );
     }
 
 private:
-    Dims<N> dims;
     T* ptr {};
 };
 
 template <typename T>
-using GPUVector = GPUArray<T, 1>;
+using DeviceVector = DeviceArray<T, 1>;
 
 template <typename T>
-using GPUMatrix = GPUArray<T, 2>;
+using DeviceMatrix = DeviceArray<T, 2>;
 
 template <typename T, int N>
-class Array {
+class HostArray : public Dims<N> {
 public:
-    explicit Array(Dims<N> dims) : dims(dims) {
-        HIPCHECK( hipHostMalloc(&ptr, size() * sizeof(T)) );
-        HIPCHECK( hipMemset(ptr, 0, size() * sizeof(T)) );
+    explicit HostArray(Dims<N> dims) : Dims<N>(dims) {
+        HIPCHECK( hipHostMalloc(&ptr, this->size() * sizeof(T)) );
+        HIPCHECK( hipMemset(ptr, 0, this->size() * sizeof(T)) );
     }
 
-    Array(const Array<T, N>& other) = delete;
-    Array(Array<T, N>&& other) {
-        std::swap(ptr, other.ptr);
-        std::swap(dims, other.dims);
-    }
-    void operator=(const Array<T, N>& other) = delete;
-    void operator=(Array<T, N>&& other) = delete;
+    HostArray(const HostArray<T, N>& other) = delete;
+    void operator=(const HostArray<T, N>& other) = delete;
+    void operator=(HostArray<T, N>&& other) = delete;
+
+    HostArray(HostArray<T, N>&& other) = default;
 
     operator NdSpan<T, N>() {
-        return NdSpan<T, N>(ptr, dims);
+        return NdSpan<T, N>(ptr, this->dims);
     }
 
-    ~Array() {
+    ~HostArray() {
         HIPCHECK( hipFree(ptr) );
     }
 
-    Array<T, N>& operator=(const GPUArray<T, N>& other) {
-        if (shape() != other.shape()) {
+    HostArray<T, N>& operator=(const DeviceArray<T, N>& other) {
+        if (this->shape() != other.shape()) {
             fmt::println(stderr, "Cannot copy array: incompatible array sizes");
             abort();
         }
@@ -169,13 +160,13 @@ public:
     }
 
     template <typename S>
-    Array<T, N>& operator+=(const S& other) {
-        if (shape() != other.shape()) {
+    HostArray<T, N>& operator+=(const S& other) {
+        if (this->shape() != other.shape()) {
             fmt::println(stderr, "Cannot add array: incompatible array sizes");
             abort();
         }
 
-        for (size_t i {}; i < size(); ++i) {
+        for (size_t i {}; i < this->size(); ++i) {
             ptr[i] += other.data()[i];
         }
 
@@ -183,13 +174,13 @@ public:
     }
 
     template <typename S>
-    Array<T, N>& operator/=(const S& other) {
-        if (shape() != other.shape()) {
+    HostArray<T, N>& operator/=(const S& other) {
+        if (this->shape() != other.shape()) {
             fmt::println(stderr, "Cannot add array: incompatible array sizes");
             abort();
         }
 
-        for (size_t i {}; i < size(); ++i) {
+        for (size_t i {}; i < this->size(); ++i) {
             ptr[i] /= other.data()[i];
         }
         
@@ -197,17 +188,13 @@ public:
     }
 
     T* data() const { return ptr; }
-    size_t size() const { return dims.size(); }
-    size_t size(int i) const { return dims.size(i); }
-    Dims<N> shape() const { return dims; }
 
 private:
-    Dims<N> dims;
     T* ptr {};
 };
 
 template <typename T>
-using Vector = Array<T, 1>;
+using HostVector = HostArray<T, 1>;
 
 template <typename T>
-using Matrix = Array<T, 2>;
+using HostMatrix = HostArray<T, 2>;

@@ -102,7 +102,7 @@ void gridder(
     const SpanMatrix<S> subtaper
 ) {
     auto subgridspec = workunits[0].subgridspec;
-    GPUArray<T, 2> subgrid({(size_t) subgridspec.Nx, (size_t) subgridspec.Ny});
+    DeviceArray<T, 2> subgrid({(size_t) subgridspec.Nx, (size_t) subgridspec.Ny});
 
     // Make FFT plan
     auto plan = fftPlan(subgridspec, subgrid.data());
