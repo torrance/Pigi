@@ -22,11 +22,7 @@ void wcorrect(T* grid, GridSpec gridspec, S w0) {
         idx < gridspec.Nx * gridspec.Ny;
         idx += blockDim.x * gridDim.x
     ) {
-        auto [lpx, mpx] = linearToXY(idx, gridspec);
-
-        auto l {static_cast<S>((lpx - gridspec.Nx / 2) * gridspec.scalelm)};
-        auto m {static_cast<S>((mpx - gridspec.Ny / 2) * gridspec.scalelm)};
-
+        auto [l, m] = gridspec.linearToSky<S>(idx);
         grid[idx] *= cispi(2 * w0 * ndash(l, m));
     }
 }

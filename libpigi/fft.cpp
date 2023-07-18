@@ -15,7 +15,7 @@ void applyCheckerboard(T* grid, GridSpec gridspec) {
         idx < gridspec.Nx * gridspec.Ny;
         idx += blockDim.x * gridDim.x
     ) {
-        auto [lpx, mpx] = linearToXY(idx, gridspec);
+        auto [lpx, mpx] = gridspec.linearToGrid(idx);
 
         auto lfactor {1 - 2 * (lpx % 2)};
         auto mfactor {1 - 2 * (mpx % 2)};

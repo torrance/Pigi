@@ -27,11 +27,8 @@ void gpudift(
         idx < subgridspec.Nx * subgridspec.Ny;
         idx += blockDim.x * gridDim.x
     ) {
-        auto [lpx, mpx] = linearToXY(idx, subgridspec);
-
-        S l {(lpx - subgridspec.Nx / 2) * (S) subgridspec.scalelm};
-        S m {(mpx - subgridspec.Ny / 2) * (S) subgridspec.scalelm};
-        S n = ndash(l, m);
+        auto [l, m] = subgridspec.linearToSky<S>(idx);
+        S n {ndash(l, m)};
 
         LinearData<S> cell {};
         for (size_t i = 0; i < uvdata_n; ++i) {
@@ -80,7 +77,7 @@ void addsubgrid(
         idx < N;
         idx += blockDim.x * gridDim.x
     ) {
-        auto [upx, vpx] = linearToXY(idx, subgridspec);
+        auto [upx, vpx] = subgridspec.linearToGrid(idx);
 
         // Transform to pixel position wrt to master grid
         upx += u0px - subgridspec.Nx / 2;
@@ -90,7 +87,7 @@ void addsubgrid(
             0 <= upx && upx < gridspec.Nx &&
             0 <= vpx && vpx < gridspec.Ny
         ) {
-            grid[XYToLinear(upx, vpx, gridspec)] += subgrid[idx];
+            grid[gridspec.gridToLinear(upx, vpx)] += subgrid[idx];
         }
     }
 }
