@@ -21,7 +21,7 @@ struct WorkUnit {
     T v0;
     T w0;
     GridSpec subgridspec;
-    SpanMatrix< Matrix2x2<std::complex<T>> > Aleft;
-    SpanMatrix< Matrix2x2<std::complex<T>> > Aright;
+    SpanMatrix< ComplexLinearData<T> > Aleft;
+    SpanMatrix< ComplexLinearData<T>  > Aright;
     SpanVector< UVDatum<T> > data;
 };

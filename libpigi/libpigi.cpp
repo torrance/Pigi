@@ -5,7 +5,7 @@
 
 extern "C" {
     void gridder_lineardouble(
-        SpanMatrix<LinearData<double>>* grid,
+        SpanMatrix<ComplexLinearData<double>>* grid,
         WorkUnit<double>* workunits_ptr,
         size_t workunits_n,
         SpanMatrix<double>* subtaper

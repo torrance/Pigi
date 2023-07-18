@@ -11,6 +11,6 @@ struct UVDatum {
     T u;
     T v;
     T w;
-    Matrix2x2<T> weights;
-    Matrix2x2<std::complex<T>> data;
+    LinearData<T> weights;
+    ComplexLinearData<T> data;
 };

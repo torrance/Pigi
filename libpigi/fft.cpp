@@ -36,7 +36,7 @@ void fftshift(T* grid, GridSpec gridspec) {
     );
 }
 
-hipfftHandle fftPlan(GridSpec gridspec, [[maybe_unused]] LinearData<float>* _) {
+hipfftHandle fftPlan(GridSpec gridspec, [[maybe_unused]] ComplexLinearData<float>* _) {
     hipfftHandle plan {};
     int rank[] {(int) gridspec.Ny, (int) gridspec.Nx}; // COL MAJOR
     HIPFFTCHECK( hipfftPlanMany(
@@ -50,7 +50,7 @@ hipfftHandle fftPlan(GridSpec gridspec, [[maybe_unused]] LinearData<float>* _) {
     return plan;
 }
 
-hipfftHandle fftPlan(GridSpec gridspec, [[maybe_unused]] LinearData<double>* _) {
+hipfftHandle fftPlan(GridSpec gridspec, [[maybe_unused]] ComplexLinearData<double>* _) {
     hipfftHandle plan {};
     int rank[] {(int) gridspec.Ny, (int) gridspec.Nx}; // COL MAJOR
     HIPFFTCHECK( hipfftPlanMany(
@@ -92,7 +92,7 @@ hipfftHandle fftPlan(GridSpec gridspec, [[maybe_unused]] StokesI<double>* _) {
     return plan;
 }
 
-auto fftExec(hipfftHandle plan, LinearData<float>* grid, GridSpec gridspec, int direction) { 
+auto fftExec(hipfftHandle plan, ComplexLinearData<float>* grid, GridSpec gridspec, int direction) { 
     fftshift(grid, gridspec);
     hipfftExecC2C(
         plan, 
@@ -103,7 +103,7 @@ auto fftExec(hipfftHandle plan, LinearData<float>* grid, GridSpec gridspec, int 
     fftshift(grid, gridspec);
 }
 
-auto fftExec(hipfftHandle plan, LinearData<double>* grid, GridSpec gridspec, int direction) { 
+auto fftExec(hipfftHandle plan, ComplexLinearData<double>* grid, GridSpec gridspec, int direction) { 
     fftshift(grid, gridspec);
     hipfftExecZ2Z(
         plan, 

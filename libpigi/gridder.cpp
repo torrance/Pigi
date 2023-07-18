@@ -15,8 +15,8 @@ template <typename T, typename S>
 __global__
 void gpudift(
     T * __restrict__ subgrid,
-    const Matrix2x2<std::complex<S>> * __restrict__ Aleft,
-    const Matrix2x2<std::complex<S>> * __restrict__ Aright,
+    const ComplexLinearData<S> * __restrict__ Aleft,
+    const ComplexLinearData<S> * __restrict__ Aright,
     const UVWOrigin<S> origin,
     const UVDatum<S> * __restrict__ uvdata,
     const size_t uvdata_n,
@@ -30,14 +30,16 @@ void gpudift(
         auto [l, m] = subgridspec.linearToSky<S>(idx);
         S n {ndash(l, m)};
 
-        LinearData<S> cell {};
+        ComplexLinearData<S> cell {};
         for (size_t i = 0; i < uvdata_n; ++i) {
             auto uvdatum = uvdata[i];
             auto phase = cispi(
                 2 * ((uvdatum.u - origin.u0) * l + (uvdatum.v - origin.v0) * m + (uvdatum.w - origin.w0) * n)
             );
 
-            cell += uvdatum.data * uvdatum.weights * phase;
+            uvdatum.data *= uvdatum.weights;
+            uvdatum.data *= phase;
+            cell += uvdatum.data;
         }
 
         // TODO: add beam correction and normalize
