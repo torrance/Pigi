@@ -18,7 +18,7 @@ __global__ void _idft(
 ) {
     for (
         int idx = blockIdx.x * blockDim.x + threadIdx.x;
-        idx < gridspec.Nx * gridspec.Ny;
+        idx < gridspec.size();
         idx += blockDim.x * gridDim.x
     ) {
         auto [l, m] = gridspec.linearToSky<S>(idx);
@@ -47,7 +47,7 @@ void idft(
 ) {
     auto fn = _idft<T, S>;
     auto [nblocks, nthreads] = getKernelConfig(
-        fn, gridspec.Nx * gridspec.Ny
+        fn, gridspec.size()
     );
     hipLaunchKernelGGL(
         fn, nblocks, nthreads, 0, hipStreamPerThread,

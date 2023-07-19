@@ -8,6 +8,8 @@ struct GridSpec {
     double scalelm;
     double scaleuv;
 
+    __host__ __device__ inline auto size() const { return Nx * Ny; }
+
     __host__ __device__
     inline auto linearToGrid(const size_t idx) const {
         // COLUMN MAJOR ordering

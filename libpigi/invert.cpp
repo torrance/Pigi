@@ -16,15 +16,27 @@
 
 template <typename T, typename S>
 __global__
-void wcorrect(SpanMatrix<T> grid, const GridSpec gridspec, const S w0) {
+void _wcorrect(SpanMatrix<T> grid, const GridSpec gridspec, const S w0) {
     for (
         int idx = blockIdx.x * blockDim.x + threadIdx.x;
-        idx < gridspec.Nx * gridspec.Ny;
+        idx < gridspec.size();
         idx += blockDim.x * gridDim.x
     ) {
         auto [l, m] = gridspec.linearToSky<S>(idx);
         grid[idx] *= cispi(2 * w0 * ndash(l, m));
     }
+}
+
+template <typename T, typename S>
+void wcorrect(SpanMatrix<T> grid, const GridSpec gridspec, const S w0) {
+    auto fn = _wcorrect<StokesI<S>, S>;
+    auto [nblocks, nthreads] = getKernelConfig(
+        fn, gridspec.size()
+    );
+    hipLaunchKernelGGL(
+        fn, nblocks, nthreads, 0, hipStreamPerThread,
+        grid, gridspec, w0
+    );
 }
 
 template<template<typename> typename T, typename S>
@@ -70,16 +82,7 @@ HostMatrix<T<S>> invert(
         fftExec(plan, wlayerd, HIPFFT_BACKWARD);
 
         // Apply w correction
-        {
-            auto fn = wcorrect<StokesI<S>, S>;
-            auto [nblocks, nthreads] = getKernelConfig(
-                fn, gridspec.Nx, gridspec.Ny
-            );
-            hipLaunchKernelGGL(
-                fn, nblocks, nthreads, 0, hipStreamPerThread,
-                wlayerd, gridspec, w0
-            );
-        }
+        wcorrect<T<S>, S>(wlayerd, gridspec, w0);
 
         wlayer = wlayerd;
         HIPCHECK( hipStreamSynchronize(hipStreamPerThread) );

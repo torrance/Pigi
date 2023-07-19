@@ -23,7 +23,7 @@ void _gpudift(
 ) {
     for (
         int idx = blockIdx.x * blockDim.x + threadIdx.x;
-        idx < subgridspec.Nx * subgridspec.Ny;
+        idx < subgridspec.size();
         idx += blockDim.x * gridDim.x
     ) {
         auto [l, m] = subgridspec.linearToSky<S>(idx);
@@ -53,9 +53,9 @@ void gpudift(
     const SpanVector< UVDatum<S> > uvdata,
     const GridSpec subgridspec
 ) {
-    auto fn = gpudift<T, S>;
+    auto fn = _gpudift<T, S>;
     auto [nblocks, nthreads] = getKernelConfig(
-        fn, subgridspec.Nx * subgridspec.Ny
+        fn, subgridspec.size()
     );
     hipLaunchKernelGGL(
         fn, nblocks, nthreads, 0, hipStreamPerThread,
@@ -69,7 +69,7 @@ __global__
 void _applytaper(
     SpanMatrix<T> grid, const SpanMatrix<S> taper, const GridSpec gridspec
 ) {
-    auto N = gridspec.Nx * gridspec.Ny;
+    auto N = gridspec.size();
     for (
         int idx = blockIdx.x * blockDim.x + threadIdx.x;
         idx < N;
@@ -83,9 +83,9 @@ template <typename T, typename S>
 void applytaper(
     SpanMatrix<T> grid, const SpanMatrix<S> taper, const GridSpec gridspec
 ) {
-    auto fn = applytaper<T, S>;
+    auto fn = _applytaper<T, S>;
     auto [nblocks, nthreads] = getKernelConfig(
-        fn, gridspec.Nx * gridspec.Ny
+        fn, gridspec.size()
     );
     hipLaunchKernelGGL(
         fn, nblocks, nthreads, 0, hipStreamPerThread,
@@ -104,10 +104,9 @@ void _addsubgrid(
     const long long u0px, const long long v0px
 ) {
     // Iterate over each element of the subgrid
-    auto N = subgridspec.Nx * subgridspec.Ny;
     for (
         int idx = blockIdx.x * blockDim.x + threadIdx.x;
-        idx < N;
+        idx < subgridspec.size();
         idx += blockDim.x * gridDim.x
     ) {
         auto [upx, vpx] = subgridspec.linearToGrid(idx);
@@ -140,7 +139,7 @@ void addsubgrid(
 
     auto fn = _addsubgrid<T>;
     auto [nblocks, nthreads] = getKernelConfig(
-        fn, subgridspec.Nx, subgridspec.Ny
+        fn, subgridspec.size()
     );
     hipLaunchKernelGGL(
         fn, nblocks, nthreads, 0, hipStreamPerThread,
