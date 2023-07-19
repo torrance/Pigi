@@ -14,12 +14,11 @@
 template <typename T, typename S>
 __global__
 void gpudift(
-    T * __restrict__ subgrid,
-    const ComplexLinearData<S> * __restrict__ Aleft,
-    const ComplexLinearData<S> * __restrict__ Aright,
+    SpanMatrix<T> subgrid,
+    const SpanMatrix< ComplexLinearData<S> > Aleft,
+    const SpanMatrix< ComplexLinearData<S> > Aright,
     const UVWOrigin<S> origin,
-    const UVDatum<S> * __restrict__ uvdata,
-    const size_t uvdata_n,
+    const SpanVector< UVDatum<S> > uvdata,
     const GridSpec subgridspec
 ) {
     for (
@@ -31,8 +30,7 @@ void gpudift(
         S n {ndash(l, m)};
 
         ComplexLinearData<S> cell {};
-        for (size_t i = 0; i < uvdata_n; ++i) {
-            auto uvdatum = uvdata[i];
+        for (auto uvdatum : uvdata) {
             auto phase = cispi(
                 2 * ((uvdatum.u - origin.u0) * l + (uvdatum.v - origin.v0) * m + (uvdatum.w - origin.w0) * n)
             );
@@ -49,7 +47,7 @@ void gpudift(
 template <typename T, typename S>
 __global__
 void applytaper(
-    T* __restrict__ subgrid, S* __restrict__ taper, GridSpec subgridspec
+    SpanMatrix<T> subgrid, const SpanMatrix<S> taper, const GridSpec subgridspec
 ) {
     auto N = subgridspec.Nx * subgridspec.Ny;
     for (
@@ -67,9 +65,9 @@ void applytaper(
 template <typename T>
 __global__
 void addsubgrid(
-    T* __restrict__ grid, GridSpec gridspec,
-    T* __restrict__ subgrid, GridSpec subgridspec,
-    long long u0px, long long v0px
+    SpanMatrix<T> grid, const GridSpec gridspec,
+    const SpanMatrix<T> subgrid, const GridSpec subgridspec,
+    const long long u0px, const long long v0px
 ) {
     // Iterate over each element of the subgrid
     auto N = subgridspec.Nx * subgridspec.Ny;
@@ -103,7 +101,7 @@ void gridder(
     DeviceArray<T, 2> subgrid({(size_t) subgridspec.Nx, (size_t) subgridspec.Ny});
 
     // Make FFT plan
-    auto plan = fftPlan(subgridspec, subgrid.data());
+    auto plan = fftPlan(subgrid);
 
     for (const WorkUnit<S>& workunit : workunits) {
         UVWOrigin origin {workunit.u0, workunit.v0, workunit.w0};
@@ -120,9 +118,8 @@ void gridder(
             );
             hipLaunchKernelGGL(
                 fn, nblocks, nthreads, 0, hipStreamPerThread,
-                subgrid.data(), Aleft.data(),
-                Aright.data(), origin, uvdata.data(),
-                uvdata.size(), subgridspec
+                subgrid, Aleft, Aright,
+                origin, uvdata, subgridspec
             );
         }
 
@@ -134,12 +131,12 @@ void gridder(
             );
             hipLaunchKernelGGL(
                 fn, nblocks, nthreads, 0, hipStreamPerThread,
-                subgrid.data(), subtaper.data(), subgridspec
+                subgrid, subtaper, subgridspec
             );
         }
 
         // FFT
-        fftExec(plan, subgrid.data(), subgridspec, HIPFFT_FORWARD);
+        fftExec(plan, subgrid, HIPFFT_FORWARD);
 
         // Add back to master grid
         {
@@ -150,7 +147,7 @@ void gridder(
             GridSpec gridspec {(long long) grid.size(0), (long long) grid.size(1), 0, 0};
             hipLaunchKernelGGL(
                 fn, nblocks, nthreads, 0, hipStreamPerThread,
-                grid.data(), gridspec, subgrid.data(), subgridspec, workunit.u0px, workunit.v0px
+                grid, gridspec, subgrid, subgridspec, workunit.u0px, workunit.v0px
             );
         }
     }

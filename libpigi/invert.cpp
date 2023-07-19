@@ -16,7 +16,7 @@
 
 template <typename T, typename S>
 __global__
-void wcorrect(T* grid, GridSpec gridspec, S w0) {
+void wcorrect(SpanMatrix<T> grid, const GridSpec gridspec, const S w0) {
     for (
         int idx = blockIdx.x * blockDim.x + threadIdx.x;
         idx < gridspec.Nx * gridspec.Ny;
@@ -40,7 +40,7 @@ HostMatrix<T<S>> invert(
     DeviceMatrix<T<S>> wlayerd {{(size_t) gridspec.Nx, (size_t) gridspec.Ny}};
     DeviceMatrix<S> subtaperd {subtaper};
 
-    auto plan = fftPlan(gridspec, wlayerd.data());
+    auto plan = fftPlan(wlayerd);
 
     // Get unique w terms
     std::vector<S> ws(workunits.size());
@@ -67,7 +67,7 @@ HostMatrix<T<S>> invert(
         gridder<T<S>, S>(wlayerd, wworkunits, subtaperd);
 
         // FFT the full wlayer
-        fftExec(plan, wlayerd.data(), gridspec, HIPFFT_BACKWARD);
+        fftExec(plan, wlayerd, HIPFFT_BACKWARD);
 
         // Apply w correction
         {
@@ -77,7 +77,7 @@ HostMatrix<T<S>> invert(
             );
             hipLaunchKernelGGL(
                 fn, nblocks, nthreads, 0, hipStreamPerThread,
-                wlayerd.data(), gridspec, w0
+                wlayerd, gridspec, w0
             );
         }
 

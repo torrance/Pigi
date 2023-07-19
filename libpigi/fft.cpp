@@ -3,13 +3,14 @@
 #include <hip/hip_runtime.h>
 #include <hipfft/hipfft.h>
 
+#include "array.cpp"
 #include "hip.cpp"
 #include "gridspec.cpp"
 #include "outputtypes.cpp"
 
 template <typename T>
 __global__
-void applyCheckerboard(T* grid, GridSpec gridspec) {
+void _fftshift(SpanMatrix<T> grid, GridSpec gridspec) {
     for (
         int idx = blockIdx.x * blockDim.x + threadIdx.x;
         idx < gridspec.Nx * gridspec.Ny;
@@ -25,20 +26,27 @@ void applyCheckerboard(T* grid, GridSpec gridspec) {
 }
 
 template<typename T>
-void fftshift(T* grid, GridSpec gridspec) {
+void fftshift(SpanMatrix<T> grid) {
+    // Create dummy GridSpec so that we have access to linearToGrid() method
+    GridSpec gridspec {
+        static_cast<long long>(grid.size(0)),
+        static_cast<long long>(grid.size(1)),
+        0, 0
+    };
+
     auto [nblocks, nthreads] = getKernelConfig(
-        applyCheckerboard<T>, gridspec.Nx * gridspec.Ny
+        _fftshift<T>, gridspec.Nx * gridspec.Ny
     );
 
     hipLaunchKernelGGL(
-        applyCheckerboard<T>, nblocks, nthreads, 0, hipStreamPerThread,
+        _fftshift<T>, nblocks, nthreads, 0, hipStreamPerThread,
         grid, gridspec
     );
 }
 
-hipfftHandle fftPlan(GridSpec gridspec, [[maybe_unused]] ComplexLinearData<float>* _) {
+hipfftHandle fftPlan(SpanMatrix<ComplexLinearData<float>> grid) {
     hipfftHandle plan {};
-    int rank[] {(int) gridspec.Ny, (int) gridspec.Nx}; // COL MAJOR
+    int rank[] {(int) grid.size(1), (int) grid.size(0)}; // COL MAJOR
     HIPFFTCHECK( hipfftPlanMany(
         &plan, 2, rank,
         rank, 4, 1,
@@ -50,9 +58,9 @@ hipfftHandle fftPlan(GridSpec gridspec, [[maybe_unused]] ComplexLinearData<float
     return plan;
 }
 
-hipfftHandle fftPlan(GridSpec gridspec, [[maybe_unused]] ComplexLinearData<double>* _) {
+hipfftHandle fftPlan(SpanMatrix<ComplexLinearData<double>> grid) {
     hipfftHandle plan {};
-    int rank[] {(int) gridspec.Ny, (int) gridspec.Nx}; // COL MAJOR
+    int rank[] {(int) grid.size(1), (int) grid.size(0)}; // COL MAJOR
     HIPFFTCHECK( hipfftPlanMany(
         &plan, 2, rank,
         rank, 4, 1,
@@ -64,9 +72,9 @@ hipfftHandle fftPlan(GridSpec gridspec, [[maybe_unused]] ComplexLinearData<doubl
     return plan;
 }
 
-hipfftHandle fftPlan(GridSpec gridspec, [[maybe_unused]] StokesI<float>* _) {
+hipfftHandle fftPlan(SpanMatrix<StokesI<float>> grid) {
     hipfftHandle plan {};
-    int rank[] {(int) gridspec.Ny, (int) gridspec.Nx}; // COL MAJOR
+    int rank[] {(int) grid.size(1), (int) grid.size(0)}; // COL MAJOR
     HIPFFTCHECK( hipfftPlanMany(
         &plan, 2, rank,
         rank, 1, 1,
@@ -78,9 +86,9 @@ hipfftHandle fftPlan(GridSpec gridspec, [[maybe_unused]] StokesI<float>* _) {
     return plan;
 }
 
-hipfftHandle fftPlan(GridSpec gridspec, [[maybe_unused]] StokesI<double>* _) {
+hipfftHandle fftPlan(SpanMatrix<StokesI<double>> grid) {
     hipfftHandle plan {};
-    int rank[] {(int) gridspec.Ny, (int) gridspec.Nx}; // COL MAJOR
+    int rank[] {(int) grid.size(1), (int) grid.size(0)}; // COL MAJOR
     HIPFFTCHECK( hipfftPlanMany(
         &plan, 2, rank,
         rank, 1, 1,
@@ -92,45 +100,45 @@ hipfftHandle fftPlan(GridSpec gridspec, [[maybe_unused]] StokesI<double>* _) {
     return plan;
 }
 
-auto fftExec(hipfftHandle plan, ComplexLinearData<float>* grid, GridSpec gridspec, int direction) { 
-    fftshift(grid, gridspec);
+auto fftExec(hipfftHandle plan, SpanMatrix<ComplexLinearData<float>> grid, int direction) {
+    fftshift(grid);
     hipfftExecC2C(
         plan, 
-        (hipfftComplex*) grid,
-        (hipfftComplex*) grid,
+        (hipfftComplex*) grid.data(),
+        (hipfftComplex*) grid.data(),
         direction
     );
-    fftshift(grid, gridspec);
+    fftshift(grid);
 }
 
-auto fftExec(hipfftHandle plan, ComplexLinearData<double>* grid, GridSpec gridspec, int direction) { 
-    fftshift(grid, gridspec);
+auto fftExec(hipfftHandle plan, SpanMatrix<ComplexLinearData<double>> grid, int direction) {
+    fftshift(grid);
     hipfftExecZ2Z(
         plan, 
-        (hipfftDoubleComplex*) grid,
-        (hipfftDoubleComplex*) grid,
+        (hipfftDoubleComplex*) grid.data(),
+        (hipfftDoubleComplex*) grid.data(),
         direction
     );
-    fftshift(grid, gridspec);
+    fftshift(grid);
 }
 
-auto fftExec(hipfftHandle plan, StokesI<float>* grid, GridSpec gridspec, int direction) {
-    fftshift(grid, gridspec);
+auto fftExec(hipfftHandle plan, SpanMatrix<StokesI<float>> grid, int direction) {
+    fftshift(grid);
     hipfftExecC2C(
         plan, 
-        (hipfftComplex*) grid,
-        (hipfftComplex*) grid,
+        (hipfftComplex*) grid.data(),
+        (hipfftComplex*) grid.data(),
         direction
     );
-    fftshift(grid, gridspec);
+    fftshift(grid);
 }
-auto fftExec(hipfftHandle plan, StokesI<double>* grid, GridSpec gridspec, int direction) {
-    fftshift(grid, gridspec);
+auto fftExec(hipfftHandle plan, SpanMatrix<StokesI<double>> grid, int direction) {
+    fftshift(grid);
     hipfftExecZ2Z(
         plan, 
-        (hipfftDoubleComplex*) grid,
-        (hipfftDoubleComplex*) grid,
+        (hipfftDoubleComplex*) grid.data(),
+        (hipfftDoubleComplex*) grid.data(),
         direction
     );
-    fftshift(grid, gridspec);
+    fftshift(grid);
 }

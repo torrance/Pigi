@@ -50,7 +50,7 @@ public:
     __host__ __device__ inline T* end() const { return ptr + this->size(); }
 
 private:
-    T* ptr;
+    T*  __restrict__ ptr;
 };
 
 template <typename T>
