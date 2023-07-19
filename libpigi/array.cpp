@@ -23,7 +23,7 @@ public:
         return dims == other.dims;
     }
 
-    size_t size() const;
+    __host__ __device__ inline size_t size() const;
     size_t size(int i) const { return dims.at(i); }
     auto shape() const { return dims; }
 
@@ -31,8 +31,8 @@ private:
     std::array<size_t, N> dims {};
 };
 
-template<> size_t Dims<1>::size() const { return dims[0]; }
-template<> size_t Dims<2>::size() const { return dims[0] * dims[1]; }
+template<> __host__ __device__ inline size_t Dims<1>::size() const { return dims[0]; }
+template<> __host__ __device__ inline size_t Dims<2>::size() const { return dims[0] * dims[1]; }
 
 template <typename T, int N>
 class NdSpan : public Dims<N> {
@@ -42,12 +42,12 @@ public:
     NdSpan<T, 1>(std::vector<T> vec) : Dims<1>(vec.size()), ptr(vec.data()) {}
     NdSpan<T, 1>(T* start, T* end) : Dims<1>(end - start), ptr(start) {}
 
-    T operator[](size_t i) const { return ptr[i]; }
-    T& operator[](size_t i) { return ptr[i]; }
+    __host__ __device__ inline T operator[](size_t i) const { return ptr[i]; }
+    __host__ __device__ inline T& operator[](size_t i) { return ptr[i]; }
 
-    T* data() const { return ptr; }
-    T* begin() const { return ptr; }
-    T* end() const { return ptr + this->size(); }
+    __host__ __device__ inline T* data() const { return ptr; }
+    __host__ __device__ inline T* begin() const { return ptr; }
+    __host__ __device__ inline T* end() const { return ptr + this->size(); }
 
 private:
     T* ptr;

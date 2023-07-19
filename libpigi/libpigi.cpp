@@ -1,4 +1,5 @@
 #include "array.cpp"
+#include "dft.cpp"
 #include "gridder.cpp"
 #include "invert.cpp"
 #include "outputtypes.cpp"
@@ -82,5 +83,27 @@ extern "C" {
             workunits, *gridspec, taper, subtaper
         );
         memcpy(img_ptr, img.data(), img.size() * sizeof(StokesI<float>));
+    }
+
+    void idft_lineardouble(
+        SpanMatrix<ComplexLinearData<double>>* img,
+        SpanVector<UVDatum<double>>* uvdata,
+        GridSpec* gridspec,
+        double normfactor
+    ) {
+        idft<ComplexLinearData<double>, double>(
+            *img, *uvdata, *gridspec, normfactor
+        );
+    }
+
+    void idft_linearfloat(
+        SpanMatrix<ComplexLinearData<float>>* img,
+        SpanVector<UVDatum<float>>* uvdata,
+        GridSpec* gridspec,
+        float normfactor
+    ) {
+        idft<ComplexLinearData<float>, float>(
+            *img, *uvdata, *gridspec, normfactor
+        );
     }
 }

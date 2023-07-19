@@ -42,8 +42,7 @@ void gpudift(
             cell += uvdatum.data;
         }
 
-        // TODO: add beam correction and normalize
-        subgrid[idx] = cell;
+        subgrid[idx] = T::fromBeam(cell, Aleft[idx], Aright[idx]);
     }
 }
 
