@@ -13,7 +13,7 @@
 
 template <typename T, typename S>
 __global__
-void gpudift(
+void _gpudift(
     SpanMatrix<T> subgrid,
     const SpanMatrix< ComplexLinearData<S> > Aleft,
     const SpanMatrix< ComplexLinearData<S> > Aright,
@@ -45,18 +45,52 @@ void gpudift(
 }
 
 template <typename T, typename S>
-__global__
-void applytaper(
-    SpanMatrix<T> subgrid, const SpanMatrix<S> taper, const GridSpec subgridspec
+void gpudift(
+    SpanMatrix<T> subgrid,
+    const SpanMatrix< ComplexLinearData<S> > Aleft,
+    const SpanMatrix< ComplexLinearData<S> > Aright,
+    const UVWOrigin<S> origin,
+    const SpanVector< UVDatum<S> > uvdata,
+    const GridSpec subgridspec
 ) {
-    auto N = subgridspec.Nx * subgridspec.Ny;
+    auto fn = gpudift<T, S>;
+    auto [nblocks, nthreads] = getKernelConfig(
+        fn, subgridspec.Nx * subgridspec.Ny
+    );
+    hipLaunchKernelGGL(
+        fn, nblocks, nthreads, 0, hipStreamPerThread,
+        subgrid, Aleft, Aright,
+        origin, uvdata, subgridspec
+    );
+}
+
+template <typename T, typename S>
+__global__
+void _applytaper(
+    SpanMatrix<T> grid, const SpanMatrix<S> taper, const GridSpec gridspec
+) {
+    auto N = gridspec.Nx * gridspec.Ny;
     for (
         int idx = blockIdx.x * blockDim.x + threadIdx.x;
         idx < N;
         idx += blockDim.x * gridDim.x
     ) {
-        subgrid[idx] *= (taper[idx] / N);
+        grid[idx] *= (taper[idx] / N);
     }
+}
+
+template <typename T, typename S>
+void applytaper(
+    SpanMatrix<T> grid, const SpanMatrix<S> taper, const GridSpec gridspec
+) {
+    auto fn = applytaper<T, S>;
+    auto [nblocks, nthreads] = getKernelConfig(
+        fn, gridspec.Nx * gridspec.Ny
+    );
+    hipLaunchKernelGGL(
+        fn, nblocks, nthreads, 0, hipStreamPerThread,
+        grid, taper, gridspec
+    );
 }
 
 /**
@@ -64,7 +98,7 @@ void applytaper(
  */
 template <typename T>
 __global__
-void addsubgrid(
+void _addsubgrid(
     SpanMatrix<T> grid, const GridSpec gridspec,
     const SpanMatrix<T> subgrid, const GridSpec subgridspec,
     const long long u0px, const long long v0px
@@ -91,6 +125,29 @@ void addsubgrid(
     }
 }
 
+template <typename T>
+void addsubgrid(
+    SpanMatrix<T> grid,
+    const SpanMatrix<T> subgrid, const GridSpec subgridspec,
+    const long long u0px, const long long v0px
+) {
+    // Create dummy gridspec to have access to gridToLinear() method
+    GridSpec gridspec {
+        static_cast<long long>(grid.size(0)),
+        static_cast<long long>(grid.size(1)),
+        0, 0
+    };
+
+    auto fn = _addsubgrid<T>;
+    auto [nblocks, nthreads] = getKernelConfig(
+        fn, subgridspec.Nx, subgridspec.Ny
+    );
+    hipLaunchKernelGGL(
+        fn, nblocks, nthreads, 0, hipStreamPerThread,
+        grid, gridspec, subgrid, subgridspec, u0px, v0px
+    );
+}
+
 template<typename T, typename S>
 void gridder(
     SpanMatrix<T> grid,
@@ -111,45 +168,18 @@ void gridder(
         auto Aright = workunit.Aright;
 
         // DFT
-        {
-            auto fn = gpudift<T, S>;
-            auto [nblocks, nthreads] = getKernelConfig(
-                fn, subgridspec.Nx * subgridspec.Ny
-            );
-            hipLaunchKernelGGL(
-                fn, nblocks, nthreads, 0, hipStreamPerThread,
-                subgrid, Aleft, Aright,
-                origin, uvdata, subgridspec
-            );
-        }
+        gpudift<T, S>(
+            subgrid, Aleft, Aright, origin, uvdata, subgridspec
+        );
 
         // Taper
-        {
-            auto fn = applytaper<T, S>;
-            auto [nblocks, nthreads] = getKernelConfig(
-                fn, subgridspec.Nx * subgridspec.Ny
-            );
-            hipLaunchKernelGGL(
-                fn, nblocks, nthreads, 0, hipStreamPerThread,
-                subgrid, subtaper, subgridspec
-            );
-        }
+        applytaper<T, S>(subgrid, subtaper, subgridspec);
 
         // FFT
         fftExec(plan, subgrid, HIPFFT_FORWARD);
 
         // Add back to master grid
-        {
-            auto fn = addsubgrid<T>;
-            auto [nblocks, nthreads] = getKernelConfig(
-                fn, subgridspec.Nx, subgridspec.Ny
-            );
-            GridSpec gridspec {(long long) grid.size(0), (long long) grid.size(1), 0, 0};
-            hipLaunchKernelGGL(
-                fn, nblocks, nthreads, 0, hipStreamPerThread,
-                grid, gridspec, subgrid, subgridspec, workunit.u0px, workunit.v0px
-            );
-        }
+        addsubgrid<T>(grid, subgrid, subgridspec, workunit.u0px, workunit.v0px);
     }
 
     HIPFFTCHECK( hipfftDestroy(plan) );
