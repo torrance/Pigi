@@ -173,8 +173,7 @@ void gridder(
     for (size_t i {}; i < std::min<size_t>(workunits.size(), 8); ++i) {
         std::thread t([&] {
             // Make FFT plan
-            DeviceMatrix<T> dummySubgrid({subgridspec.Nx, subgridspec.Ny});
-            auto plan = fftPlan(dummySubgrid);
+            auto plan = fftPlan<T>(subgridspec);
 
             while (auto maybe = workunitsChannel.pop())
             {

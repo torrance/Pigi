@@ -52,7 +52,7 @@ HostMatrix<T<S>> invert(
     DeviceMatrix<T<S>> wlayerd {{(size_t) gridspec.Nx, (size_t) gridspec.Ny}};
     DeviceMatrix<S> subtaperd {subtaper};
 
-    auto plan = fftPlan(wlayerd);
+    auto plan = fftPlan<T<S>>(gridspec);
 
     // Get unique w terms
     std::vector<S> ws(workunits.size());

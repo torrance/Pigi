@@ -44,9 +44,15 @@ void fftshift(SpanMatrix<T> grid) {
     );
 }
 
-hipfftHandle fftPlan(SpanMatrix<ComplexLinearData<float>> grid) {
+template <typename T>
+hipfftHandle fftPlan([[maybe_unused]] GridSpec gridspec) {
+    static_assert(sizeof(T) == -1, "No fftPlan specialisation provided");
+}
+
+template <>
+hipfftHandle fftPlan<ComplexLinearData<float>>(GridSpec gridspec) {
     hipfftHandle plan {};
-    int rank[] {(int) grid.size(1), (int) grid.size(0)}; // COL MAJOR
+    int rank[] {(int) gridspec.Ny, (int) gridspec.Nx}; // COL MAJOR
     HIPFFTCHECK( hipfftPlanMany(
         &plan, 2, rank,
         rank, 4, 1,
@@ -58,9 +64,10 @@ hipfftHandle fftPlan(SpanMatrix<ComplexLinearData<float>> grid) {
     return plan;
 }
 
-hipfftHandle fftPlan(SpanMatrix<ComplexLinearData<double>> grid) {
+template<>
+hipfftHandle fftPlan<ComplexLinearData<double>>(GridSpec gridspec) {
     hipfftHandle plan {};
-    int rank[] {(int) grid.size(1), (int) grid.size(0)}; // COL MAJOR
+    int rank[] {(int) gridspec.Ny, (int) gridspec.Nx}; // COL MAJOR
     HIPFFTCHECK( hipfftPlanMany(
         &plan, 2, rank,
         rank, 4, 1,
@@ -72,9 +79,10 @@ hipfftHandle fftPlan(SpanMatrix<ComplexLinearData<double>> grid) {
     return plan;
 }
 
-hipfftHandle fftPlan(SpanMatrix<StokesI<float>> grid) {
+template<>
+hipfftHandle fftPlan<StokesI<float>>(GridSpec gridspec) {
     hipfftHandle plan {};
-    int rank[] {(int) grid.size(1), (int) grid.size(0)}; // COL MAJOR
+    int rank[] {(int) gridspec.Ny, (int) gridspec.Nx}; // COL MAJOR
     HIPFFTCHECK( hipfftPlanMany(
         &plan, 2, rank,
         rank, 1, 1,
@@ -86,9 +94,10 @@ hipfftHandle fftPlan(SpanMatrix<StokesI<float>> grid) {
     return plan;
 }
 
-hipfftHandle fftPlan(SpanMatrix<StokesI<double>> grid) {
+template<>
+hipfftHandle fftPlan<StokesI<double>>(GridSpec gridspec) {
     hipfftHandle plan {};
-    int rank[] {(int) grid.size(1), (int) grid.size(0)}; // COL MAJOR
+    int rank[] {(int) gridspec.Ny, (int) gridspec.Nx}; // COL MAJOR
     HIPFFTCHECK( hipfftPlanMany(
         &plan, 2, rank,
         rank, 1, 1,
