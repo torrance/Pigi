@@ -1,10 +1,13 @@
 #pragma once
 
 #include <complex>
+#include <thread>
+#include <tuple>
 
 #include <hip/hip_runtime.h>
 
 #include "array.cpp"
+#include "channel.cpp"
 #include "gridspec.cpp"
 #include "outputtypes.cpp"
 #include "util.cpp"
@@ -153,33 +156,68 @@ void gridder(
     const SpanVector<WorkUnit<S>> workunits,
     const SpanMatrix<S> subtaper
 ) {
-    auto subgridspec = workunits[0].subgridspec;
-    DeviceArray<T, 2> subgrid({(size_t) subgridspec.Nx, (size_t) subgridspec.Ny});
+    const auto subgridspec = workunits[0].subgridspec;
 
-    // Make FFT plan
-    auto plan = fftPlan(subgrid);
+    using Pair = std::tuple<DeviceMatrix<T>, const WorkUnit<S>*>;
+    Channel<const WorkUnit<S>*> workunitsChannel;
+    Channel<Pair> subgridsChannel;
 
-    for (const WorkUnit<S>& workunit : workunits) {
-        UVWOrigin origin {workunit.u0, workunit.v0, workunit.w0};
+    // Enqueue the work units
+    for (const auto& workunit : workunits) { workunitsChannel.push(&workunit); }
+    workunitsChannel.close();
 
-        auto uvdata = workunit.data;
-        auto Aleft = workunit.Aleft;
-        auto Aright = workunit.Aright;
+    // Ensure all stream operators are complete before spanwing new streams
+    HIPCHECK( hipStreamSynchronize(hipStreamPerThread) );
 
-        // DFT
-        gpudift<T, S>(
-            subgrid, Aleft, Aright, origin, uvdata, subgridspec
-        );
+    std::vector<std::thread> threads;
+    for (size_t i {}; i < std::min<size_t>(workunits.size(), 8); ++i) {
+        std::thread t([&] {
+            // Make FFT plan
+            DeviceMatrix<T> dummySubgrid({subgridspec.Nx, subgridspec.Ny});
+            auto plan = fftPlan(dummySubgrid);
 
-        // Taper
-        applytaper<T, S>(subgrid, subtaper, subgridspec);
+            while (auto maybe = workunitsChannel.pop())
+            {
+                // Get next workunit
+                const auto workunit = *maybe;
 
-        // FFT
-        fftExec(plan, subgrid, HIPFFT_FORWARD);
+                const UVWOrigin origin {workunit->u0, workunit->v0, workunit->w0};
 
-        // Add back to master grid
-        addsubgrid<T>(grid, subgrid, subgridspec, workunit.u0px, workunit.v0px);
+                const auto uvdata = workunit->data;
+                const auto Aleft = workunit->Aleft;
+                const auto Aright = workunit->Aright;
+
+                // Allocate subgrid
+                DeviceMatrix<T> subgrid({subgridspec.Nx, subgridspec.Ny});
+
+                // DFT
+                gpudift<T, S>(
+                    subgrid, Aleft, Aright, origin, uvdata, subgridspec
+                );
+
+                // Taper
+                applytaper<T, S>(subgrid, subtaper, subgridspec);
+
+                // FFT
+                fftExec(plan, subgrid, HIPFFT_FORWARD);
+
+                // Sync the stream before we send the subgrid back to the main thread
+                HIPCHECK( hipStreamSynchronize(hipStreamPerThread) );
+
+                subgridsChannel.push({std::move(subgrid), workunit});
+            }
+
+            HIPFFTCHECK( hipfftDestroy(plan) );
+        });
+        threads.push_back(std::move(t));
     }
 
-    HIPFFTCHECK( hipfftDestroy(plan) );
+    // Meanwhile, process subgrids and add back to the main grid as the become available
+    for (size_t i {}; i < workunits.size(); ++i) {
+        const auto [subgrid, workunit] = subgridsChannel.pop().value();
+        addsubgrid<T>(grid, subgrid, subgridspec, workunit->u0px, workunit->v0px);
+        HIPCHECK( hipStreamSynchronize(hipStreamPerThread) ); // this sync fixes test failures, but I don't understand why
+    }
+
+    for (auto& t : threads) { t.join(); }
 }

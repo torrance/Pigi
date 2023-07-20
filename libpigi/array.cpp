@@ -11,7 +11,8 @@
 template <int N>
 class Dims {
 public:
-    Dims(std::array<size_t, N> dims) : dims(dims) {}
+    Dims() = default;
+    Dims(const std::array<size_t, N> dims) : dims(dims) {}
 
     Dims<1>(size_t a) : dims({a}) {}
     Dims<1>(long long a) : dims({static_cast<size_t>(a)}) {}
@@ -26,6 +27,11 @@ public:
     __host__ __device__ inline size_t size() const;
     size_t size(int i) const { return dims.at(i); }
     auto shape() const { return dims; }
+
+    friend void swap(Dims<N>& lhs, Dims<N>& rhs) noexcept {
+        using std::swap;
+        swap(lhs.dims, rhs.dims);
+    }
 
 private:
     std::array<size_t, N> dims {};
@@ -45,9 +51,9 @@ public:
     __host__ __device__ inline T operator[](size_t i) const { return ptr[i]; }
     __host__ __device__ inline T& operator[](size_t i) { return ptr[i]; }
 
-    __host__ __device__ inline T* data() const { return ptr; }
-    __host__ __device__ inline T* begin() const { return ptr; }
-    __host__ __device__ inline T* end() const { return ptr + this->size(); }
+    __host__ __device__ inline const T* data() const { return ptr; }
+    __host__ __device__ inline const T* begin() const { return ptr; }
+    __host__ __device__ inline const T* end() const { return ptr + this->size(); }
 
 private:
     T* __restrict__ ptr;
@@ -62,12 +68,14 @@ using SpanMatrix = NdSpan<T, 2>;
 template <typename T, int N>
 class DeviceArray : public Dims<N> {
 public:
+    DeviceArray() = default;
+
     explicit DeviceArray(Dims<N> dims) : Dims<N>(dims) {
         HIPCHECK( hipMallocAsync(&ptr, this->size() * sizeof(T), hipStreamPerThread) );
         HIPCHECK( hipMemsetAsync(ptr, 0, this->size() * sizeof(T), hipStreamPerThread) );
     }
 
-    explicit DeviceArray(NdSpan<T, N> span) : Dims<N>(span.shape()) {
+    explicit DeviceArray(const NdSpan<T, N> span) : Dims<N>(span.shape()) {
         hipPointerAttribute_t attrs {};
         auto err = hipPointerGetAttributes(&attrs, span.data());
 
@@ -99,22 +107,36 @@ public:
 
     DeviceArray(const DeviceArray<T, N>& other) = delete;
     void operator=(const DeviceArray<T, N>& other) = delete;
-    void operator=(DeviceArray<T, N>&& other) = delete;
 
-    DeviceArray(DeviceArray<T, N>&& other) = default;
+    DeviceArray(DeviceArray<T, N>&& other) noexcept { swap(*this, other); }
+
+    DeviceArray<T, N>& operator=(DeviceArray<T,  N>&& other) noexcept {
+        swap(*this, other);
+        return *this;
+    }
 
     operator NdSpan<T, N>() const {
         return NdSpan<T, N>(ptr, this->shape());
     }
 
     ~DeviceArray() {
-        HIPCHECK( hipFreeAsync(ptr, hipStreamPerThread) );
+        if (ptr) {
+            HIPCHECK( hipFreeAsync(ptr, hipStreamPerThread) );
+            ptr = 0;
+        }
     }
 
-    T* data() const { return ptr; }
+    T* data() { return ptr; }
+    const T* data() const { return ptr; }
 
     void zero() {
         HIPCHECK( hipMemsetAsync(ptr, 0, this->size() * sizeof(T), hipStreamPerThread) );
+    }
+
+    friend void swap(DeviceArray<T, N>& lhs, DeviceArray<T, N>& rhs) noexcept {
+        using std::swap;
+        swap(static_cast<Dims<N>&>(lhs), static_cast<Dims<N>&>(rhs));
+        swap(lhs.ptr, rhs.ptr);
     }
 
 private:
@@ -155,7 +177,7 @@ public:
             abort();
         }
 
-        HIPCHECK( hipMemcpyDtoH(ptr, other.data(), other.size() * sizeof(T)) );
+        HIPCHECK( hipMemcpyDtoH(ptr, (void*) other.data(), other.size() * sizeof(T)) );
         return *this;
     }
 
@@ -187,7 +209,8 @@ public:
         return *this;
     }
 
-    T* data() const { return ptr; }
+    T* data() { return ptr; }
+    const T* data() const { return ptr; }
 
 private:
     T* ptr {};
