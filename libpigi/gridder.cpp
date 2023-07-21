@@ -1,6 +1,7 @@
 #pragma once
 
 #include <complex>
+#include <unordered_map>
 #include <thread>
 #include <tuple>
 
@@ -162,6 +163,15 @@ void gridder(
 ) {
     const auto subgridspec = workunits[0].subgridspec;
 
+    // Transfer Aterms to GPU, since these are often shared
+    std::unordered_map<
+        const ComplexLinearData<S>*, DeviceMatrix<ComplexLinearData<S>>
+    > Aterms;
+    for (const auto& workunit : workunits) {
+        Aterms.try_emplace(workunit.Aleft.data(), workunit.Aleft);
+        Aterms.try_emplace(workunit.Aright.data(), workunit.Aright);
+    }
+
     using Pair = std::tuple<DeviceMatrix<T>, const WorkUnit<S>*>;
     Channel<const WorkUnit<S>*> workunitsChannel;
     Channel<Pair> subgridsChannel;
@@ -190,9 +200,10 @@ void gridder(
 
                 const UVWOrigin origin {workunit->u0, workunit->v0, workunit->w0};
 
-                const auto uvdata = workunit->data;
-                const auto Aleft = workunit->Aleft;
-                const auto Aright = workunit->Aright;
+                // Transfer data to device and retrieve A terms
+                const DeviceVector<UVDatum<S>> uvdata(workunit->data);
+                const auto& Aleft = Aterms.at(workunit->Aleft.data());
+                const auto& Aright = Aterms.at(workunit->Aright.data());
 
                 // Allocate subgrid
                 DeviceMatrix<T> subgrid({subgridspec.Nx, subgridspec.Ny});
