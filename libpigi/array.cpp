@@ -177,7 +177,7 @@ public:
             abort();
         }
 
-        HIPCHECK( hipMemcpyDtoH(ptr, (void*) other.data(), other.size() * sizeof(T)) );
+        HIPCHECK( hipMemcpyDtoHAsync(ptr, (void*) other.data(), other.size() * sizeof(T), hipStreamPerThread) );
         return *this;
     }
 

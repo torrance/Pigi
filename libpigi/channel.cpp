@@ -22,7 +22,9 @@ public:
 
     std::optional<T> pop() {
         std::unique_lock lock(mutex);
-        cv.wait(lock, [&] { return closed() || !empty(); });
+        cv.wait(lock, [this] {
+            return closed() || !empty();
+        });
 
         if (empty()) {
             return {};

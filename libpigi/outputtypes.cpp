@@ -90,16 +90,14 @@ struct LinearData {
         xy *= -f;
         yx *= -f;
 
-        using std::swap;
-        swap(xx, yy);
+        T tmp {xx}; xx = yy; yy = tmp;
 
         return *this;
     }
 
     __host__ __device__
     inline auto& adjoint() {
-        using std::swap;
-        swap(xy, yx);
+        T tmp {xy}; xy = yx; yx = tmp;
 
         xx = std::conj(xx);
         yx = std::conj(yx);

@@ -35,7 +35,11 @@ void _gpudift(
         ComplexLinearData<S> cell {};
         for (auto uvdatum : uvdata) {
             auto phase = cispi(
-                2 * ((uvdatum.u - origin.u0) * l + (uvdatum.v - origin.v0) * m + (uvdatum.w - origin.w0) * n)
+                2 * (
+                    (uvdatum.u - origin.u0) * l +
+                    (uvdatum.v - origin.v0) * m +
+                    (uvdatum.w - origin.w0) * n
+                )
             );
 
             uvdatum.data *= uvdatum.weights;
@@ -170,8 +174,12 @@ void gridder(
     HIPCHECK( hipStreamSynchronize(hipStreamPerThread) );
 
     std::vector<std::thread> threads;
-    for (size_t i {}; i < std::min<size_t>(workunits.size(), 8); ++i) {
-        std::thread t([&] {
+    for (
+        size_t i {};
+        i < std::min<size_t>(workunits.size(), std::thread::hardware_concurrency());
+        ++i
+    ) {
+        threads.emplace_back([&] {
             // Make FFT plan
             auto plan = fftPlan<T>(subgridspec);
 
@@ -208,14 +216,17 @@ void gridder(
 
             HIPFFTCHECK( hipfftDestroy(plan) );
         });
-        threads.push_back(std::move(t));
     }
 
     // Meanwhile, process subgrids and add back to the main grid as the become available
     for (size_t i {}; i < workunits.size(); ++i) {
         const auto [subgrid, workunit] = subgridsChannel.pop().value();
         addsubgrid<T>(grid, subgrid, subgridspec, workunit->u0px, workunit->v0px);
-        HIPCHECK( hipStreamSynchronize(hipStreamPerThread) ); // this sync fixes test failures, but I don't understand why
+
+        // I don't think this sync should be necessary, since even if grid goes out of scope
+        // the call to free() should be enqueued in the stream. In any case, it seems to fix
+        // failures.
+        HIPCHECK( hipStreamSynchronize(hipStreamPerThread) );
     }
 
     for (auto& t : threads) { t.join(); }

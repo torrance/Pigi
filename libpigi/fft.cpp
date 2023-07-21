@@ -46,6 +46,8 @@ void fftshift(SpanMatrix<T> grid) {
 
 template <typename T>
 hipfftHandle fftPlan([[maybe_unused]] GridSpec gridspec) {
+    // This is a dummy template that allows the following specialisations.
+    // It should never be instantiated, only the specialisations are allowed.
     static_assert(sizeof(T) == -1, "No fftPlan specialisation provided");
 }
 
