@@ -45,14 +45,14 @@ void fftshift(SpanMatrix<T> grid) {
 }
 
 template <typename T>
-hipfftHandle fftPlan([[maybe_unused]] GridSpec gridspec) {
+hipfftHandle fftPlan([[maybe_unused]] const GridSpec gridspec) {
     // This is a dummy template that allows the following specialisations.
     // It should never be instantiated, only the specialisations are allowed.
     static_assert(sizeof(T) == -1, "No fftPlan specialisation provided");
 }
 
 template <>
-hipfftHandle fftPlan<ComplexLinearData<float>>(GridSpec gridspec) {
+hipfftHandle fftPlan<ComplexLinearData<float>>(const GridSpec gridspec) {
     hipfftHandle plan {};
     int rank[] {(int) gridspec.Ny, (int) gridspec.Nx}; // COL MAJOR
     HIPFFTCHECK( hipfftPlanMany(
@@ -67,7 +67,7 @@ hipfftHandle fftPlan<ComplexLinearData<float>>(GridSpec gridspec) {
 }
 
 template<>
-hipfftHandle fftPlan<ComplexLinearData<double>>(GridSpec gridspec) {
+hipfftHandle fftPlan<ComplexLinearData<double>>(const GridSpec gridspec) {
     hipfftHandle plan {};
     int rank[] {(int) gridspec.Ny, (int) gridspec.Nx}; // COL MAJOR
     HIPFFTCHECK( hipfftPlanMany(
@@ -82,7 +82,7 @@ hipfftHandle fftPlan<ComplexLinearData<double>>(GridSpec gridspec) {
 }
 
 template<>
-hipfftHandle fftPlan<StokesI<float>>(GridSpec gridspec) {
+hipfftHandle fftPlan<StokesI<float>>(const GridSpec gridspec) {
     hipfftHandle plan {};
     int rank[] {(int) gridspec.Ny, (int) gridspec.Nx}; // COL MAJOR
     HIPFFTCHECK( hipfftPlanMany(
@@ -97,7 +97,7 @@ hipfftHandle fftPlan<StokesI<float>>(GridSpec gridspec) {
 }
 
 template<>
-hipfftHandle fftPlan<StokesI<double>>(GridSpec gridspec) {
+hipfftHandle fftPlan<StokesI<double>>(const GridSpec gridspec) {
     hipfftHandle plan {};
     int rank[] {(int) gridspec.Ny, (int) gridspec.Nx}; // COL MAJOR
     HIPFFTCHECK( hipfftPlanMany(

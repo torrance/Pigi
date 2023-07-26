@@ -51,7 +51,15 @@ public:
     __host__ __device__ inline T operator[](size_t i) const { return ptr[i]; }
     __host__ __device__ inline T& operator[](size_t i) { return ptr[i]; }
 
+    __host__ __device__ inline const T& front() const { return ptr[0]; }
+    __host__ __device__ inline T& front() { return ptr[0]; }
+
+    __host__ __device__ inline T* data() { return ptr; }
     __host__ __device__ inline const T* data() const { return ptr; }
+
+    __host__ __device__ inline T* begin() { return ptr; }
+    __host__ __device__ inline T* end() { return ptr + this->size(); }
+
     __host__ __device__ inline const T* begin() const { return ptr; }
     __host__ __device__ inline const T* end() const { return ptr + this->size(); }
 
@@ -129,6 +137,12 @@ public:
     T* data() { return ptr; }
     const T* data() const { return ptr; }
 
+    inline T* begin() { return ptr; }
+    inline T* end() { return ptr + this->size(); }
+
+    inline const T* begin() const { return ptr; }
+    inline const T* end() const { return ptr + this->size(); }
+
     void zero() {
         HIPCHECK( hipMemsetAsync(ptr, 0, this->size() * sizeof(T), hipStreamPerThread) );
     }
@@ -164,13 +178,12 @@ public:
     HostArray(HostArray<T, N>&& other) = default;
 
     operator NdSpan<T, N>() {
-        return NdSpan<T, N>(ptr, this->dims);
+        return NdSpan<T, N>(ptr, this->shape());
     }
 
     ~HostArray() {
         HIPCHECK( hipFree(ptr) );
     }
-
     HostArray<T, N>& operator=(const DeviceArray<T, N>& other) {
         if (this->shape() != other.shape()) {
             fmt::println(stderr, "Cannot copy array: incompatible array sizes");
@@ -209,8 +222,17 @@ public:
         return *this;
     }
 
+    inline T operator[](size_t i) const { return ptr[i]; }
+    inline T& operator[](size_t i) { return ptr[i]; }
+
     T* data() { return ptr; }
     const T* data() const { return ptr; }
+
+    inline T* begin() { return ptr; }
+    inline T* end() { return ptr + this->size(); }
+
+    inline const T* begin() const { return ptr; }
+    inline const T* end() const { return ptr + this->size(); }
 
 private:
     T* ptr {};

@@ -161,7 +161,7 @@ void gridder(
     const SpanVector<WorkUnit<S>> workunits,
     const SpanMatrix<S> subtaper
 ) {
-    const auto subgridspec = workunits[0].subgridspec;
+    const auto subgridspec = workunits.front().subgridspec;
 
     // Transfer Aterms to GPU, since these are often shared
     std::unordered_map<

@@ -1,8 +1,10 @@
 #include "array.cpp"
+#include "degridder.cpp"
 #include "dft.cpp"
 #include "gridder.cpp"
 #include "invert.cpp"
 #include "outputtypes.cpp"
+#include "predict.cpp"
 
 extern "C" {
     void gridder_lineardouble(
@@ -104,6 +106,30 @@ extern "C" {
     ) {
         idft<ComplexLinearData<float>, float>(
             *img, *uvdata, *gridspec, normfactor
+        );
+    }
+
+    void predict_stokesIfloat(
+        SpanVector<WorkUnit<float>>* workunits,
+        SpanMatrix<StokesI<float>>* img,
+        GridSpec* gridspec,
+        SpanMatrix<float>* taper,
+        SpanMatrix<float>* subtaper
+    ) {
+        predict<StokesI<float>, float>(
+            *workunits, *img, *gridspec, *taper, *subtaper
+        );
+    }
+
+    void predict_stokesIdouble(
+        SpanVector<WorkUnit<double>>* workunits,
+        SpanMatrix<StokesI<double>>* img,
+        GridSpec* gridspec,
+        SpanMatrix<double>* taper,
+        SpanMatrix<double>* subtaper
+    ) {
+        predict<StokesI<double>, double>(
+            *workunits, *img, *gridspec, *taper, *subtaper
         );
     }
 }

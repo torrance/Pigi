@@ -52,6 +52,16 @@ struct LinearData {
 
     template <typename S>
     __host__ __device__
+    inline auto& operator-=(const LinearData<S>& other) {
+        xx -= other.xx;
+        yx -= other.yx;
+        xy -= other.xy;
+        yy -= other.yy;
+        return *this;
+    }
+
+    template <typename S>
+    __host__ __device__
     inline auto& lmul(const LinearData<S>& other) {
         auto tmpxx = other.xx * xx + other.xy * yx;
         auto tmpyx = other.yx * xx + other.yy * yx;
@@ -151,6 +161,11 @@ struct StokesI {
 
     __host__ __device__
     StokesI<T>(const ComplexLinearData<T> data) : I((T) 0.5 * (data.xx + data.yy)) {}
+
+    __host__ __device__
+    operator ComplexLinearData<T>() const {
+        return ComplexLinearData<T> {I, 0, 0, I};
+    }
 
     template<typename S>
     __host__ __device__
