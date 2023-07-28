@@ -3,8 +3,8 @@
 #include <hip/hip_runtime.h>
 
 struct GridSpec {
-    long long Nx;
-    long long Ny;
+    size_t Nx;
+    size_t Ny;
     double scalelm;
     double scaleuv;
 
@@ -30,8 +30,8 @@ struct GridSpec {
         auto [lpx, mpx] = linearToGrid(idx);
 
         return std::make_tuple(
-            (lpx - Nx / 2) * static_cast<S>(scalelm),
-            (mpx - Ny / 2) * static_cast<S>(scalelm)
+            (lpx - static_cast<long long>(Nx) / 2) * static_cast<S>(scalelm),
+            (mpx - static_cast<long long>(Ny) / 2) * static_cast<S>(scalelm)
         );
     }
 
@@ -41,8 +41,8 @@ struct GridSpec {
         auto [upx, vpx] = linearToGrid(idx);
 
         return std::make_tuple(
-            (upx - Nx / 2) * static_cast<S>(scaleuv),
-            (vpx - Ny / 2) * static_cast<S>(scaleuv)
+            (upx - static_cast<long long>(Nx) / 2) * static_cast<S>(scaleuv),
+            (vpx - static_cast<long long>(Ny) / 2) * static_cast<S>(scaleuv)
         );
     }
 };

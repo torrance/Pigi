@@ -7,9 +7,9 @@
 
 #include <hip/hip_runtime.h>
 
-#include "array.cpp"
 #include "channel.cpp"
 #include "gridspec.cpp"
+#include "memory.cpp"
 #include "outputtypes.cpp"
 #include "util.cpp"
 #include "uvdatum.cpp"
@@ -18,15 +18,15 @@
 template <typename T, typename S>
 __global__
 void _gpudift(
-    SpanMatrix<T> subgrid,
-    const SpanMatrix< ComplexLinearData<S> > Aleft,
-    const SpanMatrix< ComplexLinearData<S> > Aright,
+    DeviceSpan<T, 2> subgrid,
+    const DeviceSpan< ComplexLinearData<S>, 2 > Aleft,
+    const DeviceSpan< ComplexLinearData<S>, 2 > Aright,
     const UVWOrigin<S> origin,
-    const SpanVector< UVDatum<S> > uvdata,
+    const DeviceSpan< UVDatum<S>, 1 > uvdata,
     const GridSpec subgridspec
 ) {
     for (
-        int idx = blockIdx.x * blockDim.x + threadIdx.x;
+        size_t idx = blockIdx.x * blockDim.x + threadIdx.x;
         idx < subgridspec.size();
         idx += blockDim.x * gridDim.x
     ) {
@@ -54,11 +54,11 @@ void _gpudift(
 
 template <typename T, typename S>
 void gpudift(
-    SpanMatrix<T> subgrid,
-    const SpanMatrix< ComplexLinearData<S> > Aleft,
-    const SpanMatrix< ComplexLinearData<S> > Aright,
+    DeviceSpan<T, 2> subgrid,
+    const DeviceSpan< ComplexLinearData<S>, 2 > Aleft,
+    const DeviceSpan< ComplexLinearData<S>, 2 > Aright,
     const UVWOrigin<S> origin,
-    const SpanVector< UVDatum<S> > uvdata,
+    const DeviceSpan< UVDatum<S>, 1 > uvdata,
     const GridSpec subgridspec
 ) {
     auto fn = _gpudift<T, S>;
@@ -75,11 +75,11 @@ void gpudift(
 template <typename T, typename S>
 __global__
 void _applytaper(
-    SpanMatrix<T> grid, const SpanMatrix<S> taper, const GridSpec gridspec
+    DeviceSpan<T, 2> grid, const DeviceSpan<S, 2> taper, const GridSpec gridspec
 ) {
     auto N = gridspec.size();
     for (
-        int idx = blockIdx.x * blockDim.x + threadIdx.x;
+        size_t idx = blockIdx.x * blockDim.x + threadIdx.x;
         idx < N;
         idx += blockDim.x * gridDim.x
     ) {
@@ -89,7 +89,7 @@ void _applytaper(
 
 template <typename T, typename S>
 void applytaper(
-    SpanMatrix<T> grid, const SpanMatrix<S> taper, const GridSpec gridspec
+    DeviceSpan<T, 2> grid, const DeviceSpan<S, 2> taper, const GridSpec gridspec
 ) {
     auto fn = _applytaper<T, S>;
     auto [nblocks, nthreads] = getKernelConfig(
@@ -107,13 +107,13 @@ void applytaper(
 template <typename T>
 __global__
 void _addsubgrid(
-    SpanMatrix<T> grid, const GridSpec gridspec,
-    const SpanMatrix<T> subgrid, const GridSpec subgridspec,
+    DeviceSpan<T, 2> grid, const GridSpec gridspec,
+    const DeviceSpan<T, 2> subgrid, const GridSpec subgridspec,
     const long long u0px, const long long v0px
 ) {
     // Iterate over each element of the subgrid
     for (
-        int idx = blockIdx.x * blockDim.x + threadIdx.x;
+        size_t idx = blockIdx.x * blockDim.x + threadIdx.x;
         idx < subgridspec.size();
         idx += blockDim.x * gridDim.x
     ) {
@@ -124,8 +124,8 @@ void _addsubgrid(
         vpx += v0px - subgridspec.Ny / 2;
 
         if (
-            0 <= upx && upx < gridspec.Nx &&
-            0 <= vpx && vpx < gridspec.Ny
+            0 <= upx && upx < static_cast<long long>(gridspec.Nx) &&
+            0 <= vpx && vpx < static_cast<long long>(gridspec.Ny)
         ) {
             grid[gridspec.gridToLinear(upx, vpx)] += subgrid[idx];
         }
@@ -134,16 +134,12 @@ void _addsubgrid(
 
 template <typename T>
 void addsubgrid(
-    SpanMatrix<T> grid,
-    const SpanMatrix<T> subgrid, const GridSpec subgridspec,
+    DeviceSpan<T, 2> grid,
+    const DeviceSpan<T, 2> subgrid, const GridSpec subgridspec,
     const long long u0px, const long long v0px
 ) {
     // Create dummy gridspec to have access to gridToLinear() method
-    GridSpec gridspec {
-        static_cast<long long>(grid.size(0)),
-        static_cast<long long>(grid.size(1)),
-        0, 0
-    };
+    GridSpec gridspec {grid.size(0), grid.size(1), 0, 0};
 
     auto fn = _addsubgrid<T>;
     auto [nblocks, nthreads] = getKernelConfig(
@@ -157,22 +153,22 @@ void addsubgrid(
 
 template<typename T, typename S>
 void gridder(
-    SpanMatrix<T> grid,
-    const SpanVector<WorkUnit<S>> workunits,
-    const SpanMatrix<S> subtaper
+    DeviceSpan<T, 2> grid,
+    const HostSpan<WorkUnit<S>, 1> workunits,
+    const DeviceSpan<S, 2> subtaper
 ) {
     const auto subgridspec = workunits.front().subgridspec;
 
     // Transfer Aterms to GPU, since these are often shared
     std::unordered_map<
-        const ComplexLinearData<S>*, DeviceMatrix<ComplexLinearData<S>>
+        const ComplexLinearData<S>*, DeviceArray<ComplexLinearData<S>, 2>
     > Aterms;
     for (const auto& workunit : workunits) {
         Aterms.try_emplace(workunit.Aleft.data(), workunit.Aleft);
         Aterms.try_emplace(workunit.Aright.data(), workunit.Aright);
     }
 
-    using Pair = std::tuple<DeviceMatrix<T>, const WorkUnit<S>*>;
+    using Pair = std::tuple<DeviceArray<T, 2>, const WorkUnit<S>*>;
     Channel<const WorkUnit<S>*> workunitsChannel;
     Channel<Pair> subgridsChannel;
 
@@ -201,12 +197,12 @@ void gridder(
                 const UVWOrigin origin {workunit->u0, workunit->v0, workunit->w0};
 
                 // Transfer data to device and retrieve A terms
-                const DeviceVector<UVDatum<S>> uvdata(workunit->data);
+                const DeviceArray<UVDatum<S>, 1> uvdata {workunit->data};
                 const auto& Aleft = Aterms.at(workunit->Aleft.data());
                 const auto& Aright = Aterms.at(workunit->Aright.data());
 
                 // Allocate subgrid
-                DeviceMatrix<T> subgrid({subgridspec.Nx, subgridspec.Ny});
+                DeviceArray<T, 2> subgrid {{subgridspec.Nx, subgridspec.Ny}};
 
                 // DFT
                 gpudift<T, S>(

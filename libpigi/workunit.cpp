@@ -3,6 +3,7 @@
 #include <complex>
 
 #include "gridspec.cpp"
+#include "memory.cpp"
 #include "outputtypes.cpp"
 
 template <typename T>
@@ -21,7 +22,7 @@ struct WorkUnit {
     T v0;
     T w0;
     GridSpec subgridspec;
-    SpanMatrix< ComplexLinearData<T> > Aleft;
-    SpanMatrix< ComplexLinearData<T>  > Aright;
-    SpanVector< UVDatum<T> > data;
+    HostSpan< ComplexLinearData<T>, 2 > Aleft;
+    HostSpan< ComplexLinearData<T>,2 > Aright;
+    HostSpan< UVDatum<T>, 1 > data;
 };

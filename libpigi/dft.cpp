@@ -4,20 +4,20 @@
 
 #include <hip/hip_runtime.h>
 
-#include "array.cpp"
 #include "gridspec.cpp"
+#include "memory.cpp"
 #include "util.cpp"
 #include "uvdatum.cpp"
 
 template <typename T, typename S>
 __global__ void _idft(
-    SpanMatrix<T> img,
-    SpanVector<UVDatum<S>> uvdata,
+    DeviceSpan<T, 2> img,
+    DeviceSpan<UVDatum<S>, 1> uvdata,
     GridSpec gridspec,
     S normfactor 
 ) {
     for (
-        int idx = blockIdx.x * blockDim.x + threadIdx.x;
+        size_t idx = blockIdx.x * blockDim.x + threadIdx.x;
         idx < gridspec.size();
         idx += blockDim.x * gridDim.x
     ) {
@@ -40,8 +40,8 @@ __global__ void _idft(
 
 template <typename T, typename S>
 void idft(
-    SpanMatrix<T> img,
-    SpanVector<UVDatum<S>> uvdata,
+    DeviceSpan<T, 2> img,
+    DeviceSpan<UVDatum<S>, 1> uvdata,
     GridSpec gridspec,
     S normfactor 
 ) {

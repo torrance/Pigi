@@ -6,9 +6,9 @@
 #include <hip/hip_runtime.h>
 #include <hipfft/hipfft.h>
 
-#include "array.cpp"
 #include "fft.cpp"
 #include "hip.cpp"
+#include "memory.cpp"
 #include "util.cpp"
 #include "uvdatum.cpp"
 #include "workunit.cpp"
@@ -39,9 +39,9 @@ __host__ __device__ inline void degridop_subtract(
 template <typename T>
 __global__
 void _gpudft(
-    SpanVector<UVDatum<T>> uvdata,
+    DeviceSpan<UVDatum<T>, 1> uvdata,
     const UVWOrigin<T> origin,
-    const SpanMatrix<ComplexLinearData<T>> subgrid,
+    const DeviceSpan<ComplexLinearData<T>, 2> subgrid,
     const GridSpec subgridspec,
     const DegridOp degridop
 ) {
@@ -53,7 +53,7 @@ void _gpudft(
         UVDatum<T> uvdatum {uvdata[idx]};
 
         ComplexLinearData<T> data;
-        for (int i {}; i < subgridspec.size(); ++i) {
+        for (size_t i {}; i < subgridspec.size(); ++i) {
             auto [l, m] = subgridspec.linearToSky<T>(i);
             auto phase = cispi(-2 * (
                 (uvdatum.u - origin.u0) * l +
@@ -83,9 +83,9 @@ void _gpudft(
 
 template <typename T>
 void gpudft(
-    SpanVector<UVDatum<T>> uvdata,
+    DeviceSpan<UVDatum<T>, 1> uvdata,
     const UVWOrigin<T> origin,
-    const SpanMatrix<ComplexLinearData<T>> subgrid,
+    const DeviceSpan<ComplexLinearData<T>, 2> subgrid,
     const GridSpec subgridspec,
     const DegridOp degridop
 ) {
@@ -102,12 +102,12 @@ void gpudft(
 template <typename T, typename S>
 __global__
 void _extractSubgrid(
-    SpanMatrix<ComplexLinearData<S>> subgrid, const GridSpec subgridspec,
-    const SpanMatrix<T> grid, const GridSpec gridspec,
+    DeviceSpan<ComplexLinearData<S>, 2> subgrid, const GridSpec subgridspec,
+    const DeviceSpan<T, 2> grid, const GridSpec gridspec,
     const long long u0px, const long long v0px
 ) {
     for (
-        int idx = blockIdx.x * blockDim.x + threadIdx.x;
+        size_t idx = blockIdx.x * blockDim.x + threadIdx.x;
         idx < subgridspec.size();
         idx += blockDim.x * gridDim.x
     ) {
@@ -118,8 +118,8 @@ void _extractSubgrid(
         vpx += v0px - subgridspec.Ny / 2;
 
         if (
-            0 <= upx && upx < gridspec.Nx &&
-            0 <= vpx && vpx < gridspec.Ny
+            0 <= upx && upx < static_cast<long long>(gridspec.Nx) &&
+            0 <= vpx && vpx < static_cast<long long>(gridspec.Ny)
         ) {
             // This assignment performs an implicit conversion
             subgrid[idx] = grid[gridspec.gridToLinear(upx, vpx)];
@@ -129,20 +129,16 @@ void _extractSubgrid(
 
 template <typename T, typename S>
 auto extractSubgrid(
-    const SpanMatrix<T> grid,
+    const DeviceSpan<T, 2> grid,
     const WorkUnit<S>& workunit
 ) {
     // Allocate subgrid matrix
-    DeviceMatrix<ComplexLinearData<S>> subgrid(
+    DeviceArray<ComplexLinearData<S>, 2> subgrid(
         {workunit.subgridspec.Nx, workunit.subgridspec.Ny}
     );
 
     // Create dummy gridspec to have access to gridToLinear() method
-    GridSpec gridspec {
-        static_cast<long long>(grid.size(0)),
-        static_cast<long long>(grid.size(1)),
-        0, 0
-    };
+    GridSpec gridspec {grid.size(0), grid.size(1), 0, 0};
 
     auto fn = _extractSubgrid<T, S>;
     auto [nblocks, nthreads] = getKernelConfig(
@@ -159,10 +155,10 @@ auto extractSubgrid(
 template <typename T>
 __global__
 void _applyAterms(
-    SpanMatrix<ComplexLinearData<T>> subgrid,
-    const SpanMatrix<ComplexLinearData<T>> Aleft,
-    const SpanMatrix<ComplexLinearData<T>> Aright,
-    const SpanMatrix<T> subtaper,
+    DeviceSpan<ComplexLinearData<T>, 2> subgrid,
+    const DeviceSpan<ComplexLinearData<T>, 2> Aleft,
+    const DeviceSpan<ComplexLinearData<T>, 2> Aright,
+    const DeviceSpan<T, 2> subtaper,
     const size_t norm
 ) {
     for (
@@ -183,10 +179,10 @@ void _applyAterms(
 
 template <typename T>
 void applyAterms(
-    SpanMatrix<ComplexLinearData<T>> subgrid,
-    const SpanMatrix<ComplexLinearData<T>> Aleft,
-    const SpanMatrix<ComplexLinearData<T>> Aright,
-    const SpanMatrix<T> subtaper
+    DeviceSpan<ComplexLinearData<T>, 2> subgrid,
+    const DeviceSpan<ComplexLinearData<T>, 2> Aleft,
+    const DeviceSpan<ComplexLinearData<T>, 2> Aright,
+    const DeviceSpan<T, 2> subtaper
 ) {
     auto fn = _applyAterms<T>;
     auto [nblocks, nthreads] = getKernelConfig(
@@ -200,14 +196,14 @@ void applyAterms(
 
 template <typename T, typename S>
 void degridder(
-    SpanVector<WorkUnit<S>> workunits,
-    const SpanMatrix<T> grid,
-    const SpanMatrix<S> subtaper,
+    HostSpan<WorkUnit<S>, 1> workunits,
+    const DeviceSpan<T, 2> grid,
+    const DeviceSpan<S, 2> subtaper,
     const DegridOp degridop
 ) {
     // Transfer Aterms to GPU, since these are often shared
     std::unordered_map<
-        const ComplexLinearData<S>*, const DeviceMatrix<ComplexLinearData<S>>
+        const ComplexLinearData<S>*, const DeviceArray<ComplexLinearData<S>, 2>
     > Aterms;
     for (const auto& workunit : workunits) {
         Aterms.try_emplace(workunit.Aleft.data(), workunit.Aleft);
@@ -218,7 +214,7 @@ void degridder(
 
     for (auto& workunit : workunits) {
         // Transfer data to device and retrieve A terms
-        DeviceVector<UVDatum<S>> uvdata {workunit.data};
+        DeviceArray<UVDatum<S>, 1> uvdata {workunit.data};
         const auto& Aleft = Aterms.at(workunit.Aleft.data());
         const auto& Aright = Aterms.at(workunit.Aright.data());
 
@@ -237,11 +233,7 @@ void degridder(
         );
 
         // Transfer data back to host
-        // TODO: Encapsulate this explicit data transfer somehow
-        HIPCHECK( hipMemcpyDtoHAsync(
-            workunit.data.data(), uvdata.data(),
-            uvdata.size() * sizeof(UVDatum<S>), hipStreamPerThread
-        ) );
+        workunit.data = uvdata;
 
         HIPCHECK( hipStreamSynchronize(hipStreamPerThread) );
     }

@@ -1,5 +1,7 @@
 #pragma once
 
+#include <fmt/format.h>
+
 #include <hip/hip_runtime.h>
 #include <hipfft/hipfft.h>
 

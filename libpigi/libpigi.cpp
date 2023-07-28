@@ -1,39 +1,39 @@
-#include "array.cpp"
 #include "degridder.cpp"
 #include "dft.cpp"
 #include "gridder.cpp"
 #include "invert.cpp"
+#include "memory.cpp"
 #include "outputtypes.cpp"
 #include "predict.cpp"
 
 extern "C" {
     void gridder_lineardouble(
-        SpanMatrix<ComplexLinearData<double>>* grid,
+        DeviceSpan<ComplexLinearData<double>, 2>* grid,
         WorkUnit<double>* workunits_ptr,
         size_t workunits_n,
-        SpanMatrix<double>* subtaper
+        DeviceSpan<double, 2>* subtaper
     ) {
-        SpanVector<WorkUnit<double>> workunits(workunits_ptr, {workunits_n});
+        HostSpan<WorkUnit<double>, 1> workunits({workunits_n,}, workunits_ptr);
         gridder(*grid, workunits, *subtaper);
     }
 
     void gridder_stokesIdouble(
-        SpanMatrix<StokesI<double>>* grid,
+        DeviceSpan<StokesI<double>, 2>* grid,
         WorkUnit<double>* workunits_ptr,
         size_t workunits_n,
-        SpanMatrix<double>* subtaper
+        DeviceSpan<double, 2>* subtaper
     ) {
-        SpanVector<WorkUnit<double>> workunits(workunits_ptr, {workunits_n});
+        HostSpan<WorkUnit<double>, 1> workunits({workunits_n}, workunits_ptr);
         gridder(*grid, workunits, *subtaper);
     }
 
     void gridder_stokesIfloat(
-        SpanMatrix<StokesI<float>>* grid,
+        DeviceSpan<StokesI<float>, 2>* grid,
         WorkUnit<float>* workunits_ptr,
         size_t workunits_n,
-        SpanMatrix<float>* subtaper
+        DeviceSpan<float, 2>* subtaper
     ) {
-        SpanVector<WorkUnit<float>> workunits(workunits_ptr, {workunits_n});
+        HostSpan<WorkUnit<float>, 1> workunits({workunits_n}, workunits_ptr);
         gridder(*grid, workunits, *subtaper);
     }
 
@@ -45,15 +45,15 @@ extern "C" {
         double* taper_ptr,
         double* subtaper_ptr
     ) {
-        SpanVector<WorkUnit<double>> workunits {workunits_ptr, {workunits_n}};
+        HostSpan<WorkUnit<double>, 1> workunits {{workunits_n}, workunits_ptr};
 
         auto subgridspec = workunits[0].subgridspec;
 
-        SpanMatrix<double> taper {
-            taper_ptr, {(size_t) gridspec->Nx, (size_t) gridspec->Ny}
+        HostSpan<double, 2> taper {
+            {gridspec->Nx, gridspec->Ny}, taper_ptr
         };
-        SpanMatrix<double> subtaper {
-            subtaper_ptr, {(size_t) subgridspec.Nx, (size_t) subgridspec.Ny}
+        HostSpan<double, 2> subtaper {
+            {subgridspec.Nx, subgridspec.Ny}, subtaper_ptr
         };
 
         auto img = invert<StokesI, double>(
@@ -70,15 +70,15 @@ extern "C" {
         float* taper_ptr,
         float* subtaper_ptr
     ) {
-        SpanVector<WorkUnit<float>> workunits {workunits_ptr, {workunits_n}};
+        HostSpan<WorkUnit<float>, 1> workunits {{workunits_n}, workunits_ptr};
 
         auto subgridspec = workunits[0].subgridspec;
 
-        SpanMatrix<float> taper {
-            taper_ptr, {(size_t) gridspec->Nx, (size_t) gridspec->Ny}
+        HostSpan<float, 2> taper {
+            {gridspec->Nx, gridspec->Ny}, taper_ptr
         };
-        SpanMatrix<float> subtaper {
-            subtaper_ptr, {(size_t) subgridspec.Nx, (size_t) subgridspec.Ny}
+        HostSpan<float, 2> subtaper {
+            {subgridspec.Nx, subgridspec.Ny}, subtaper_ptr
         };
 
         auto img = invert<StokesI, float>(
@@ -88,8 +88,8 @@ extern "C" {
     }
 
     void idft_lineardouble(
-        SpanMatrix<ComplexLinearData<double>>* img,
-        SpanVector<UVDatum<double>>* uvdata,
+        DeviceSpan<ComplexLinearData<double>, 2>* img,
+        DeviceSpan<UVDatum<double>, 1>* uvdata,
         GridSpec* gridspec,
         double normfactor
     ) {
@@ -99,8 +99,8 @@ extern "C" {
     }
 
     void idft_linearfloat(
-        SpanMatrix<ComplexLinearData<float>>* img,
-        SpanVector<UVDatum<float>>* uvdata,
+        DeviceSpan<ComplexLinearData<float>, 2>* img,
+        DeviceSpan<UVDatum<float>, 1>* uvdata,
         GridSpec* gridspec,
         float normfactor
     ) {
@@ -110,11 +110,11 @@ extern "C" {
     }
 
     void predict_stokesIfloat(
-        SpanVector<WorkUnit<float>>* workunits,
-        SpanMatrix<StokesI<float>>* img,
+        HostSpan<WorkUnit<float>, 1>* workunits,
+        HostSpan<StokesI<float>, 2>* img,
         GridSpec* gridspec,
-        SpanMatrix<float>* taper,
-        SpanMatrix<float>* subtaper
+        HostSpan<float, 2>* taper,
+        HostSpan<float, 2>* subtaper
     ) {
         predict<StokesI<float>, float>(
             *workunits, *img, *gridspec, *taper, *subtaper
@@ -122,11 +122,11 @@ extern "C" {
     }
 
     void predict_stokesIdouble(
-        SpanVector<WorkUnit<double>>* workunits,
-        SpanMatrix<StokesI<double>>* img,
+        HostSpan<WorkUnit<double>, 1>* workunits,
+        HostSpan<StokesI<double>, 2>* img,
         GridSpec* gridspec,
-        SpanMatrix<double>* taper,
-        SpanMatrix<double>* subtaper
+        HostSpan<double, 2>* taper,
+        HostSpan<double, 2>* subtaper
     ) {
         predict<StokesI<double>, double>(
             *workunits, *img, *gridspec, *taper, *subtaper

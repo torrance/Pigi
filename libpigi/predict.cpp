@@ -9,14 +9,15 @@
 #include "degridder.cpp"
 #include "fft.cpp"
 #include "gridspec.cpp"
+#include "memory.cpp"
 #include "workunit.cpp"
 
 
 template<typename T, typename S>
 __global__
-void _wdecorrect(SpanMatrix<T> wlayer, const GridSpec gridspec, const S w0) {
+void _wdecorrect(DeviceSpan<T, 2> wlayer, const GridSpec gridspec, const S w0) {
     for (
-        int idx = blockIdx.x * blockDim.x + threadIdx.x;
+        size_t idx = blockIdx.x * blockDim.x + threadIdx.x;
         idx < gridspec.size();
         idx += blockDim.x * gridDim.x
     ) {
@@ -26,7 +27,7 @@ void _wdecorrect(SpanMatrix<T> wlayer, const GridSpec gridspec, const S w0) {
 }
 
 template<typename T, typename S>
-void wdecorrect(SpanMatrix<T> wlayer, const GridSpec gridspec, const S w0) {
+void wdecorrect(DeviceSpan<T, 2> wlayer, const GridSpec gridspec, const S w0) {
     auto fn = _wdecorrect<T, S>;
     auto [nblocks, nthreads] = getKernelConfig(
         fn, gridspec.size()
@@ -39,15 +40,15 @@ void wdecorrect(SpanMatrix<T> wlayer, const GridSpec gridspec, const S w0) {
 
 template <typename T, typename S>
 void predict(
-    SpanVector<WorkUnit<S>> workunits,
-    const SpanMatrix<T> img,
+    HostSpan<WorkUnit<S>, 1> workunits,
+    const HostSpan<T, 2> img,
     const GridSpec gridspec,
-    const SpanMatrix<S> taper,
-    const SpanMatrix<S> subtaper,
+    const HostSpan<S, 2> taper,
+    const HostSpan<S, 2> subtaper,
     const DegridOp degridop=DegridOp::Replace
 ) {
     // Apply inverse taper
-    HostMatrix<T> imgcopy {img.shape()};
+    HostArray<T, 2> imgcopy {img.shape()};
     std::transform(
         img.begin(), img.end(),
         taper.begin(), imgcopy.begin(), [](T val, const S& t) {
@@ -56,7 +57,7 @@ void predict(
     });
 
     // Transfer subtaper to device
-    DeviceMatrix<S> subtaperd {subtaper};
+    DeviceArray<S, 2> subtaperd {subtaper};
 
     // Get unique w terms
     std::vector<S> ws(workunits.size());
@@ -73,7 +74,7 @@ void predict(
     for (const S w0 : ws) {
         fmt::println("Processing w={} layer...", w0);
 
-        DeviceMatrix<T> wlayer {(SpanMatrix<T>) imgcopy};
+        DeviceArray<T, 2> wlayer {imgcopy};
         wdecorrect<T, S>(wlayer, gridspec, w0);
         fftExec(plan, wlayer, HIPFFT_FORWARD);
 

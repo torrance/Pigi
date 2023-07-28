@@ -3,17 +3,17 @@
 #include <hip/hip_runtime.h>
 #include <hipfft/hipfft.h>
 
-#include "array.cpp"
 #include "hip.cpp"
 #include "gridspec.cpp"
+#include "memory.cpp"
 #include "outputtypes.cpp"
 
 template <typename T>
 __global__
-void _fftshift(SpanMatrix<T> grid, GridSpec gridspec) {
+void _fftshift(DeviceSpan<T, 2> grid, GridSpec gridspec) {
     for (
-        int idx = blockIdx.x * blockDim.x + threadIdx.x;
-        idx < gridspec.Nx * gridspec.Ny;
+        size_t idx = blockIdx.x * blockDim.x + threadIdx.x;
+        idx < gridspec.size();
         idx += blockDim.x * gridDim.x
     ) {
         auto [lpx, mpx] = gridspec.linearToGrid(idx);
@@ -26,13 +26,9 @@ void _fftshift(SpanMatrix<T> grid, GridSpec gridspec) {
 }
 
 template<typename T>
-void fftshift(SpanMatrix<T> grid) {
+void fftshift(DeviceSpan<T, 2> grid) {
     // Create dummy GridSpec so that we have access to linearToGrid() method
-    GridSpec gridspec {
-        static_cast<long long>(grid.size(0)),
-        static_cast<long long>(grid.size(1)),
-        0, 0
-    };
+    GridSpec gridspec {grid.size(0), grid.size(1), 0, 0};
 
     auto [nblocks, nthreads] = getKernelConfig(
         _fftshift<T>, gridspec.Nx * gridspec.Ny
@@ -111,7 +107,7 @@ hipfftHandle fftPlan<StokesI<double>>(const GridSpec gridspec) {
     return plan;
 }
 
-auto fftExec(hipfftHandle plan, SpanMatrix<ComplexLinearData<float>> grid, int direction) {
+auto fftExec(hipfftHandle plan, DeviceSpan<ComplexLinearData<float>, 2> grid, int direction) {
     fftshift(grid);
     hipfftExecC2C(
         plan, 
@@ -122,7 +118,7 @@ auto fftExec(hipfftHandle plan, SpanMatrix<ComplexLinearData<float>> grid, int d
     fftshift(grid);
 }
 
-auto fftExec(hipfftHandle plan, SpanMatrix<ComplexLinearData<double>> grid, int direction) {
+auto fftExec(hipfftHandle plan, DeviceSpan<ComplexLinearData<double>, 2> grid, int direction) {
     fftshift(grid);
     hipfftExecZ2Z(
         plan, 
@@ -133,7 +129,7 @@ auto fftExec(hipfftHandle plan, SpanMatrix<ComplexLinearData<double>> grid, int 
     fftshift(grid);
 }
 
-auto fftExec(hipfftHandle plan, SpanMatrix<StokesI<float>> grid, int direction) {
+auto fftExec(hipfftHandle plan, DeviceSpan<StokesI<float>, 2> grid, int direction) {
     fftshift(grid);
     hipfftExecC2C(
         plan, 
@@ -143,7 +139,7 @@ auto fftExec(hipfftHandle plan, SpanMatrix<StokesI<float>> grid, int direction) 
     );
     fftshift(grid);
 }
-auto fftExec(hipfftHandle plan, SpanMatrix<StokesI<double>> grid, int direction) {
+auto fftExec(hipfftHandle plan, DeviceSpan<StokesI<double>, 2> grid, int direction) {
     fftshift(grid);
     hipfftExecZ2Z(
         plan, 

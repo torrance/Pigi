@@ -7,18 +7,18 @@
 #include <hip/hip_runtime.h>
 #include <hipfft/hipfft.h>
 
-#include "array.cpp"
 #include "fft.cpp"
 #include "gridspec.cpp"
+#include "memory.cpp"
 #include "outputtypes.cpp"
 #include "uvdatum.cpp"
 #include "workunit.cpp"
 
 template <typename T, typename S>
 __global__
-void _wcorrect(SpanMatrix<T> grid, const GridSpec gridspec, const S w0) {
+void _wcorrect(DeviceSpan<T, 2> grid, const GridSpec gridspec, const S w0) {
     for (
-        int idx = blockIdx.x * blockDim.x + threadIdx.x;
+        size_t idx = blockIdx.x * blockDim.x + threadIdx.x;
         idx < gridspec.size();
         idx += blockDim.x * gridDim.x
     ) {
@@ -28,7 +28,7 @@ void _wcorrect(SpanMatrix<T> grid, const GridSpec gridspec, const S w0) {
 }
 
 template <typename T, typename S>
-void wcorrect(SpanMatrix<T> grid, const GridSpec gridspec, const S w0) {
+void wcorrect(DeviceSpan<T, 2> grid, const GridSpec gridspec, const S w0) {
     auto fn = _wcorrect<T, S>;
     auto [nblocks, nthreads] = getKernelConfig(
         fn, gridspec.size()
@@ -40,17 +40,17 @@ void wcorrect(SpanMatrix<T> grid, const GridSpec gridspec, const S w0) {
 }
 
 template<template<typename> typename T, typename S>
-HostMatrix<T<S>> invert(
-    const SpanVector<WorkUnit<S>> workunits,
+HostArray<T<S>, 2> invert(
+    const HostSpan<WorkUnit<S>, 1> workunits,
     const GridSpec gridspec,
-    const SpanMatrix<S> taper,
-    const SpanMatrix<S> subtaper
+    const HostSpan<S, 2> taper,
+    const HostSpan<S, 2> subtaper
 ) {
-    HostMatrix<T<S>> img {{(size_t) gridspec.Nx, (size_t) gridspec.Ny}};
-    HostMatrix<T<S>> wlayer {{(size_t) gridspec.Nx, (size_t) gridspec.Ny}};
+    HostArray<T<S>, 2> img {{gridspec.Nx, gridspec.Ny}};
+    HostArray<T<S>, 2> wlayer {{gridspec.Nx, gridspec.Ny}};
 
-    DeviceMatrix<T<S>> wlayerd {{(size_t) gridspec.Nx, (size_t) gridspec.Ny}};
-    DeviceMatrix<S> subtaperd {subtaper};
+    DeviceArray<T<S>, 2> wlayerd {{gridspec.Nx, gridspec.Ny}};
+    DeviceArray<S, 2> subtaperd {subtaper};
 
     auto plan = fftPlan<T<S>>(gridspec);
 
