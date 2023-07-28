@@ -126,6 +126,19 @@ public:
         HIPCHECK( hipMemsetAsync(this->ptr, 0, this->size() * sizeof(T), hipStreamPerThread) );
     }
 
+    template <typename F, typename... Ss>
+    void mapInto(F f, Ss... ins) {
+        // Todo: more elegant way to ensure this method is availble only to DevicePointers
+        static_assert(std::is_same<Pointer, DevicePointer<T>>());
+
+        // Each input array must have the same dimensions as the output
+        (shapecheck(*this, ins), ...);
+
+        auto fn = map<F, NDBase<T, N, Pointer>, Ss...>;
+        auto [nblocks, nthreads] = getKernelConfig(fn, this->size());
+        hipLaunchKernelGGL(fn, nblocks, nthreads, 0, hipStreamPerThread, f, *this, ins...);
+    }
+
     // These friends are required to allow copy assignment between classes with different
     // memory storage locations.
     friend NDBase<T, N, HostPointer<T>>;
@@ -199,6 +212,14 @@ public:
     // Destructor
     ~Array() {
         if (this->ptr) HIPCHECK( hipFreeAsync(this->ptr, hipStreamPerThread) );
+    }
+
+    auto asSpan() {
+        return Span<T, N, Pointer> {this->dims, this->ptr};
+    }
+
+    auto asSpan() const {
+        return Span<T, N, Pointer> {this->dims, this->ptr};
     }
 
     operator Span<T, N, Pointer>() const {

@@ -152,48 +152,6 @@ auto extractSubgrid(
     return subgrid;
 }
 
-template <typename T>
-__global__
-void _applyAterms(
-    DeviceSpan<ComplexLinearData<T>, 2> subgrid,
-    const DeviceSpan<ComplexLinearData<T>, 2> Aleft,
-    const DeviceSpan<ComplexLinearData<T>, 2> Aright,
-    const DeviceSpan<T, 2> subtaper,
-    const size_t norm
-) {
-    for (
-        size_t idx = blockIdx.x * blockDim.x + threadIdx.x;
-        idx < subgrid.size();
-        idx += blockDim.x * gridDim.x
-    ) {
-        auto cell = subgrid[idx];
-        auto Al = Aleft[idx];
-        auto Ar = Aright[idx];
-        auto t = subtaper[idx];
-
-        cell.lmul(Al).rmul(Ar.adjoint());
-        cell *= (t / norm);
-        subgrid[idx] = cell;
-    }
-}
-
-template <typename T>
-void applyAterms(
-    DeviceSpan<ComplexLinearData<T>, 2> subgrid,
-    const DeviceSpan<ComplexLinearData<T>, 2> Aleft,
-    const DeviceSpan<ComplexLinearData<T>, 2> Aright,
-    const DeviceSpan<T, 2> subtaper
-) {
-    auto fn = _applyAterms<T>;
-    auto [nblocks, nthreads] = getKernelConfig(
-        fn, subgrid.size()
-    );
-    hipLaunchKernelGGL(
-        fn, nblocks, nthreads, 0, hipStreamPerThread,
-        subgrid, Aleft, Aright, subtaper, subgrid.size()
-    );
-}
-
 template <typename T, typename S>
 void degridder(
     HostSpan<WorkUnit<S>, 1> workunits,
@@ -224,7 +182,9 @@ void degridder(
         fftExec(plan, subgrid, HIPFFT_BACKWARD);
 
         // Apply aterms, taper and normalize post-FFT
-        applyAterms<S>(subgrid, Aleft, Aright, subtaper);
+        subgrid.mapInto([norm = subgrid.size()] __device__ (auto cell, auto Aleft, auto Aright, auto t) {
+            return cell.lmul(Aleft).rmul(Aright.adjoint()) *= (t / norm);
+        }, subgrid.asSpan(), Aleft.asSpan(), Aright.asSpan(), subtaper);
 
         gpudft<S>(
             uvdata,

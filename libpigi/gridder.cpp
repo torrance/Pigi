@@ -72,35 +72,6 @@ void gpudift(
     );
 }
 
-template <typename T, typename S>
-__global__
-void _applytaper(
-    DeviceSpan<T, 2> grid, const DeviceSpan<S, 2> taper, const GridSpec gridspec
-) {
-    auto N = gridspec.size();
-    for (
-        size_t idx = blockIdx.x * blockDim.x + threadIdx.x;
-        idx < N;
-        idx += blockDim.x * gridDim.x
-    ) {
-        grid[idx] *= (taper[idx] / N);
-    }
-}
-
-template <typename T, typename S>
-void applytaper(
-    DeviceSpan<T, 2> grid, const DeviceSpan<S, 2> taper, const GridSpec gridspec
-) {
-    auto fn = _applytaper<T, S>;
-    auto [nblocks, nthreads] = getKernelConfig(
-        fn, gridspec.size()
-    );
-    hipLaunchKernelGGL(
-        fn, nblocks, nthreads, 0, hipStreamPerThread,
-        grid, taper, gridspec
-    );
-}
-
 /**
  * Add a subgrid back onto the larger master grid
  */
@@ -209,8 +180,10 @@ void gridder(
                     subgrid, Aleft, Aright, origin, uvdata, subgridspec
                 );
 
-                // Taper
-                applytaper<T, S>(subgrid, subtaper, subgridspec);
+                // Apply taper and perform FFT normalization
+                subgrid.mapInto([N = subgrid.size()] (auto cell, auto t) {
+                    return cell *= (t / N);
+                }, subgrid.asSpan(), subtaper);
 
                 // FFT
                 fftExec(plan, subgrid, HIPFFT_FORWARD);
