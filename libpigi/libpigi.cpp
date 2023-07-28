@@ -5,6 +5,7 @@
 #include "memory.cpp"
 #include "outputtypes.cpp"
 #include "predict.cpp"
+#include "taper.cpp"
 
 extern "C" {
     void gridder_lineardouble(
@@ -41,20 +42,14 @@ extern "C" {
         StokesI<double>* img_ptr,
         WorkUnit<double>* workunits_ptr,
         size_t workunits_n,
-        GridSpec* gridspec,
-        double* taper_ptr,
-        double* subtaper_ptr
+        GridSpec* gridspec
     ) {
         HostSpan<WorkUnit<double>, 1> workunits {{workunits_n}, workunits_ptr};
 
         auto subgridspec = workunits[0].subgridspec;
 
-        HostSpan<double, 2> taper {
-            {gridspec->Nx, gridspec->Ny}, taper_ptr
-        };
-        HostSpan<double, 2> subtaper {
-            {subgridspec.Nx, subgridspec.Ny}, subtaper_ptr
-        };
+        auto taper = kaiserbessel<double>(*gridspec);
+        auto subtaper = kaiserbessel<double>(subgridspec);
 
         auto img = invert<StokesI, double>(
             workunits, *gridspec, taper, subtaper
@@ -66,20 +61,14 @@ extern "C" {
         StokesI<float>* img_ptr,
         WorkUnit<float>* workunits_ptr,
         size_t workunits_n,
-        GridSpec* gridspec,
-        float* taper_ptr,
-        float* subtaper_ptr
+        GridSpec* gridspec
     ) {
         HostSpan<WorkUnit<float>, 1> workunits {{workunits_n}, workunits_ptr};
 
         auto subgridspec = workunits[0].subgridspec;
 
-        HostSpan<float, 2> taper {
-            {gridspec->Nx, gridspec->Ny}, taper_ptr
-        };
-        HostSpan<float, 2> subtaper {
-            {subgridspec.Nx, subgridspec.Ny}, subtaper_ptr
-        };
+        auto taper = kaiserbessel<float>(*gridspec);
+        auto subtaper = kaiserbessel<float>(subgridspec);
 
         auto img = invert<StokesI, float>(
             workunits, *gridspec, taper, subtaper
@@ -112,24 +101,24 @@ extern "C" {
     void predict_stokesIfloat(
         HostSpan<WorkUnit<float>, 1>* workunits,
         HostSpan<StokesI<float>, 2>* img,
-        GridSpec* gridspec,
-        HostSpan<float, 2>* taper,
-        HostSpan<float, 2>* subtaper
+        GridSpec* gridspec
     ) {
+        auto taper = kaiserbessel<float>(*gridspec);
+        auto subtaper = kaiserbessel<float>(workunits->front().subgridspec);
         predict<StokesI<float>, float>(
-            *workunits, *img, *gridspec, *taper, *subtaper
+            *workunits, *img, *gridspec, taper, subtaper
         );
     }
 
     void predict_stokesIdouble(
         HostSpan<WorkUnit<double>, 1>* workunits,
         HostSpan<StokesI<double>, 2>* img,
-        GridSpec* gridspec,
-        HostSpan<double, 2>* taper,
-        HostSpan<double, 2>* subtaper
+        GridSpec* gridspec
     ) {
+        auto taper = kaiserbessel<double>(*gridspec);
+        auto subtaper = kaiserbessel<double>(workunits->front().subgridspec);
         predict<StokesI<double>, double>(
-            *workunits, *img, *gridspec, *taper, *subtaper
+            *workunits, *img, *gridspec, taper, subtaper
         );
     }
 }
