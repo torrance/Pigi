@@ -127,10 +127,7 @@ public:
     }
 
     template <typename F, typename... Ss>
-    void mapInto(F f, Ss... ins) {
-        // Todo: more elegant way to ensure this method is availble only to DevicePointers
-        static_assert(std::is_same<Pointer, DevicePointer<T>>());
-
+    void mapInto(F f, Ss... ins) requires(std::same_as<DevicePointer<T>, Pointer>) {
         // Each input array must have the same dimensions as the output
         (shapecheck(*this, ins), ...);
 
