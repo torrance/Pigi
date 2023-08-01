@@ -1,10 +1,14 @@
 #pragma once
 
+#include <cmath>
 #include <complex>
+#include <unordered_map>
+#include <vector>
 
 #include "gridspec.cpp"
 #include "memory.cpp"
 #include "outputtypes.cpp"
+#include "uvdatum.cpp"
 
 template <typename T>
 struct UVWOrigin {
@@ -14,15 +18,102 @@ struct UVWOrigin {
     UVWOrigin(T u0, T v0, T w0) : u0(u0), v0(v0), w0(w0) {}
 };
 
-template <typename T>
+template <typename S, typename T=HostSpan<UVDatum<S>, 1>>
 struct WorkUnit {
     long long u0px;
     long long v0px;
-    T u0;
-    T v0;
-    T w0;
+    S u0;
+    S v0;
+    S w0;
     GridSpec subgridspec;
-    HostSpan< ComplexLinearData<T>, 2 > Aleft;
-    HostSpan< ComplexLinearData<T>,2 > Aright;
-    HostSpan< UVDatum<T>, 1 > data;
+    HostSpan< ComplexLinearData<S>, 2 > Aleft;
+    HostSpan< ComplexLinearData<S>, 2 > Aright;
+    T data;
 };
+
+template <typename T, typename S>
+auto partition(
+    T uvdata,
+    GridSpec gridspec,
+    GridSpec subgridspec,
+    int padding,
+    int wstep,
+    HostSpan<ComplexLinearData<S>, 2> Aterms
+) {
+    // Temporarily store workunits in a map to reduce search space duirng partitioning
+    std::unordered_map<
+    S, std::vector<WorkUnit< S, std::vector<UVDatum<S>> >>
+    > wlayers;
+    long long radius {static_cast<long long>(subgridspec.Nx) / 2 - padding};
+
+    for (UVDatum<S>& uvdatum : uvdata) {
+        // Find equivalient pixel coordinates of (u,v) position
+        const auto [upx, vpx] = gridspec.UVtoGrid(uvdatum.u, uvdatum.v);
+
+        if (uvdatum.row == 9 && uvdatum.chan == 0) {
+            fmt::println("u = {} v = {} w = {}",
+                uvdatum.u, uvdatum.v, uvdatum.w);
+        }
+
+        // Snap to center of nearest wstep window. Note: for a given wstep,
+        // the boundaries occur at {0 <= w < wstep, wstep <= w < 2 * wstep, ...}
+        // This choice is made because w values are made positive and we want to
+        // avoid the first interval including negative values. w0 is the midpoint of each
+        // respective interval.
+        const S w0 {wstep * std::floor(uvdatum.w / wstep) + static_cast<S>(0.5) * wstep};  // TODO: fix
+
+        if (uvdatum.row == 9 && uvdatum.chan == 0) {
+            fmt::println("upx = {} vpx = {} w0 = {}", upx, vpx, w0);
+        }
+
+        // Search through existing workunits to see if our UVDatum is included in an
+        // existing workunit.
+        std::vector<WorkUnit< S, std::vector<UVDatum<S>> >>& wworkunits = wlayers[w0];
+
+        bool found {false};
+        for (auto& workunit : wworkunits) {
+            // The +0.5 accounts for the off-center central pixel of an even grid
+            // TODO: add one to upper bound
+            if (
+                -radius <= upx - workunit.u0px + 0.5 &&
+                upx - workunit.u0px + 0.5 <= radius &&
+                -radius <= vpx - workunit.v0px + 0.5 &&
+                vpx - workunit.v0px + 0.5 <= radius
+            ) {
+                workunit.data.push_back(uvdatum);
+                found = true;
+                break;
+            }
+        }
+        if (found) continue;
+
+        // If we are here, we need to create a new workunit for our UVDatum
+        const long long u0px {llround(upx)}, v0px {llround(vpx)};
+        const auto [u0, v0] = gridspec.gridToUV<S>(u0px, v0px);
+        if (uvdatum.row == 9 && uvdatum.chan == 0) {
+            fmt::println("u0 = {} v0 = {}", u0, v0);
+        }
+
+        wworkunits.emplace_back(
+            u0px, v0px, u0, v0, w0, subgridspec,
+            Aterms, Aterms, std::vector<UVDatum<S>> {uvdatum}
+        );
+    }
+
+    // Flatten the workunits into a single vector
+    // Also swap out the data storage from vector to 1D HostArray
+    // since this is a pinned allocation and makes D->H data transfers
+    // in the gridder much faster.
+    std::vector<WorkUnit< S, HostArray<UVDatum<S>, 1> >> workunits;
+    for (auto& [_, wworkunits] : wlayers) {
+        for (auto& workunit : wworkunits) {
+            workunits.emplace_back(
+                workunit.u0px, workunit.v0px,
+                workunit.u0, workunit.v0, workunit.w0,
+                workunit.subgridspec, workunit.Aleft, workunit.Aright,
+                HostArray<UVDatum<S>, 1>::fromVector(workunit.data)
+            );
+        }
+    }
+    return workunits;
+}

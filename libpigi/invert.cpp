@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <complex>
+#include <set>
 #include <vector>
 
 #include <hip/hip_runtime.h>
@@ -39,9 +40,9 @@ void wcorrect(DeviceSpan<T, 2> grid, const GridSpec gridspec, const S w0) {
     );
 }
 
-template<template<typename> typename T, typename S>
+template<template<typename> typename T, typename S, typename R>
 HostArray<T<S>, 2> invert(
-    const HostSpan<WorkUnit<S>, 1> workunits,
+    const HostSpan<WorkUnit<S, R>, 1> workunits,
     const GridSpec gridspec,
     const HostSpan<S, 2> taper,
     const HostSpan<S, 2> subtaper
@@ -55,28 +56,22 @@ HostArray<T<S>, 2> invert(
     auto plan = fftPlan<T<S>>(gridspec);
 
     // Get unique w terms
-    std::vector<S> ws(workunits.size());
-    std::transform(
-        workunits.begin(), workunits.end(),
-        ws.begin(),
-        [](const auto& workunit) { return workunit.w0; }
-    );
-    std::sort(ws.begin(), ws.end());
-    ws.resize(std::unique(ws.begin(), ws.end()) - ws.begin());
+    std::set<S> ws;
+    for (auto& workunit : workunits) { ws.insert(workunit.w0); }
 
     for (const S w0 : ws) {
         fmt::println("Processing w={} layer...", w0);
 
-        // TOFIX: This makes a copy of workunits, which is fine for now
-        // so long as data is a span, but not when it is owned.
-        std::vector<WorkUnit<S>> wworkunits;
-        std::copy_if(
-            workunits.begin(), workunits.end(), std::back_inserter(wworkunits),
-            [=](const auto& workunit) { return workunit.w0 == w0; }
-        );
+        // We use pointers to avoid any kind of copy of the underlying data
+        // (since each workunit owns its own data).
+        // TODO: use a views filter instead?
+        std::vector<const WorkUnit<S, R>*> wworkunits;
+        for (auto& workunit : workunits) {
+            if (workunit.w0 == w0) wworkunits.push_back(&workunit);
+        }
 
         wlayerd.zero();
-        gridder<T<S>, S>(wlayerd, wworkunits, subtaperd);
+        gridder<T<S>, S, R>(wlayerd, wworkunits, subtaperd);
 
         // FFT the full wlayer
         fftExec(plan, wlayerd, HIPFFT_BACKWARD);

@@ -122,29 +122,29 @@ void addsubgrid(
     );
 }
 
-template<typename T, typename S>
+template<typename T, typename S, typename R>
 void gridder(
     DeviceSpan<T, 2> grid,
-    const HostSpan<WorkUnit<S>, 1> workunits,
+    const std::vector<const WorkUnit<S, R>*> workunits,
     const DeviceSpan<S, 2> subtaper
 ) {
-    const auto subgridspec = workunits.front().subgridspec;
+    const auto subgridspec = workunits.front()->subgridspec;
 
     // Transfer Aterms to GPU, since these are often shared
     std::unordered_map<
         const ComplexLinearData<S>*, DeviceArray<ComplexLinearData<S>, 2>
     > Aterms;
     for (const auto& workunit : workunits) {
-        Aterms.try_emplace(workunit.Aleft.data(), workunit.Aleft);
-        Aterms.try_emplace(workunit.Aright.data(), workunit.Aright);
+        Aterms.try_emplace(workunit->Aleft.data(), workunit->Aleft);
+        Aterms.try_emplace(workunit->Aright.data(), workunit->Aright);
     }
 
-    using Pair = std::tuple<DeviceArray<T, 2>, const WorkUnit<S>*>;
-    Channel<const WorkUnit<S>*> workunitsChannel;
+    using Pair = std::tuple<DeviceArray<T, 2>, const WorkUnit<S, R>*>;
+    Channel<const WorkUnit<S, R>*> workunitsChannel;
     Channel<Pair> subgridsChannel;
 
     // Enqueue the work units
-    for (const auto& workunit : workunits) { workunitsChannel.push(&workunit); }
+    for (const auto workunit : workunits) { workunitsChannel.push(workunit); }
     workunitsChannel.close();
 
     // Ensure all stream operators are complete before spanwing new streams

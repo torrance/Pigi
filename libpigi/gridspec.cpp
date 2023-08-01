@@ -45,4 +45,20 @@ struct GridSpec {
             (vpx - static_cast<long long>(Ny) / 2) * static_cast<S>(scaleuv)
         );
     }
+
+    template <typename S>
+    inline auto UVtoGrid(S u, S v) {
+        return std::make_tuple(
+            static_cast<S>(u / scaleuv + static_cast<long long>(Nx) / 2),
+            static_cast<S>(v / scaleuv + static_cast<long long>(Ny) / 2)
+        );
+    }
+
+    template <typename S>
+    inline auto gridToUV(auto upx, auto vpx) {
+        return std::make_tuple(
+            static_cast<S>((upx - static_cast<long long>(Nx) / 2) * scaleuv),
+            static_cast<S>((vpx - static_cast<long long>(Ny) / 2) * scaleuv)
+        );
+    }
 };

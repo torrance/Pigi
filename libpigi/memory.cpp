@@ -15,7 +15,7 @@ template <typename T, MemoryStorage M>
 class BasePointer {
 public:
     __host__ __device__ BasePointer() = default;
-    __host__ __device__ BasePointer(T* ptr) : ptr(ptr) {}
+    __host__ __device__ BasePointer(const T* ptr) : ptr(const_cast<T*>(ptr)) {}
 
     __host__ __device__ inline T& operator*() const { return *ptr; }
     __host__ __device__ inline T** operator&() { return &ptr; }
@@ -162,7 +162,7 @@ class Span : public NDBase<T, N, Pointer> {
 public:
     Span(std::array<size_t, N> dims, T* ptr) : NDBase<T, N, Pointer>(dims, ptr) {}
 
-    Span<T, 1, HostPointer<T>>(std::vector<T> vec) :
+    Span<T, 1, HostPointer<T>>(std::vector<T>& vec) :
         NDBase<T, N, Pointer>({vec.size()}, vec.data()) {}
 
     // Copy assignment
@@ -224,6 +224,12 @@ public:
 
     operator Span<T, N, Pointer>() const {
         return Span<T, N, Pointer> {this->dims, this->ptr};
+    }
+
+    static auto fromVector(const std::vector<T>& other) requires(N == 1) {
+        Array<T, N, Pointer> arr({other.size()});
+        memcpy(arr.ptr, HostPointer<T> {other.data()}, arr.size() * sizeof(T));
+        return arr;
     }
 };
 
