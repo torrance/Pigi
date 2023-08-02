@@ -7,7 +7,7 @@
 #include <fmt/format.h>
 #include <hip/hip_runtime.h>
 
-#include "hip.cpp"
+#include "hip.h"
 
 enum class MemoryStorage { Host, Device };
 
@@ -127,7 +127,9 @@ public:
     }
 
     template <typename F, typename... Ss>
-    void mapInto(F f, Ss... ins) requires(std::same_as<DevicePointer<T>, Pointer>) {
+    void mapInto(F f, Ss... ins) requires(
+        std::same_as<DevicePointer<T>, Pointer>
+    ) {
         // Each input array must have the same dimensions as the output
         (shapecheck(*this, ins), ...);
 
@@ -159,8 +161,8 @@ class Span : public NDBase<T, N, Pointer> {
 public:
     Span(std::array<size_t, N> dims, T* ptr) : NDBase<T, N, Pointer>(dims, ptr) {}
 
-    Span<T, 1, HostPointer<T>>(std::vector<T>& vec) :
-        NDBase<T, N, Pointer>({vec.size()}, vec.data()) {}
+    Span(std::vector<T>& vec) requires(N == 1 && std::same_as<HostPointer<T>, Pointer>) :
+        NDBase<T, N, Pointer>({vec.size()}, vec.data())  {}
 
     // Copy assignment
     template <typename S>

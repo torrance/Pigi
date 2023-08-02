@@ -1,8 +1,6 @@
 #pragma once
 
-#include <hip/hip_runtime.h>
-
-#include "outputtypes.cpp"
+#include "outputtypes.h"
 
 template <typename T>
 struct alignas(8) UVDatum {

@@ -5,6 +5,8 @@
 #include <fmt/format.h>
 #include <hip/hip_runtime.h>
 
+#include "util.h"
+
 template <typename T>
 struct LinearData {
     // COLUMN MAJOR
@@ -157,10 +159,10 @@ template <typename T>
 struct StokesI {
     std::complex<T> I {};
 
-    __host__ __device__ StokesI<T>() = default;
+    __host__ __device__ StokesI() = default;
 
     __host__ __device__
-    StokesI<T>(const ComplexLinearData<T> data) : I((T) 0.5 * (data.xx + data.yy)) {}
+    StokesI(const ComplexLinearData<T> data) : I((T) 0.5 * (data.xx + data.yy)) {}
 
     __host__ __device__
     operator ComplexLinearData<T>() const {

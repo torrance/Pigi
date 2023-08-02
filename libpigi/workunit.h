@@ -5,10 +5,10 @@
 #include <unordered_map>
 #include <vector>
 
-#include "gridspec.cpp"
-#include "memory.cpp"
-#include "outputtypes.cpp"
-#include "uvdatum.cpp"
+#include "gridspec.h"
+#include "memory.h"
+#include "outputtypes.h"
+#include "uvdatum.h"
 
 template <typename T>
 struct UVWOrigin {

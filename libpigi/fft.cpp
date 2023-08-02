@@ -1,12 +1,8 @@
-#pragma once
+#include "fft.h"
 
 #include <hip/hip_runtime.h>
-#include <hipfft/hipfft.h>
 
-#include "hip.cpp"
-#include "gridspec.cpp"
-#include "memory.cpp"
-#include "outputtypes.cpp"
+#include "hip.h"
 
 template <typename T>
 __global__
@@ -38,13 +34,6 @@ void fftshift(DeviceSpan<T, 2> grid) {
         _fftshift<T>, nblocks, nthreads, 0, hipStreamPerThread,
         grid, gridspec
     );
-}
-
-template <typename T>
-hipfftHandle fftPlan([[maybe_unused]] const GridSpec gridspec) {
-    // This is a dummy template that allows the following specialisations.
-    // It should never be instantiated, only the specialisations are allowed.
-    static_assert(sizeof(T) == -1, "No fftPlan specialisation provided");
 }
 
 template <>
@@ -107,7 +96,7 @@ hipfftHandle fftPlan<StokesI<double>>(const GridSpec gridspec) {
     return plan;
 }
 
-auto fftExec(hipfftHandle plan, DeviceSpan<ComplexLinearData<float>, 2> grid, int direction) {
+void fftExec(hipfftHandle plan, DeviceSpan<ComplexLinearData<float>, 2> grid, int direction) {
     fftshift(grid);
     hipfftExecC2C(
         plan, 
@@ -118,7 +107,7 @@ auto fftExec(hipfftHandle plan, DeviceSpan<ComplexLinearData<float>, 2> grid, in
     fftshift(grid);
 }
 
-auto fftExec(hipfftHandle plan, DeviceSpan<ComplexLinearData<double>, 2> grid, int direction) {
+void fftExec(hipfftHandle plan, DeviceSpan<ComplexLinearData<double>, 2> grid, int direction) {
     fftshift(grid);
     hipfftExecZ2Z(
         plan, 
@@ -129,7 +118,7 @@ auto fftExec(hipfftHandle plan, DeviceSpan<ComplexLinearData<double>, 2> grid, i
     fftshift(grid);
 }
 
-auto fftExec(hipfftHandle plan, DeviceSpan<StokesI<float>, 2> grid, int direction) {
+void fftExec(hipfftHandle plan, DeviceSpan<StokesI<float>, 2> grid, int direction) {
     fftshift(grid);
     hipfftExecC2C(
         plan, 
@@ -139,7 +128,8 @@ auto fftExec(hipfftHandle plan, DeviceSpan<StokesI<float>, 2> grid, int directio
     );
     fftshift(grid);
 }
-auto fftExec(hipfftHandle plan, DeviceSpan<StokesI<double>, 2> grid, int direction) {
+
+void fftExec(hipfftHandle plan, DeviceSpan<StokesI<double>, 2> grid, int direction) {
     fftshift(grid);
     hipfftExecZ2Z(
         plan, 

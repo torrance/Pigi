@@ -47,6 +47,10 @@ auto getKernelConfig(T fn, int N, size_t sharedMem=0) {
     );
 };
 
+template <typename F, typename T, typename... Ss> __global__
+void map(F f, T out, Ss... ins);
+
+#ifdef __HIPCC__
 template <typename F, typename T, typename... Ss>
 __global__
 void map(F f, T out, Ss... ins) {
@@ -58,3 +62,4 @@ void map(F f, T out, Ss... ins) {
         out[idx] = f(ins[idx]...);
     }
 }
+#endif

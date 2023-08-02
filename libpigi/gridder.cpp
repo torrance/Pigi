@@ -7,13 +7,15 @@
 
 #include <hip/hip_runtime.h>
 
-#include "channel.cpp"
-#include "gridspec.cpp"
-#include "memory.cpp"
-#include "outputtypes.cpp"
-#include "util.cpp"
-#include "uvdatum.cpp"
-#include "workunit.cpp"
+#include "channel.h"
+#include "gridspec.h"
+#include "fft.h"
+#include "hip.h"
+#include "memory.h"
+#include "outputtypes.h"
+#include "util.h"
+#include "uvdatum.h"
+#include "workunit.h"
 
 template <typename T, typename S>
 __global__

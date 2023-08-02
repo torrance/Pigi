@@ -6,14 +6,13 @@
 #include <hip/hip_runtime.h>
 #include <hipfft/hipfft.h>
 
-#include "fft.cpp"
-#include "hip.cpp"
-#include "memory.cpp"
-#include "util.cpp"
-#include "uvdatum.cpp"
-#include "workunit.cpp"
-
-enum class DegridOp {Replace, Subtract, Add};
+#include "fft.h"
+#include "degridop.h"
+#include "hip.h"
+#include "memory.h"
+#include "util.h"
+#include "uvdatum.h"
+#include "workunit.h"
 
 template <typename S>
 __host__ __device__ inline void degridop_replace(

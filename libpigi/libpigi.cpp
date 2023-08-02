@@ -1,14 +1,12 @@
 #include <fmt/format.h>
 
-#include "degridder.cpp"
-#include "dft.cpp"
-#include "gridder.cpp"
-#include "invert.cpp"
-#include "memory.cpp"
-#include "outputtypes.cpp"
-#include "predict.cpp"
-#include "taper.cpp"
-#include "workunit.cpp"
+#include "dft.h"
+#include "invert.h"
+#include "memory.h"
+#include "outputtypes.h"
+#include "predict.h"
+#include "taper.h"
+#include "workunit.h"
 
 extern "C" {
     // void gridder_lineardouble(

@@ -1,20 +1,18 @@
-#pragma once
+#include "dft.h"
 
 #include <complex>
 
 #include <hip/hip_runtime.h>
 
-#include "gridspec.cpp"
-#include "memory.cpp"
-#include "util.cpp"
-#include "uvdatum.cpp"
+#include "outputtypes.h"
+#include "util.h"
 
 template <typename T, typename S>
 __global__ void _idft(
     DeviceSpan<T, 2> img,
     DeviceSpan<UVDatum<S>, 1> uvdata,
     GridSpec gridspec,
-    S normfactor 
+    S normfactor
 ) {
     for (
         size_t idx = blockIdx.x * blockDim.x + threadIdx.x;
@@ -43,7 +41,7 @@ void idft(
     DeviceSpan<T, 2> img,
     DeviceSpan<UVDatum<S>, 1> uvdata,
     GridSpec gridspec,
-    S normfactor 
+    S normfactor
 ) {
     auto fn = _idft<T, S>;
     auto [nblocks, nthreads] = getKernelConfig(
@@ -54,3 +52,33 @@ void idft(
         img, uvdata, gridspec, normfactor
     );
 }
+
+// Explicit template instantiations
+
+template void idft(
+    DeviceSpan<StokesI<float>, 2> img,
+    DeviceSpan<UVDatum<float>, 1> uvdata,
+    GridSpec gridspec,
+    float normfactor
+);
+
+template void idft(
+    DeviceSpan<StokesI<double>, 2> img,
+    DeviceSpan<UVDatum<double>, 1> uvdata,
+    GridSpec gridspec,
+    double normfactor
+);
+
+template void idft(
+    DeviceSpan<ComplexLinearData<float>, 2> img,
+    DeviceSpan<UVDatum<float>, 1> uvdata,
+    GridSpec gridspec,
+    float normfactor
+);
+
+template void idft(
+    DeviceSpan<ComplexLinearData<double>, 2> img,
+    DeviceSpan<UVDatum<double>, 1> uvdata,
+    GridSpec gridspec,
+    double normfactor
+);

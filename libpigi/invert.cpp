@@ -1,4 +1,4 @@
-#pragma once
+#include "invert.h"
 
 #include <algorithm>
 #include <complex>
@@ -8,12 +8,13 @@
 #include <hip/hip_runtime.h>
 #include <hipfft/hipfft.h>
 
-#include "fft.cpp"
-#include "gridspec.cpp"
-#include "memory.cpp"
-#include "outputtypes.cpp"
-#include "uvdatum.cpp"
-#include "workunit.cpp"
+#include "fft.h"
+#include "gridspec.h"
+#include "gridder.cpp"
+#include "hip.h"
+#include "outputtypes.h"
+#include "util.h"
+#include "uvdatum.h"
 
 template <typename T, typename S>
 __global__
@@ -40,7 +41,7 @@ void wcorrect(DeviceSpan<T, 2> grid, const GridSpec gridspec, const S w0) {
     );
 }
 
-template<template<typename> typename T, typename S, typename R>
+template <template<typename> typename T, typename S, typename R>
 HostArray<T<S>, 2> invert(
     const HostSpan<WorkUnit<S, R>, 1> workunits,
     const GridSpec gridspec,
@@ -91,3 +92,37 @@ HostArray<T<S>, 2> invert(
 
     return img;
 }
+
+// Explicit template instantiations
+
+template
+HostArray<StokesI<float>, 2> invert(
+    const HostSpan<WorkUnit<float, HostSpan<UVDatum<float>, 1>>, 1> workunits,
+    const GridSpec gridspec,
+    const HostSpan<float, 2> taper,
+    const HostSpan<float, 2> subtaper
+);
+
+template
+HostArray<StokesI<double>, 2> invert(
+    const HostSpan<WorkUnit<double, HostSpan<UVDatum<double>, 1>>, 1> workunits,
+    const GridSpec gridspec,
+    const HostSpan<double, 2> taper,
+    const HostSpan<double, 2> subtaper
+);
+
+template
+HostArray<StokesI<float>, 2> invert(
+    const HostSpan<WorkUnit<float, HostArray<UVDatum<float>, 1>>, 1> workunits,
+    const GridSpec gridspec,
+    const HostSpan<float, 2> taper,
+    const HostSpan<float, 2> subtaper
+);
+
+template
+HostArray<StokesI<double>, 2> invert(
+    const HostSpan<WorkUnit<double, HostArray<UVDatum<double>, 1>>, 1> workunits,
+    const GridSpec gridspec,
+    const HostSpan<double, 2> taper,
+    const HostSpan<double, 2> subtaper
+);

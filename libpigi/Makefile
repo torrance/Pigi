@@ -1,8 +1,26 @@
-CXX = hipcc
-CXXFLAGS = --std=c++20 --gcc-toolchain=/usr/local -Wall -Wextra -Wpedantic -O3 -D__HIP_PLATFORM_HCC__= -D__HIP_PLATFORM_AMD__= -I/opt/rocm-5.6.0/include -I/opt/rocm-5.6.0/llvm/bin/../lib/clang/16.0.0
-LDFLAGS = -shared -fPIC -L/opt/rocm-5.6.0/lib -lamdhip64 -lhipfft -lhipblas -L/usr/local/lib -lfmt
+# Disable automatic rules based on prefixes
+.SUFFIXES:
 
-all: libpigi.so
+CXXFLAGS = -fPIC --std=c++20 -Wall -Wextra -Wpedantic -O3 -D__HIP_PLATFORM_HCC__= -D__HIP_PLATFORM_AMD__= -I/opt/rocm-5.6.0/include -I/opt/rocm-5.6.0/llvm/bin/../lib/clang/16.0.0
+LDFLAGS = -L/opt/rocm-5.6.0/lib -lamdhip64 -lhipfft -lhipblas -L/usr/local/lib -lpthread -lfmt
 
-libpigi.so: *.cpp Makefile
-	$(CXX) -o $@ $(CXXFLAGS) $(LDFLAGS) libpigi.cpp
+OBJECTS = dft.o fft.o invert.o predict.o
+
+# Do nothing
+all:
+
+libpigi.so: *.h $(OBJECTS) Makefile
+	g++ -c libpigi.cpp $(CXXFLAGS)
+	g++ -o libpigi.so libpigi.o $(OBJECTS) -shared -fPIC $(LDFLAGS)
+
+%.o: %.cpp %.h Makefile
+	hipcc -c $< --gcc-toolchain=/usr/local $(CXXFLAGS)
+
+test: test.cpp *.h $(OBJECTS) Makefile
+	g++ -c test.cpp $(CXXFLAGS)
+	g++ -o test test.o $(OBJECTS) $(LDFLAGS) -lCatch2Main -lCatch2
+	./test
+
+.PHONY: clean
+clean:
+	rm -f *.o libpigi.so test

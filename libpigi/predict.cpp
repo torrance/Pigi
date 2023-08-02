@@ -1,4 +1,4 @@
-#pragma once
+#include "predict.h"
 
 #include <algorithm>
 
@@ -7,11 +7,9 @@
 #include <hipfft/hipfft.h>
 
 #include "degridder.cpp"
-#include "fft.cpp"
-#include "gridspec.cpp"
-#include "memory.cpp"
-#include "workunit.cpp"
-
+#include "fft.h"
+#include "hip.h"
+#include "gridspec.h"
 
 template<typename T, typename S>
 __global__
@@ -45,7 +43,7 @@ void predict(
     const GridSpec gridspec,
     const HostSpan<S, 2> taper,
     const HostSpan<S, 2> subtaper,
-    const DegridOp degridop=DegridOp::Replace
+    const DegridOp degridop
 ) {
     // Apply inverse taper
     HostArray<T, 2> imgcopy {img.shape()};
@@ -89,3 +87,41 @@ void predict(
         degridder<T, S>(wworkunits, wlayer, subtaperd, degridop);
     }
 }
+
+// Explicit template instantiations
+
+template void predict(
+    HostSpan<WorkUnit<float>, 1> workunits,
+    const HostSpan<StokesI<float>, 2> img,
+    const GridSpec gridspec,
+    const HostSpan<float, 2> taper,
+    const HostSpan<float, 2> subtaper,
+    const DegridOp degridop=DegridOp::Replace
+);
+
+template void predict(
+    HostSpan<WorkUnit<double>, 1> workunits,
+    const HostSpan<StokesI<double>, 2> img,
+    const GridSpec gridspec,
+    const HostSpan<double, 2> taper,
+    const HostSpan<double, 2> subtaper,
+    const DegridOp degridop=DegridOp::Replace
+);
+
+template void predict(
+    HostSpan<WorkUnit<float>, 1> workunits,
+    const HostSpan<ComplexLinearData<float>, 2> img,
+    const GridSpec gridspec,
+    const HostSpan<float, 2> taper,
+    const HostSpan<float, 2> subtaper,
+    const DegridOp degridop=DegridOp::Replace
+);
+
+template void predict(
+    HostSpan<WorkUnit<double>, 1> workunits,
+    const HostSpan<ComplexLinearData<double>, 2> img,
+    const GridSpec gridspec,
+    const HostSpan<double, 2> taper,
+    const HostSpan<double, 2> subtaper,
+    const DegridOp degridop=DegridOp::Replace
+);

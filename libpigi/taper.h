@@ -3,11 +3,14 @@
 #include <cmath>
 #include <numbers>
 
-#include "gridspec.cpp"
-#include "memory.cpp"
+#include "gridspec.h"
+#include "memory.h"
 
 template <typename T>
-long double kbalpha() { static_assert(sizeof(T) == -1); }
+long double kbalpha() {
+    static_assert(sizeof(T) == -1);
+    return 0;
+}
 
 template <>
 long double kbalpha<float>() { return 4.2; }

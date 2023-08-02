@@ -2,8 +2,8 @@
 
 #include <complex>
 
+#include <fmt/format.h>
 #include <hip/hip_runtime.h>
-
 
 void sincospif(float, float*, float*);  // Supress IDE warning about device function
 
