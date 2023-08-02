@@ -79,6 +79,16 @@ void memcpy(DevicePointer<T> dst, DevicePointer<T> src, size_t sz) {
     );
 }
 
+template <typename T>
+void memset(HostPointer<T> ptr, int val, size_t sz) {
+    memset(static_cast<void*>(ptr), val, sz);
+}
+
+template <typename T>
+void memset(DevicePointer<T> ptr, int val, size_t sz) {
+    HIPCHECK( hipMemsetAsync(ptr, val, sz, hipStreamPerThread) );
+}
+
 template <typename T, int N, typename Pointer>
 class NDBase {
 public:
@@ -123,7 +133,7 @@ public:
     auto shape() const { return dims; }
 
     void zero() {
-        HIPCHECK( hipMemsetAsync(this->ptr, 0, this->size() * sizeof(T), hipStreamPerThread) );
+        memset(this->ptr, 0, this->size() * sizeof(T));
     }
 
     template <typename F, typename... Ss>
@@ -159,7 +169,7 @@ void shapecheck(const NDBase<T, N, S>& lhs, const NDBase<R, N, Q>& rhs) {
 template <typename T, int N, typename Pointer>
 class Span : public NDBase<T, N, Pointer> {
 public:
-    Span(std::array<size_t, N> dims, T* ptr) : NDBase<T, N, Pointer>(dims, ptr) {}
+    explicit Span(std::array<size_t, N> dims, T* ptr) : NDBase<T, N, Pointer>(dims, ptr) {}
 
     Span(std::vector<T>& vec) requires(N == 1 && std::same_as<HostPointer<T>, Pointer>) :
         NDBase<T, N, Pointer>({vec.size()}, vec.data())  {}
