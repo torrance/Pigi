@@ -122,7 +122,7 @@ public:
                 data.yx = *dataIter; ++dataIter;
                 data.yy = *dataIter; ++dataIter;
 
-                if (!weights.isfinite() && !data.isfinite()) {
+                if (!weights.isfinite() || !data.isfinite()) {
                     data = {};
                     weights = {};
                 }

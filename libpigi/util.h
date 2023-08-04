@@ -37,7 +37,9 @@ struct fmt::formatter<std::complex<T>> {
 };
 
 template <typename T>
-inline bool isfinite(const T& x) { return std::isfinite(x); }
+inline bool isfinite(const T& x) requires(std::is_floating_point<T>::value) {
+    return std::isfinite(x);
+}
 
 template <typename T>
 inline bool isfinite(const std::complex<T>& x) {
