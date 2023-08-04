@@ -46,25 +46,16 @@ auto partition(
     > wlayers;
     long long radius {static_cast<long long>(subgridspec.Nx) / 2 - padding};
 
-    for (UVDatum<S>& uvdatum : uvdata) {
+    for (UVDatum<S> uvdatum : uvdata) {
         // Find equivalient pixel coordinates of (u,v) position
         const auto [upx, vpx] = gridspec.UVtoGrid(uvdatum.u, uvdatum.v);
-
-        if (uvdatum.row == 9 && uvdatum.chan == 0) {
-            fmt::println("u = {} v = {} w = {}",
-                uvdatum.u, uvdatum.v, uvdatum.w);
-        }
 
         // Snap to center of nearest wstep window. Note: for a given wstep,
         // the boundaries occur at {0 <= w < wstep, wstep <= w < 2 * wstep, ...}
         // This choice is made because w values are made positive and we want to
         // avoid the first interval including negative values. w0 is the midpoint of each
         // respective interval.
-        const S w0 {wstep * std::floor(uvdatum.w / wstep) + static_cast<S>(0.5) * wstep};  // TODO: fix
-
-        if (uvdatum.row == 9 && uvdatum.chan == 0) {
-            fmt::println("upx = {} vpx = {} w0 = {}", upx, vpx, w0);
-        }
+        const S w0 {wstep * std::floor(uvdatum.w / wstep) + static_cast<S>(0.5) * wstep};
 
         // Search through existing workunits to see if our UVDatum is included in an
         // existing workunit.
@@ -90,9 +81,6 @@ auto partition(
         // If we are here, we need to create a new workunit for our UVDatum
         const long long u0px {llround(upx)}, v0px {llround(vpx)};
         const auto [u0, v0] = gridspec.gridToUV<S>(u0px, v0px);
-        if (uvdatum.row == 9 && uvdatum.chan == 0) {
-            fmt::println("u0 = {} v0 = {}", u0, v0);
-        }
 
         wworkunits.emplace_back(
             u0px, v0px, u0, v0, w0, subgridspec,
@@ -106,13 +94,15 @@ auto partition(
     // in the gridder much faster.
     std::vector<WorkUnit< S, HostArray<UVDatum<S>, 1> >> workunits;
     for (auto& [_, wworkunits] : wlayers) {
-        for (auto& workunit : wworkunits) {
+        while (!wworkunits.empty()) {
+            auto& workunit = wworkunits.back();
             workunits.emplace_back(
                 workunit.u0px, workunit.v0px,
                 workunit.u0, workunit.v0, workunit.w0,
                 workunit.subgridspec, workunit.Aleft, workunit.Aright,
                 HostArray<UVDatum<S>, 1>::fromVector(workunit.data)
             );
+            wworkunits.pop_back();
         }
     }
     return workunits;
