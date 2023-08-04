@@ -136,6 +136,12 @@ public:
         memset(this->ptr, 0, this->size() * sizeof(T));
     }
 
+    void fill(const T& val) requires(std::same_as<HostPointer<T>, Pointer>) {
+        for (auto& x : (*this)) {
+            x = val;
+        }
+    }
+
     template <typename F, typename... Ss>
     void mapInto(F f, Ss... ins) requires(
         std::same_as<DevicePointer<T>, Pointer>

@@ -8,6 +8,14 @@ struct GridSpec {
     double scalelm;
     double scaleuv;
 
+    static auto fromScaleLM(size_t Nx, size_t Ny, double scalelm) {
+        return GridSpec {Nx, Ny, scalelm, 1 / (Nx * scalelm)};
+    }
+
+    static auto fromScaleUV(size_t Nx, size_t Ny, double scaleuv) {
+        return GridSpec {Nx, Ny, 1 / (Nx * scaleuv), scaleuv};
+    }
+
     __host__ __device__ inline auto size() const { return Nx * Ny; }
 
     __host__ __device__

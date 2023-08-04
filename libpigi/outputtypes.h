@@ -120,6 +120,11 @@ struct LinearData {
     }
 
     __host__ __device__
+    inline auto isfinite() const {
+        return ::isfinite(xx) && ::isfinite(yx) && ::isfinite(yx) && ::isfinite(yy);
+    }
+
+    __host__ __device__
     static LinearData<T> fromBeam(
         LinearData<T> val,
         LinearData<T> Aleft,

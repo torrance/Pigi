@@ -35,6 +35,14 @@ struct fmt::formatter<std::complex<T>> {
 };
 
 template <typename T>
+inline bool isfinite(const T& x) { return std::isfinite(x); }
+
+template <typename T>
+inline bool isfinite(const std::complex<T>& x) {
+    return std::isfinite(x.real()) && std::isfinite(x.imag());
+}
+
+template <typename T>
 __host__ __device__
 inline T ndash(T l, T m) {
     auto r2 = min(
