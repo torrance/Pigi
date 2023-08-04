@@ -1,6 +1,8 @@
 #pragma once
 
 #include <complex>
+#include <numbers>
+#include <type_traits>
 
 #include <fmt/format.h>
 #include <hip/hip_runtime.h>
@@ -44,7 +46,17 @@ inline bool isfinite(const std::complex<T>& x) {
 
 template <typename T>
 __host__ __device__
-inline T ndash(T l, T m) {
+inline T conj(const T& x) requires(std::is_floating_point<T>::value) {
+    return x;
+}
+
+template <typename T>
+__host__ __device__
+inline std::complex<T> conj(const std::complex<T>& x) { return std::conj(x); }
+
+template <typename T>
+__host__ __device__
+inline T ndash(const T l, const T m) {
     auto r2 = min(
         l*l + m*m, 1
     );

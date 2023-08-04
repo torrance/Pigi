@@ -111,10 +111,10 @@ struct LinearData {
     inline auto& adjoint() {
         T tmp {xy}; xy = yx; yx = tmp;
 
-        xx = std::conj(xx);
-        yx = std::conj(yx);
-        xy = std::conj(xy);
-        yy = std::conj(yy);
+        xx = ::conj(xx);
+        yx = ::conj(yx);
+        xy = ::conj(xy);
+        yy = ::conj(yy);
 
         return *this;
     }
