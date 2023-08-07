@@ -11,4 +11,12 @@ struct alignas(8) UVDatum {
     T w;
     LinearData<T> weights;
     ComplexLinearData<T> data;
+
+    explicit operator UVDatum<float>() const {
+        return UVDatum<float>(
+            row, chan, u, v, w,
+            (LinearData<float>) weights,
+            (ComplexLinearData<float>) data
+        );
+    }
 };

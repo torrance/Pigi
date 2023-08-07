@@ -7,21 +7,31 @@
 #include <fmt/format.h>
 #include <hip/hip_runtime.h>
 
-void sincospif(float, float*, float*);  // Supress IDE warning about device function
+__device__ void sincospif(float, float*, float*);  // Supress IDE warning about device function
+__device__ void sincospi(double, double*, double*); // Suppress IDE warning about device function
 
-__device__ inline auto cispi(float theta) {
+#ifdef __HIPCC__
+__device__ inline auto cispi(const float& theta) {
     float real, imag;
     sincospif(theta, &imag, &real);
     return std::complex(real, imag);
 }
 
-void sincospi(double, double*, double*); // Suppress IDE warning about device function
-
-__device__ inline auto cispi(double theta) {
+__device__ inline auto cispi(const double& theta) {
     double real, imag;
     sincospi(theta, &imag, &real);
     return std::complex(real, imag);
 }
+#else
+template <typename T>
+__host__ inline auto cispi(const T& theta) {
+    auto pi = std::numbers::pi_v<T>;
+    return std::complex {
+        std::cos(theta * pi), std::sin(theta * pi)
+    };
+}
+#endif
+
 
 template <typename T>
 struct fmt::formatter<std::complex<T>> {
@@ -59,8 +69,11 @@ inline std::complex<T> conj(const std::complex<T>& x) { return std::conj(x); }
 template <typename T>
 __host__ __device__
 inline T ndash(const T l, const T m) {
-    auto r2 = min(
+    auto r2 = std::min<T>(
         l*l + m*m, 1
     );
     return r2 / (1 + sqrt(1 - r2));
 }
+
+template <typename T>
+inline T deg2rad(const T& x) { return x * std::numbers::pi_v<T> / 180; }

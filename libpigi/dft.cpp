@@ -38,47 +38,53 @@ __global__ void _idft(
 
 template <typename T, typename S>
 void idft(
-    DeviceSpan<T, 2> img,
-    DeviceSpan<UVDatum<S>, 1> uvdata,
+    HostSpan<T, 2> img,
+    HostSpan<UVDatum<S>, 1> uvdata,
     GridSpec gridspec,
     S normfactor
 ) {
+    DeviceArray<T, 2> img_d {img};
+    DeviceArray<UVDatum<S>, 1> uvdata_d {uvdata};
+
     auto fn = _idft<T, S>;
     auto [nblocks, nthreads] = getKernelConfig(
         fn, gridspec.size()
     );
     hipLaunchKernelGGL(
         fn, nblocks, nthreads, 0, hipStreamPerThread,
-        img, uvdata, gridspec, normfactor
+        img_d, uvdata_d, gridspec, normfactor
     );
+
+    img = img_d;
+    HIPCHECK( hipStreamSynchronize(hipStreamPerThread) );
 }
 
 // Explicit template instantiations
 
 template void idft(
-    DeviceSpan<StokesI<float>, 2> img,
-    DeviceSpan<UVDatum<float>, 1> uvdata,
+    HostSpan<StokesI<float>, 2> img,
+    HostSpan<UVDatum<float>, 1> uvdata,
     GridSpec gridspec,
     float normfactor
 );
 
 template void idft(
-    DeviceSpan<StokesI<double>, 2> img,
-    DeviceSpan<UVDatum<double>, 1> uvdata,
+    HostSpan<StokesI<double>, 2> img,
+    HostSpan<UVDatum<double>, 1> uvdata,
     GridSpec gridspec,
     double normfactor
 );
 
 template void idft(
-    DeviceSpan<ComplexLinearData<float>, 2> img,
-    DeviceSpan<UVDatum<float>, 1> uvdata,
+    HostSpan<ComplexLinearData<float>, 2> img,
+    HostSpan<UVDatum<float>, 1> uvdata,
     GridSpec gridspec,
     float normfactor
 );
 
 template void idft(
-    DeviceSpan<ComplexLinearData<double>, 2> img,
-    DeviceSpan<UVDatum<double>, 1> uvdata,
+    HostSpan<ComplexLinearData<double>, 2> img,
+    HostSpan<UVDatum<double>, 1> uvdata,
     GridSpec gridspec,
     double normfactor
 );

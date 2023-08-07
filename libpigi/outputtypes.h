@@ -13,6 +13,11 @@ struct LinearData {
     T xx {}, yx {}, xy {}, yy {};
 
     template <typename S>
+    explicit operator LinearData<S>() const {
+        return LinearData<S> {(S) xx, (S) yx, (S) xy, (S) yy };
+    }
+
+    template <typename S>
     __host__ __device__
     inline auto& operator*=(const S& c) {
         xx *= c;

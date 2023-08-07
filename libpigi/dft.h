@@ -6,8 +6,8 @@
 
 template <typename T, typename S>
 void idft(
-    DeviceSpan<T, 2> img,
-    DeviceSpan<UVDatum<S>, 1> uvdata,
+    HostSpan<T, 2> img,
+    HostSpan<UVDatum<S>, 1> uvdata,
     GridSpec gridspec,
     S normfactor
 );
