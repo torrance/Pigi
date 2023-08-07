@@ -170,6 +170,7 @@ struct StokesI {
     std::complex<T> I {};
 
     __host__ __device__ StokesI() = default;
+    __host__ __device__ StokesI(std::complex<T> I) : I(I) {}
 
     __host__ __device__
     StokesI(const ComplexLinearData<T> data) : I((T) 0.5 * (data.xx + data.yy)) {}
