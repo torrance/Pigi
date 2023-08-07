@@ -1,6 +1,6 @@
 #include "predict.h"
 
-#include <algorithm>
+#include <set>
 
 #include <fmt/format.h>
 #include <hip/hip_runtime.h>
@@ -58,14 +58,8 @@ void predict(
     DeviceArray<S, 2> subtaperd {subtaper};
 
     // Get unique w terms
-    std::vector<S> ws(workunits.size());
-    std::transform(
-        workunits.begin(), workunits.end(),
-        ws.begin(),
-        [](const auto& workunit) { return workunit.w0; }
-    );
-    std::sort(ws.begin(), ws.end());
-    ws.resize(std::unique(ws.begin(), ws.end()) - ws.begin());
+    std::set<S> ws;
+    for (auto& workunit : workunits) { ws.insert(workunit.w0); }
 
     auto plan = fftPlan<T>(gridspec);
 
@@ -76,13 +70,13 @@ void predict(
         wdecorrect<T, S>(wlayer, gridspec, w0);
         fftExec(plan, wlayer, HIPFFT_FORWARD);
 
-        // TOFIX: This makes a copy of workunits, which is fine for now
-        // so long as data is a span, but not when it is owned.
-        std::vector<WorkUnit<S>> wworkunits;
-        std::copy_if(
-            workunits.begin(), workunits.end(), std::back_inserter(wworkunits),
-            [=](const auto& workunit) { return workunit.w0 == w0; }
-        );
+        // We use pointers to avoid any kind of copy of the underlying data
+        // (since each workunit owns its own data).
+        // TODO: use a views filter instead?
+        std::vector<WorkUnit<S>*> wworkunits;
+        for (auto& workunit : workunits) {
+            if (workunit.w0 == w0) wworkunits.push_back(&workunit);
+        }
 
         degridder<T, S>(wworkunits, wlayer, subtaperd, degridop);
     }

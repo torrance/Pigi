@@ -124,10 +124,10 @@ void addsubgrid(
     );
 }
 
-template<typename T, typename S, typename R>
+template<typename T, typename S>
 void gridder(
     DeviceSpan<T, 2> grid,
-    const std::vector<const WorkUnit<S, R>*> workunits,
+    const std::vector<const WorkUnit<S>*> workunits,
     const DeviceSpan<S, 2> subtaper
 ) {
     const auto subgridspec = workunits.front()->subgridspec;
@@ -141,8 +141,8 @@ void gridder(
         Aterms.try_emplace(workunit->Aright.data(), workunit->Aright);
     }
 
-    using Pair = std::tuple<DeviceArray<T, 2>, const WorkUnit<S, R>*>;
-    Channel<const WorkUnit<S, R>*> workunitsChannel;
+    using Pair = std::tuple<DeviceArray<T, 2>, const WorkUnit<S>*>;
+    Channel<const WorkUnit<S>*> workunitsChannel;
     Channel<Pair> subgridsChannel;
 
     // Enqueue the work units

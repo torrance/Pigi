@@ -153,7 +153,7 @@ auto extractSubgrid(
 
 template <typename T, typename S>
 void degridder(
-    HostSpan<WorkUnit<S>, 1> workunits,
+    HostSpan<WorkUnit<S>*, 1> workunits,
     const DeviceSpan<T, 2> grid,
     const DeviceSpan<S, 2> subtaper,
     const DegridOp degridop
@@ -162,21 +162,21 @@ void degridder(
     std::unordered_map<
         const ComplexLinearData<S>*, const DeviceArray<ComplexLinearData<S>, 2>
     > Aterms;
-    for (const auto& workunit : workunits) {
-        Aterms.try_emplace(workunit.Aleft.data(), workunit.Aleft);
-        Aterms.try_emplace(workunit.Aright.data(), workunit.Aright);
+    for (const auto workunit : workunits) {
+        Aterms.try_emplace(workunit->Aleft.data(), workunit->Aleft);
+        Aterms.try_emplace(workunit->Aright.data(), workunit->Aright);
     }
 
-    auto plan = fftPlan<ComplexLinearData<S>>(workunits.front().subgridspec);
+    auto plan = fftPlan<ComplexLinearData<S>>(workunits.front()->subgridspec);
 
     for (auto& workunit : workunits) {
         // Transfer data to device and retrieve A terms
-        DeviceArray<UVDatum<S>, 1> uvdata {workunit.data};
-        const auto& Aleft = Aterms.at(workunit.Aleft.data());
-        const auto& Aright = Aterms.at(workunit.Aright.data());
+        DeviceArray<UVDatum<S>, 1> uvdata {workunit->data};
+        const auto& Aleft = Aterms.at(workunit->Aleft.data());
+        const auto& Aright = Aterms.at(workunit->Aright.data());
 
         // Allocate subgrid and extract from grid
-        auto subgrid = extractSubgrid(grid, workunit);
+        auto subgrid = extractSubgrid(grid, *workunit);
 
         fftExec(plan, subgrid, HIPFFT_BACKWARD);
 
@@ -187,12 +187,12 @@ void degridder(
 
         gpudft<S>(
             uvdata,
-            {workunit.u0, workunit.v0, workunit.w0},
-            subgrid, workunit.subgridspec, degridop
+            {workunit->u0, workunit->v0, workunit->w0},
+            subgrid, workunit->subgridspec, degridop
         );
 
         // Transfer data back to host
-        workunit.data = uvdata;
+        workunit->data = uvdata;
 
         HIPCHECK( hipStreamSynchronize(hipStreamPerThread) );
     }

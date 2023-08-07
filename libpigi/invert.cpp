@@ -41,9 +41,9 @@ void wcorrect(DeviceSpan<T, 2> grid, const GridSpec gridspec, const S w0) {
     );
 }
 
-template <template<typename> typename T, typename S, typename R>
+template <template<typename> typename T, typename S>
 HostArray<T<S>, 2> invert(
-    const HostSpan<WorkUnit<S, R>, 1> workunits,
+    const HostSpan<WorkUnit<S>, 1> workunits,
     const GridSpec gridspec,
     const HostSpan<S, 2> taper,
     const HostSpan<S, 2> subtaper
@@ -66,13 +66,13 @@ HostArray<T<S>, 2> invert(
         // We use pointers to avoid any kind of copy of the underlying data
         // (since each workunit owns its own data).
         // TODO: use a views filter instead?
-        std::vector<const WorkUnit<S, R>*> wworkunits;
+        std::vector<const WorkUnit<S>*> wworkunits;
         for (auto& workunit : workunits) {
             if (workunit.w0 == w0) wworkunits.push_back(&workunit);
         }
 
         wlayerd.zero();
-        gridder<T<S>, S, R>(wlayerd, wworkunits, subtaperd);
+        gridder<T<S>, S>(wlayerd, wworkunits, subtaperd);
 
         // FFT the full wlayer
         fftExec(plan, wlayerd, HIPFFT_BACKWARD);
@@ -97,7 +97,7 @@ HostArray<T<S>, 2> invert(
 
 template
 HostArray<StokesI<float>, 2> invert(
-    const HostSpan<WorkUnit<float, HostSpan<UVDatum<float>, 1>>, 1> workunits,
+    const HostSpan<WorkUnit<float>, 1> workunits,
     const GridSpec gridspec,
     const HostSpan<float, 2> taper,
     const HostSpan<float, 2> subtaper
@@ -105,23 +105,7 @@ HostArray<StokesI<float>, 2> invert(
 
 template
 HostArray<StokesI<double>, 2> invert(
-    const HostSpan<WorkUnit<double, HostSpan<UVDatum<double>, 1>>, 1> workunits,
-    const GridSpec gridspec,
-    const HostSpan<double, 2> taper,
-    const HostSpan<double, 2> subtaper
-);
-
-template
-HostArray<StokesI<float>, 2> invert(
-    const HostSpan<WorkUnit<float, HostArray<UVDatum<float>, 1>>, 1> workunits,
-    const GridSpec gridspec,
-    const HostSpan<float, 2> taper,
-    const HostSpan<float, 2> subtaper
-);
-
-template
-HostArray<StokesI<double>, 2> invert(
-    const HostSpan<WorkUnit<double, HostArray<UVDatum<double>, 1>>, 1> workunits,
+    const HostSpan<WorkUnit<double>, 1> workunits,
     const GridSpec gridspec,
     const HostSpan<double, 2> taper,
     const HostSpan<double, 2> subtaper

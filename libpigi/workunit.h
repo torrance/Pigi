@@ -18,7 +18,7 @@ struct UVWOrigin {
     UVWOrigin(T u0, T v0, T w0) : u0(u0), v0(v0), w0(w0) {}
 };
 
-template <typename S, typename T=HostSpan<UVDatum<S>, 1>>
+template <typename S, typename T=HostArray<UVDatum<S>, 1>>
 struct WorkUnit {
     long long u0px;
     long long v0px;
