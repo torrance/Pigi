@@ -1,15 +1,10 @@
-#include <algorithm>
-#include <chrono>
 #include <cmath>
-#include <iostream>
 #include <random>
 #include <vector>
 
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/catch_template_test_macros.hpp>
-#include <catch2/benchmark/catch_benchmark.hpp>
 #include <fmt/format.h>
-#include <matplot/matplot.h>
 
 #include "dft.h"
 #include "degridop.h"
@@ -21,59 +16,6 @@
 #include "util.h"
 #include "uvdatum.h"
 #include "workunit.h"
-
-template <typename T>
-std::vector<std::vector<T>> arrayToVectors(const HostSpan<StokesI<T>, 2> img, size_t padding) {
-    std::vector<std::vector<T>> vecs(img.size(0) - 2 * padding);
-
-    for (size_t ny = padding; ny < img.size(0) - padding; ++ny) {
-        for (size_t nx = padding; nx < img.size(1) - padding; ++nx) {
-            vecs[ny - padding].push_back(
-                img[ny * img.size(0) + nx].I.real()
-            );
-        }
-    }
-
-    return vecs;
-}
-
-std::vector<UVDatum<double>> mkuvdata() {
-    std::mt19937 gen(1234);
-    std::uniform_real_distribution<double> rand(0, 1);
-
-    // Create a list of Ra/Dec sources
-    std::vector<std::tuple<double, double>> sources;
-    for (size_t i {}; i < 500; ++i) {
-        double ra { deg2rad((rand(gen) - 0.5) * 30) };
-        double dec { deg2rad((rand(gen) - 0.5) * 30) };
-        sources.emplace_back(ra, dec);
-    }
-
-    std::vector<UVDatum<double>> uvdata;
-    for (size_t i {}; i < 20000; ++i) {
-        double u = rand(gen), v = rand(gen), w = rand(gen);
-
-        // Scale uv to be in -500 <= +500 and w 0 < 500
-        u = (u - 0.5) * 1000;
-        v = (v - 0.5) * 1000;
-        w*= 500;
-
-        ComplexLinearData<double> data;
-        for (auto [ra, dec] : sources) {
-            double l { std::sin(ra) }, m = { std::sin(dec) };
-            auto phase = cispi(-2 * (
-                u * l + v * m + w * ndash(l, m)
-            ));
-            data += ComplexLinearData<double> {phase, 0, 0, phase};
-        }
-
-        uvdata.emplace_back(
-            i, 0, u, v, w, LinearData<double>{1, 1, 1, 1}, data
-        );
-    }
-
-    return uvdata;
-}
 
 
 TEST_CASE( "Arrays, Spans and H<->D transfers" ) {
@@ -118,7 +60,41 @@ TEMPLATE_TEST_CASE( "Invert", "", float, double) {
     auto subtaper = kaiserbessel<TestType>(subgridspec);
 
     // Create uvdata
-    auto uvdata64 = mkuvdata();
+    std::vector<UVDatum<double>> uvdata64;
+    {
+        std::mt19937 gen(1234);
+        std::uniform_real_distribution<double> rand(0, 1);
+
+        // Create a list of Ra/Dec sources
+        std::vector<std::tuple<double, double>> sources;
+        for (size_t i {}; i < 500; ++i) {
+            double ra { deg2rad((rand(gen) - 0.5) * 30) };
+            double dec { deg2rad((rand(gen) - 0.5) * 30) };
+            sources.emplace_back(ra, dec);
+        }
+
+        for (size_t i {}; i < 20000; ++i) {
+            double u = rand(gen), v = rand(gen), w = rand(gen);
+
+            // Scale uv to be in -500 <= +500 and w 0 < 500
+            u = (u - 0.5) * 1000;
+            v = (v - 0.5) * 1000;
+            w*= 500;
+
+            ComplexLinearData<double> data;
+            for (auto [ra, dec] : sources) {
+                double l { std::sin(ra) }, m = { std::sin(dec) };
+                auto phase = cispi(-2 * (
+                    u * l + v * m + w * ndash(l, m)
+                ));
+                data += ComplexLinearData<double> {phase, 0, 0, phase};
+            }
+
+            uvdata64.emplace_back(
+                i, 0, u, v, w, LinearData<double>{1, 1, 1, 1}, data
+            );
+        }
+    }
 
     // Weight naturally
     for (auto& uvdatum : uvdata64) {
