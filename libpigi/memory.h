@@ -93,8 +93,8 @@ template <typename T, int N, typename Pointer>
 class NDBase {
 public:
     NDBase() = default;
-    NDBase(std::array<size_t, N> dims) : dims(dims) {}
-    NDBase(std::array<size_t, N> dims, T* ptr) : dims(dims), ptr(ptr) {}
+    NDBase(std::array<long long, N> dims) : dims(dims) {}
+    NDBase(std::array<long long, N> dims, T* ptr) : dims(dims), ptr(ptr) {}
 
     // Copy assignment
     template <typename S>
@@ -124,11 +124,11 @@ public:
 
     __host__ __device__  size_t size() const {
         size_t sz {1};
-        for (const auto dim : dims) sz *= dim;
+        for (const auto dim : dims) sz *= static_cast<size_t>(dim);
         return sz;
     }
 
-    size_t size(int i) const { return dims.at(i); }
+    auto size(int i) const { return dims.at(i); }
 
     auto shape() const { return dims; }
 
@@ -160,7 +160,7 @@ public:
     friend NDBase<T, N, DevicePointer<T>>;
 
 protected:
-    std::array<size_t, N> dims {};
+    std::array<long long, N> dims {};
     Pointer ptr {};
 };
 
@@ -175,10 +175,10 @@ void shapecheck(const NDBase<T, N, S>& lhs, const NDBase<R, N, Q>& rhs) {
 template <typename T, int N, typename Pointer>
 class Span : public NDBase<T, N, Pointer> {
 public:
-    explicit Span(std::array<size_t, N> dims, T* ptr) : NDBase<T, N, Pointer>(dims, ptr) {}
+    explicit Span(std::array<long long, N> dims, T* ptr) : NDBase<T, N, Pointer>(dims, ptr) {}
 
     Span(std::vector<T>& vec) requires(N == 1 && std::same_as<HostPointer<T>, Pointer>) :
-        NDBase<T, N, Pointer>({vec.size()}, vec.data())  {}
+        NDBase<T, N, Pointer>({static_cast<long long>(vec.size())}, vec.data())  {}
 
     // Copy assignment
     template <typename S>
@@ -197,7 +197,7 @@ using DeviceSpan = Span<T, N, DevicePointer<T>>;
 template <typename T, int N, typename Pointer>
 class Array : public NDBase<T, N, Pointer> {
 public:
-    explicit Array(const std::array<size_t, N> dims) : NDBase<T, N, Pointer>(dims) {
+    explicit Array(const std::array<long long, N> dims) : NDBase<T, N, Pointer>(dims) {
         malloc(this->ptr, this->size() * sizeof(T));
         this->zero();
     }
@@ -242,7 +242,7 @@ public:
     }
 
     static auto fromVector(const std::vector<T>& other) requires(N == 1) {
-        Array<T, N, Pointer> arr({other.size()});
+        Array<T, N, Pointer> arr({static_cast<long long>(other.size())});
         memcpy(arr.ptr, HostPointer<T> {other.data()}, arr.size() * sizeof(T));
         return arr;
     }
