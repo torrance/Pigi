@@ -36,7 +36,7 @@ auto getKernelConfig(T fn, int N, size_t sharedMem=0) {
     [[maybe_unused]] static auto _ = [&]() {
         fmt::println("Calculating kernel configuration...");
         HIPCHECK( hipOccupancyMaxPotentialBlockSize(
-            &nblocksmax, &nthreads, fn, sharedMem, 0 
+            &nblocksmax, &nthreads, fn, sharedMem, 0
         ) );
         fmt::println("Recommended launch config: blocksmax={}, threads={}", nblocksmax, nthreads);
         return true;
@@ -48,12 +48,12 @@ auto getKernelConfig(T fn, int N, size_t sharedMem=0) {
 };
 
 template <typename F, typename T, typename... Ss> __global__
-void map(F f, T out, Ss... ins);
+void mapInto(F f, T out, Ss... ins);
 
 #ifdef __HIPCC__
 template <typename F, typename T, typename... Ss>
 __global__
-void map(F f, T out, Ss... ins) {
+void mapInto(F f, T out, Ss... ins) {
     for (
         size_t idx = blockIdx.x * blockDim.x + threadIdx.x;
         idx < out.size();

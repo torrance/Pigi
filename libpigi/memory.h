@@ -149,7 +149,7 @@ public:
         // Each input array must have the same dimensions as the output
         (shapecheck(*this, ins), ...);
 
-        auto fn = map<F, NDBase<T, N, Pointer>, Ss...>;
+        auto fn = ::mapInto<F, NDBase<T, N, Pointer>, Ss...>;
         auto [nblocks, nthreads] = getKernelConfig(fn, this->size());
         hipLaunchKernelGGL(fn, nblocks, nthreads, 0, hipStreamPerThread, f, *this, ins...);
     }
