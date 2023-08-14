@@ -36,6 +36,36 @@ void fftshift(DeviceSpan<T, 2> grid) {
     );
 }
 
+template<>
+hipfftHandle fftPlan<std::complex<float>>(const GridSpec gridspec) {
+    hipfftHandle plan {};
+    int rank[] {(int) gridspec.Ny, (int) gridspec.Nx}; // COL MAJOR
+    HIPFFTCHECK( hipfftPlanMany(
+        &plan, 2, rank,
+        rank, 1, 1,
+        rank, 1, 1,
+        HIPFFT_C2C, 1
+    ) );
+    HIPFFTCHECK( hipfftSetStream(plan, hipStreamPerThread) );
+
+    return plan;
+}
+
+template<>
+hipfftHandle fftPlan<std::complex<double>>(const GridSpec gridspec) {
+    hipfftHandle plan {};
+    int rank[] {(int) gridspec.Ny, (int) gridspec.Nx}; // COL MAJOR
+    HIPFFTCHECK( hipfftPlanMany(
+        &plan, 2, rank,
+        rank, 1, 1,
+        rank, 1, 1,
+        HIPFFT_Z2Z, 1
+    ) );
+    HIPFFTCHECK( hipfftSetStream(plan, hipStreamPerThread) );
+
+    return plan;
+}
+
 template <>
 hipfftHandle fftPlan<ComplexLinearData<float>>(const GridSpec gridspec) {
     hipfftHandle plan {};
@@ -96,10 +126,32 @@ hipfftHandle fftPlan<StokesI<double>>(const GridSpec gridspec) {
     return plan;
 }
 
+void fftExec(hipfftHandle plan, DeviceSpan<std::complex<float>, 2> grid, int direction) {
+    fftshift(grid);
+    hipfftExecC2C(
+        plan,
+        (hipfftComplex*) grid.data(),
+        (hipfftComplex*) grid.data(),
+        direction
+    );
+    fftshift(grid);
+}
+
+void fftExec(hipfftHandle plan, DeviceSpan<std::complex<double>, 2> grid, int direction) {
+    fftshift(grid);
+    hipfftExecZ2Z(
+        plan,
+        (hipfftDoubleComplex*) grid.data(),
+        (hipfftDoubleComplex*) grid.data(),
+        direction
+    );
+    fftshift(grid);
+}
+
 void fftExec(hipfftHandle plan, DeviceSpan<ComplexLinearData<float>, 2> grid, int direction) {
     fftshift(grid);
     hipfftExecC2C(
-        plan, 
+        plan,
         (hipfftComplex*) grid.data(),
         (hipfftComplex*) grid.data(),
         direction
@@ -110,7 +162,7 @@ void fftExec(hipfftHandle plan, DeviceSpan<ComplexLinearData<float>, 2> grid, in
 void fftExec(hipfftHandle plan, DeviceSpan<ComplexLinearData<double>, 2> grid, int direction) {
     fftshift(grid);
     hipfftExecZ2Z(
-        plan, 
+        plan,
         (hipfftDoubleComplex*) grid.data(),
         (hipfftDoubleComplex*) grid.data(),
         direction
@@ -121,7 +173,7 @@ void fftExec(hipfftHandle plan, DeviceSpan<ComplexLinearData<double>, 2> grid, i
 void fftExec(hipfftHandle plan, DeviceSpan<StokesI<float>, 2> grid, int direction) {
     fftshift(grid);
     hipfftExecC2C(
-        plan, 
+        plan,
         (hipfftComplex*) grid.data(),
         (hipfftComplex*) grid.data(),
         direction
@@ -132,7 +184,7 @@ void fftExec(hipfftHandle plan, DeviceSpan<StokesI<float>, 2> grid, int directio
 void fftExec(hipfftHandle plan, DeviceSpan<StokesI<double>, 2> grid, int direction) {
     fftshift(grid);
     hipfftExecZ2Z(
-        plan, 
+        plan,
         (hipfftDoubleComplex*) grid.data(),
         (hipfftDoubleComplex*) grid.data(),
         direction
