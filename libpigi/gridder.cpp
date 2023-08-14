@@ -17,7 +17,7 @@
 #include "uvdatum.h"
 #include "workunit.h"
 
-template <typename T, typename S>
+template <typename T, typename S, bool makePSF>
 __global__
 void _gpudift(
     DeviceSpan<T, 2> subgrid,
@@ -45,6 +45,10 @@ void _gpudift(
                 )
             );
 
+            if (makePSF) {
+                uvdatum.data = {1, 0, 0, 1};
+            }
+
             uvdatum.data *= uvdatum.weights;
             uvdatum.data *= phase;
             cell += uvdatum.data;
@@ -61,17 +65,30 @@ void gpudift(
     const DeviceSpan< ComplexLinearData<S>, 2 > Aright,
     const UVWOrigin<S> origin,
     const DeviceSpan< UVDatum<S>, 1 > uvdata,
-    const GridSpec subgridspec
+    const GridSpec subgridspec,
+    const bool makePSF
 ) {
-    auto fn = _gpudift<T, S>;
-    auto [nblocks, nthreads] = getKernelConfig(
-        fn, subgridspec.size()
-    );
-    hipLaunchKernelGGL(
-        fn, nblocks, nthreads, 0, hipStreamPerThread,
-        subgrid, Aleft, Aright,
-        origin, uvdata, subgridspec
-    );
+    if (makePSF) {
+        auto fn = _gpudift<T, S, true>;
+        auto [nblocks, nthreads] = getKernelConfig(
+            fn, subgridspec.size()
+        );
+        hipLaunchKernelGGL(
+            fn, nblocks, nthreads, 0, hipStreamPerThread,
+            subgrid, Aleft, Aright,
+            origin, uvdata, subgridspec
+        );
+    } else {
+        auto fn = _gpudift<T, S, false>;
+        auto [nblocks, nthreads] = getKernelConfig(
+            fn, subgridspec.size()
+        );
+        hipLaunchKernelGGL(
+            fn, nblocks, nthreads, 0, hipStreamPerThread,
+            subgrid, Aleft, Aright,
+            origin, uvdata, subgridspec
+        );
+    }
 }
 
 /**
@@ -128,7 +145,8 @@ template<typename T, typename S>
 void gridder(
     DeviceSpan<T, 2> grid,
     const std::vector<const WorkUnit<S>*> workunits,
-    const DeviceSpan<S, 2> subtaper
+    const DeviceSpan<S, 2> subtaper,
+    const bool makePSF
 ) {
     const auto subgridspec = workunits.front()->subgridspec;
 
@@ -179,7 +197,7 @@ void gridder(
 
                 // DFT
                 gpudift<T, S>(
-                    subgrid, Aleft, Aright, origin, uvdata, subgridspec
+                    subgrid, Aleft, Aright, origin, uvdata, subgridspec, makePSF
                 );
 
                 // Apply taper and perform FFT normalization

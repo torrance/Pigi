@@ -46,7 +46,8 @@ HostArray<T<S>, 2> invert(
     const HostSpan<WorkUnit<S>, 1> workunits,
     const GridSpec gridspec,
     const HostSpan<S, 2> taper,
-    const HostSpan<S, 2> subtaper
+    const HostSpan<S, 2> subtaper,
+    const bool makePSF
 ) {
     HostArray<T<S>, 2> img {{gridspec.Nx, gridspec.Ny}};
     HostArray<T<S>, 2> wlayer {{gridspec.Nx, gridspec.Ny}};
@@ -72,7 +73,7 @@ HostArray<T<S>, 2> invert(
         }
 
         wlayerd.zero();
-        gridder<T<S>, S>(wlayerd, wworkunits, subtaperd);
+        gridder<T<S>, S>(wlayerd, wworkunits, subtaperd, makePSF);
 
         // FFT the full wlayer
         fftExec(plan, wlayerd, HIPFFT_BACKWARD);
@@ -100,7 +101,8 @@ HostArray<StokesI<float>, 2> invert(
     const HostSpan<WorkUnit<float>, 1> workunits,
     const GridSpec gridspec,
     const HostSpan<float, 2> taper,
-    const HostSpan<float, 2> subtaper
+    const HostSpan<float, 2> subtaper,
+    bool makePSF
 );
 
 template
@@ -108,5 +110,6 @@ HostArray<StokesI<double>, 2> invert(
     const HostSpan<WorkUnit<double>, 1> workunits,
     const GridSpec gridspec,
     const HostSpan<double, 2> taper,
-    const HostSpan<double, 2> subtaper
+    const HostSpan<double, 2> subtaper,
+    bool makePSF
 );
