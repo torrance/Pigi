@@ -6,7 +6,6 @@
 #include "memory.h"
 #include "outputtypes.h"
 
-
 template <typename S>
 int getbitpix();
 
@@ -25,7 +24,7 @@ int getfitsdatatype<float>() { return TFLOAT; }
 template <>
 int getfitsdatatype<double>() { return TDOUBLE; }
 
-template <typename S>
+template <typename S> requires(std::is_floating_point<S>::value)
 void save(std::string_view fname, HostArray<S, 2>& arr) {
     // Append '!' to filename to indicate to cfitsio to overwrite existing file
     std::string fpath("!");
@@ -46,6 +45,8 @@ void save(std::string_view fname, HostArray<S, 2>& arr) {
         static_cast<long long>(arr.size()),  arr.data(), &status
     );
 
+    fits_close_file(fptr, &status);
+
     if (status != 0) {
         fits_report_error(stderr, status);
         abort();
@@ -54,9 +55,18 @@ void save(std::string_view fname, HostArray<S, 2>& arr) {
 
 template <typename S>
 void save(std::string_view fname, HostArray<StokesI<S>, 2>& stokesI) {
-    HostArray<S, 2> stokesIreal({stokesI.size(0), stokesI.size(1)});
+    HostArray<S, 2> stokesIreal(stokesI.shape());
     for (size_t i {}; i < stokesI.size(); ++i) {
         stokesIreal[i] = stokesI[i].I.real();
     }
     save(fname, stokesIreal);
+}
+
+template <typename S>
+void save(std::string_view fname, HostArray<std::complex<S>, 2>& img) {
+    HostArray<S, 2> imgreal(img.shape());
+    for (size_t i {}; i < img.size(); ++i) {
+        imgreal[i] = img[i].real();
+    }
+    save(fname, imgreal);
 }
