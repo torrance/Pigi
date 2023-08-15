@@ -1,10 +1,10 @@
 #pragma once
 
 #include <cmath>
-#include <numbers>
 
 #include "gridspec.h"
 #include "memory.h"
+#include "util.h"
 
 template <typename T>
 long double kbalpha() {
@@ -25,7 +25,7 @@ auto kaiserbessel(const GridSpec gridspec, const long double alpha = kbalpha<T>(
     HostArray<long double, 1> xDim {{gridspec.Nx}};
     HostArray<long double, 1> yDim {{gridspec.Ny}};
 
-    long double pi {std::numbers::pi_v<long double>};
+    long double pi {::pi_v<long double>};
     long double norm = std::cyl_bessel_i(0, pi * alpha);
 
     for (auto& oneDim : {&xDim, &yDim}) {

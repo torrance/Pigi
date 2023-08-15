@@ -2,7 +2,6 @@
 
 #include <complex>
 #include <limits>
-#include <numbers>
 #include <type_traits>
 
 #include <fmt/format.h>
@@ -10,10 +9,14 @@
 
 #include "gridspec.h"
 
-__device__ void sincospif(float, float*, float*);  // Supress IDE warning about device function
-__device__ void sincospi(double, double*, double*); // Suppress IDE warning about device function
+// This is a std::numbers polyfill
+// TODO: remove when we can use a more up to date standard library
+template <typename T>
+constexpr T pi_v = static_cast<T>(3.14159265358979323846264338327950288419716939937510L);
 
-#ifdef __HIPCC__
+__device__ void sincospif(float, float*, float*);  // Supress IDE warning about device function
+__device__ void sincospi(double, double*, double*);  // Suppress IDE warning about device function
+
 __device__ inline auto cispi(const float& theta) {
     float real, imag;
     sincospif(theta, &imag, &real);
@@ -25,15 +28,14 @@ __device__ inline auto cispi(const double& theta) {
     sincospi(theta, &imag, &real);
     return std::complex(real, imag);
 }
-#else
+
 template <typename T>
 __host__ inline auto cispi(const T& theta) {
-    auto pi = std::numbers::pi_v<T>;
+    auto pi = ::pi_v<T>;
     return std::complex {
         std::cos(theta * pi), std::sin(theta * pi)
     };
 }
-#endif
 
 
 template <typename T>
@@ -79,94 +81,10 @@ inline T ndash(const T l, const T m) {
 }
 
 template <typename T> requires(std::is_floating_point<T>::value)
-inline T deg2rad(const T& x) { return x * std::numbers::pi_v<T> / 180; }
+inline T deg2rad(const T& x) { return x * ::pi_v<T> / 180; }
 
 template <typename T> requires(std::is_floating_point<T>::value)
-inline T rad2deg(const T& x) { return x * 180 / std::numbers::pi_v<T>; }
-
-template <typename R>
-concept Dereferencable = requires(R a) { *a; true; };
-
-template <typename R>
-concept Incrementable = requires(R a) { ++a; };
-
-template <typename T, typename... Ts>
-class Zip {
-public:
-    template <typename... Ss>
-    class Iterator {
-    public:
-        Iterator(Ss&&... current) : current(std::make_tuple(current...)) {}
-
-        auto& operator++() requires((Incrementable<Ss> && ...)) {
-            std::apply([] (auto&... current) {
-                (++current, ...);
-            }, current);
-            return *this;
-        }
-
-        auto operator*() requires((Dereferencable<Ss> && ...)) {
-            return std::apply([this] (auto&... current) {
-                return forwardtuple(*current...);
-            }, current);
-        }
-
-        // It is no longer true that begin() and end() types are the same, so this !=
-        // operator must work with different Iterator types.
-        template <typename... Rs>
-        auto operator!=(const Iterator<Rs...>& other) const {
-            return allnotequal(
-                current, other.getCurrent(), std::index_sequence_for<Ss...>{}
-            );
-        }
-
-        const auto& getCurrent() const { return current; }
-
-    private:
-        std::tuple<Ss...> current;
-
-        template <typename... Qs, size_t... Ns> requires(sizeof...(Qs) == sizeof...(Ss))
-        bool allnotequal(
-            const std::tuple<Ss...>& lhs,
-            const std::tuple<Qs...>& rhs,
-            const std::index_sequence<Ns...>
-        ) const {
-            return (
-                true && ... && (std::get<Ns>(lhs) != std::get<Ns>(rhs))
-            );
-        }
-
-        template <typename... Rs>
-        auto forwardtuple(Rs&&... args) const {
-            return std::tuple<Rs...>{std::forward<Rs>(args)...};
-        }
-    };
-
-    template <typename S, typename... Ss>
-    Zip(S&& arg, Ss&&... args) : iters{
-        std::forward<S>(arg), std::forward<Ss>(args)...
-    } {}
-
-    auto begin() {
-        return std::apply([] (auto&&... iters) {
-            return Iterator(iters.begin()...);
-        }, iters);
-    }
-
-    auto end() {
-        return std::apply([] (auto&&... iters) {
-            return Iterator(iters.end()...);
-        }, iters);
-    }
-
-private:
-    std::tuple<T, Ts...> iters;
-};
-
-template <typename... Ts>
-auto zip(Ts&&... args) {
-    return Zip<Ts...>(std::forward<Ts>(args)...);
-}
+inline T rad2deg(const T& x) { return x * 180 / ::pi_v<T>; }
 
 template <typename T>
 auto crop(HostArray<T, 2>& img, long long edgex, long long edgey) {

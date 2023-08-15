@@ -2,6 +2,7 @@
 
 #include <array>
 #include <algorithm>
+#include <type_traits>
 #include <vector>
 
 #include <fmt/format.h>
@@ -151,7 +152,7 @@ public:
         memset(this->ptr, 0, this->size() * sizeof(T));
     }
 
-    void fill(const T& val) requires(std::same_as<HostPointer<T>, Pointer>) {
+    void fill(const T& val) requires(std::is_same<HostPointer<T>, Pointer>::value) {
         for (auto& x : (*this)) {
             x = val;
         }
@@ -159,7 +160,7 @@ public:
 
     template <typename F, typename... Ss>
     void mapInto(F f, Ss... ins) requires(
-        std::same_as<DevicePointer<T>, Pointer>
+        std::is_same<DevicePointer<T>, Pointer>::value
     ) {
         // Each input array must have the same dimensions as the output
         (shapecheck(*this, ins), ...);
@@ -192,7 +193,7 @@ class Span : public NDBase<T, N, Pointer> {
 public:
     explicit Span(std::array<long long, N> dims, T* ptr) : NDBase<T, N, Pointer>(dims, ptr) {}
 
-    Span(std::vector<T>& vec) requires(N == 1 && std::same_as<HostPointer<T>, Pointer>) :
+    Span(std::vector<T>& vec) requires(N == 1 && std::is_same<HostPointer<T>, Pointer>::value) :
         NDBase<T, N, Pointer>({static_cast<long long>(vec.size())}, vec.data())  {}
 
     // Copy assignment

@@ -239,7 +239,7 @@ PSF fitpsf(const HostArray<double, 2>& dirtypsf, const GridSpec gridspec) {
     PSF psf {
         f * gsl_vector_get(w->x, 0),
         f * gsl_vector_get(w->x, 1),
-        std::fmod(gsl_vector_get(w->x, 2), 2 * std::numbers::pi_v<double>)
+        std::fmod(gsl_vector_get(w->x, 2), 2 * ::pi_v<double>)
     };
 
     // Free

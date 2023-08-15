@@ -82,10 +82,11 @@ auto partition(
         const long long u0px {llround(upx)}, v0px {llround(vpx)};
         const auto [u0, v0] = gridspec.gridToUV<S>(u0px, v0px);
 
-        wworkunits.emplace_back(
+        // TODO: use emplace_back() when we can upgrade Clang
+        wworkunits.push_back({
             u0px, v0px, u0, v0, w0, subgridspec,
             Aterms, Aterms, std::vector<UVDatum<S>> {uvdatum}
-        );
+        });
     }
 
     // Flatten the workunits into a single vector
@@ -96,12 +97,13 @@ auto partition(
     for (auto& [_, wworkunits] : wlayers) {
         while (!wworkunits.empty()) {
             auto& workunit = wworkunits.back();
-            workunits.emplace_back(
+            // TODO: use emplace_back() when we can upgrade Clang
+            workunits.push_back({
                 workunit.u0px, workunit.v0px,
                 workunit.u0, workunit.v0, workunit.w0,
                 workunit.subgridspec, workunit.Aleft, workunit.Aright,
                 HostArray<UVDatum<S>, 1>::fromVector(workunit.data)
-            );
+            });
             wworkunits.pop_back();
         }
     }

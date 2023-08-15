@@ -1,10 +1,6 @@
-#include <chrono> // remove
 #include <cmath>
 #include <random>
-#include <ranges>
 #include <vector>
-
-#include <iostream> // remove
 
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/catch_template_test_macros.hpp>
@@ -16,7 +12,7 @@
 #include "fits.h"
 #include "invert.h"
 #include "memory.h"
-#include "mset.h"
+//#include "mset.h"
 #include "predict.h"
 #include "taper.h"
 #include "util.h"
@@ -50,7 +46,19 @@ TEST_CASE( "Arrays, Spans and H<->D transfers", "[memory]" ) {
     REQUIRE( ha[8191] == 1 );
 }
 
-TEMPLATE_TEST_CASE( "Invert", "", float, double) {
+// TEST_CASE("Measurement Set", "[mset]") {
+//     MeasurementSet mset(
+//         "/home/torrance/testdata/1215555160/1215555160.ms",
+//         {.chanlow = 0, .chanhigh = 0}
+//     );
+
+//     std::vector<UVDatum<double>> uvdata;
+//     for (auto uvdata : mset.uvdata()) {
+//         uvdata.push_back(uvdata);
+//     }
+// }
+
+TEMPLATE_TEST_CASE( "Invert", "[invert]", float, double) {
     // Config
     auto gridspec = GridSpec::fromScaleLM(1500, 1500, std::sin(deg2rad(15. / 3600)));
     auto subgridspec = GridSpec::fromScaleUV(96, 96, gridspec.scaleuv);
@@ -96,8 +104,9 @@ TEMPLATE_TEST_CASE( "Invert", "", float, double) {
                 data += ComplexLinearData<double> {phase, 0, 0, phase};
             }
 
-            uvdata64.emplace_back(
-                i, 0, u, v, w, LinearData<double>{1, 1, 1, 1}, data
+            // TODO: use emplace_back() when we can upgrade Clang
+            uvdata64.push_back(
+                {i, 0, u, v, w, LinearData<double>{1, 1, 1, 1}, data}
             );
         }
     }
@@ -140,7 +149,7 @@ TEMPLATE_TEST_CASE( "Invert", "", float, double) {
     REQUIRE( maxdiff < (std::is_same<float, TestType>::value ? 1e-5 : 2e-10) );
 }
 
-TEMPLATE_TEST_CASE("Predict", "", float, double) {
+TEMPLATE_TEST_CASE("Predict", "[predict]", float, double) {
     auto gridspec = GridSpec::fromScaleUV(2000, 2000, 1);
 
     // Create skymap
@@ -159,16 +168,17 @@ TEMPLATE_TEST_CASE("Predict", "", float, double) {
     // Create empty UVDatum
     std::vector<UVDatum<TestType>> uvdata;
     for (size_t i {}; i < 5000; ++i) {
-        double u {randfloats(gen)}, v {randfloats(gen)}, w {randfloats(gen)};
+        TestType u {randfloats(gen)}, v {randfloats(gen)}, w {randfloats(gen)};
         u = (u - 0.5) * 1000;
         v = (v - 0.5) * 1000;
         w = (w - 0.5) * 500;
 
-        uvdata.emplace_back(
+        // TODO: use emplace_back() when we can upgrade Clang
+        uvdata.push_back({
             i, 0, u, v, w,
             LinearData<TestType> {1, 1, 1, 1},
             ComplexLinearData<TestType> {0, 0, 0, 0}
-        );
+        });
     }
 
     // Calculate expected at double precision
@@ -219,11 +229,10 @@ TEMPLATE_TEST_CASE("Predict", "", float, double) {
         }
     }
 
-    using std::ranges::views::iota;
     double maxdiff {};
-    for (auto [i, x, y] : zip(iota(0), uvdata, expected)) {
-        auto diff = x.data;
-        diff -= y.data;
+    for (size_t i {}; i < uvdata.size(); ++i) {
+        auto diff = uvdata[i].data;
+        diff -= expected[i].data;
 
         maxdiff = std::max<double>(
             maxdiff,
@@ -276,9 +285,9 @@ TEST_CASE("Clean", "[clean]") {
 
     double maxdiff {};
 
-    for (auto [lhs, rhs] : zip(components, expected)) {
+    for (size_t i{}; i < expected.size(); ++i) {
         maxdiff = std::max<double>(
-            std::abs(lhs.I - rhs.I), maxdiff
+            std::abs(expected[i].I - components[i].I), maxdiff
         );
     }
     fmt::println("Max diff: {}", maxdiff);
