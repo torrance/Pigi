@@ -10,8 +10,9 @@
 #include "gsl/gsl_multifit_nlinear.h"
 #include <hip/hip_runtime.h>
 #include <hipfft/hipfft.h>
+#include <thrust/execution_policy.h>
+#include <thrust/extrema.h>
 
-#include "findabsmax.h"
 #include "hip.h"
 #include "util.h"
 
@@ -101,24 +102,36 @@ std::tuple<HostArray<StokesI<S>, 2>, size_t> major(
 
     size_t iter {};
     while (++iter < config.niter) {
-        auto [idx, maxval] = findabsmax(
-            reinterpret_cast<std::complex<S>*>(img_d.begin()),
-            reinterpret_cast<std::complex<S>*>(img_d.end())
+        // Find the device pointer to maximum value
+        StokesI<S>* maxptr = thrust::max_element(
+            thrust::device, img_d.begin(), img_d.end(), [](auto lhs, auto rhs) {
+                return std::abs(lhs.I.real()) < std::abs(rhs.I.real());
+            }
         );
+        size_t idx = maxptr - img_d.begin();
 
+        // Copy max value host -> device
+        StokesI<S> maxval;
+        HIPCHECK(
+            hipMemcpyDtoHAsync(&maxval, maxptr, sizeof(StokesI<S>), hipStreamPerThread)
+        );
+        HIPCHECK( hipStreamSynchronize(hipStreamPerThread) );
+
+        // Apply gain
         auto val = maxval.real() * static_cast<S>(config.gain);
         auto [xpx, ypx] = imgGridspec.linearToGrid(idx);
 
+        // Save component and subtract contribution from image
         components[idx] += val;
         subtractpsf<StokesI<S>, S>(
             img_d, imgGridspec, psf_d, psfGridspec, xpx, ypx, val
         );
 
         if (iter % 1000 == 0) fmt::println(
-            "   [{} iteration] {:.2g} Jy peak found", iter, std::abs(maxval)
+            "   [{} iteration] {:.2g} Jy peak found", iter, std::abs(maxval.I)
         );
 
-        if (std::abs(maxval) <= threshold) break;
+        if (std::abs(maxval.I) <= threshold) break;
     }
 
     img = img_d;

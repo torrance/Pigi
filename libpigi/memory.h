@@ -213,6 +213,8 @@ using DeviceSpan = Span<T, N, DevicePointer<T>>;
 template <typename T, int N, typename Pointer>
 class Array : public NDBase<T, N, Pointer> {
 public:
+    explicit Array() = default;
+
     explicit Array(const std::array<long long, N> dims) : NDBase<T, N, Pointer>(dims) {
         malloc(this->ptr, this->size() * sizeof(T));
         this->zero();
