@@ -15,7 +15,7 @@ public:
         int chanhigh {-1};
     };
 
-    MeasurementSet(std::string fname, const Config config) :
+    MeasurementSet(const std::string fname, const Config config) :
         tbl(fname), chanlow(config.chanlow), chanhigh(config.chanhigh) {
 
         // Get channel / freq information

@@ -38,7 +38,7 @@ auto partition(
     GridSpec subgridspec,
     int padding,
     int wstep,
-    HostSpan<ComplexLinearData<S>, 2> Aterms
+    HostArray<ComplexLinearData<S>, 2>& Aterms
 ) {
     // Temporarily store workunits in a map to reduce search space duirng partitioning
     std::unordered_map<
@@ -47,7 +47,7 @@ auto partition(
     long long radius {static_cast<long long>(subgridspec.Nx) / 2 - padding};
 
     for (UVDatum<S> uvdatum : uvdata) {
-        // Find equivalient pixel coordinates of (u,v) position
+        // Find equivalent pixel coordinates of (u,v) position
         const auto [upx, vpx] = gridspec.UVtoGrid(uvdatum.u, uvdatum.v);
 
         // Snap to center of nearest wstep window. Note: for a given wstep,

@@ -180,16 +180,22 @@ struct StokesI {
         return ComplexLinearData<T> {I, 0, 0, I};
     }
 
-    template<typename S>
     __host__ __device__
-    inline auto& operator*=(const S x) {
-        I *= x;
+    inline auto& operator +=(const StokesI<T> x) {
+        I += x.I;
         return *this;
     }
 
     __host__ __device__
-    inline auto& operator +=(const StokesI<T> x) {
-        I += x.I;
+    inline auto& operator -=(const StokesI<T> x) {
+        I -= x.I;
+        return *this;
+    }
+
+    template<typename S>
+    __host__ __device__
+    inline auto& operator*=(const S x) {
+        I *= x;
         return *this;
     }
 
@@ -199,6 +205,9 @@ struct StokesI {
         I /= x;
         return *this;
     }
+
+    __host__ __device__
+    inline T real() { return I.real(); }
 
     __host__ __device__
     static StokesI<T> fromBeam(

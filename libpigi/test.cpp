@@ -1,13 +1,19 @@
+#include <chrono> // remove
 #include <cmath>
 #include <random>
+#include <ranges>
 #include <vector>
+
+#include <iostream> // remove
 
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/catch_template_test_macros.hpp>
 #include <fmt/format.h>
 
+#include "clean.h"
 #include "dft.h"
 #include "degridop.h"
+#include "fits.h"
 #include "invert.h"
 #include "memory.h"
 #include "mset.h"
@@ -46,7 +52,7 @@ TEST_CASE( "Arrays, Spans and H<->D transfers" ) {
 
 TEMPLATE_TEST_CASE( "Invert", "", float, double) {
     // Config
-    auto gridspec = GridSpec::fromScaleLM(1500, 1500, deg2rad(15. / 3600));
+    auto gridspec = GridSpec::fromScaleLM(1500, 1500, std::sin(deg2rad(15. / 3600)));
     auto subgridspec = GridSpec::fromScaleUV(96, 96, gridspec.scaleuv);
     int padding = 18;
     int wstep = 25;
@@ -67,9 +73,9 @@ TEMPLATE_TEST_CASE( "Invert", "", float, double) {
 
         // Create a list of Ra/Dec sources
         std::vector<std::tuple<double, double>> sources;
-        for (size_t i {}; i < 500; ++i) {
-            double ra { deg2rad((rand(gen) - 0.5) * 30) };
-            double dec { deg2rad((rand(gen) - 0.5) * 30) };
+        for (size_t i {}; i < 250; ++i) {
+            double ra { deg2rad((rand(gen) - 0.5) * 5) };
+            double dec { deg2rad((rand(gen) - 0.5) * 5) };
             sources.emplace_back(ra, dec);
         }
 
@@ -113,7 +119,7 @@ TEMPLATE_TEST_CASE( "Invert", "", float, double) {
     }
 
     auto workunits = partition(
-        uvdata, gridspec, subgridspec, padding, wstep, Aterms.asSpan()
+        uvdata, gridspec, subgridspec, padding, wstep, Aterms
     );
 
     auto img = invert<StokesI, TestType>(
@@ -132,6 +138,29 @@ TEMPLATE_TEST_CASE( "Invert", "", float, double) {
     }
     fmt::println("Max diff: {:g}", maxdiff);
     REQUIRE( maxdiff < (std::is_same<float, TestType>::value ? 1e-5 : 2e-10) );
+
+    // auto psf = invert<StokesI, TestType>(
+    //     workunits, gridspec, taper, subtaper, true
+    // );
+
+    // GridSpec gridspecCropped {1000, 1000, 0, 0};
+    // img = crop(img, 250);
+    // psf = crop(psf, 250);
+
+    // save("/home/torrance/img.fits", img);
+    // save("/home/torrance/psf.fits", psf);
+
+    // auto begin = std::chrono::steady_clock::now();
+    // auto iters = clean::major(
+    //     img, gridspecCropped, psf, gridspecCropped, {.mgain = 0.8, .niter = 100000}
+    // );
+    // auto end = std::chrono::steady_clock::now();
+    // fmt::println("Total clean cycles: {} Duration: {} ms", iters, std::chrono::duration_cast<std::chrono::milliseconds>(end - begin).count());
+
+    // save("/home/torrance/residual.fits", img);
+
+    // bool ok { false };
+    // std::cin >> ok;
 }
 
 TEMPLATE_TEST_CASE("Predict", "", float, double) {
@@ -199,7 +228,7 @@ TEMPLATE_TEST_CASE("Predict", "", float, double) {
     Aterms.fill({1, 0, 0, 1});
 
     auto workunits = partition(
-        uvdata, gridspec, subgridspec, padding, wstep, Aterms.asSpan()
+        uvdata, gridspec, subgridspec, padding, wstep, Aterms
     );
 
     predict<StokesI<TestType>, TestType>(
@@ -213,10 +242,11 @@ TEMPLATE_TEST_CASE("Predict", "", float, double) {
         }
     }
 
+    using std::ranges::views::iota;
     double maxdiff {};
-    for (size_t i {}; i < uvdata.size(); ++i) {
-        auto diff = expected[i].data;
-        diff -= uvdata[i].data;
+    for (auto [i, x, y] : zip(iota(0), uvdata, expected)) {
+        auto diff = x.data;
+        diff -= y.data;
 
         maxdiff = std::max<double>(
             maxdiff,
@@ -227,4 +257,63 @@ TEMPLATE_TEST_CASE("Predict", "", float, double) {
 
     fmt::println("Prediction max diff: {}", maxdiff);
     REQUIRE( maxdiff < (std::is_same<float, TestType>::value ? 1e-3 : 2e-9) );
+}
+
+TEMPLATE_TEST_CASE("Clean", "[clean]", double) {
+    // Config
+    const size_t N {3000};
+    const long long imgPadding { static_cast<long long>((1.5 * N - N) / 2) };
+
+    auto paddedGridspec = GridSpec::fromScaleLM(N + 2 * imgPadding, N + 2 * imgPadding, std::sin(deg2rad(15. / 3600)));
+    auto subgridspec = GridSpec::fromScaleUV(96, 96, paddedGridspec.scaleuv);
+    int padding = 18;
+    int wstep = 100;
+
+    auto taper = kaiserbessel<TestType>(paddedGridspec);
+    auto subtaper = kaiserbessel<TestType>(subgridspec);
+
+    HostArray<ComplexLinearData<TestType>, 2> Aterms({subgridspec.Nx, subgridspec.Ny});
+    Aterms.fill({1, 0, 0, 1});
+
+    MeasurementSet mset("/home/torrance/testdata/1215555160/1215555160.ms", {.chanlow = 0, .chanhigh = 192});
+
+    std::vector<UVDatum<double>> uvdata;
+    for (auto uvdatum : mset.uvdata()) {
+        uvdata.push_back(uvdatum);
+    }
+
+    for (auto& uvdatum : uvdata) {
+        uvdatum.weights = {1, 1, 1, 1};
+        uvdatum.weights /= uvdata.size();
+    }
+
+    auto workunits = partition(
+        uvdata, paddedGridspec, subgridspec, padding, wstep, Aterms
+    );
+
+    auto img = invert<StokesI, TestType>(workunits, paddedGridspec, taper, subtaper);
+    auto dirtypsf = invert<StokesI, TestType>(workunits, paddedGridspec, taper, subtaper, true);
+
+    auto gridspec = GridSpec::fromScaleLM(N, N, paddedGridspec.scalelm);
+    img = crop(img, imgPadding);
+    dirtypsf = crop(dirtypsf, imgPadding);
+
+    save("/home/torrance/img-dirty.fits", img);
+    save("/home/torrance/psf-dirty.fits", dirtypsf);
+
+    HostArray<double, 2> dirtypsf_double(dirtypsf.shape());
+    for (auto [dst, src] : zip(dirtypsf_double, dirtypsf)) {
+        dst = src.I.real();
+    }
+
+    auto [components, iters] = clean::major(img, gridspec, dirtypsf, gridspec, {.mgain=0.85});
+    save("/home/torrance/components.fits", components);
+
+    auto psf = clean::fitpsf(dirtypsf_double, gridspec).template draw<std::complex<double>>(gridspec);
+    save("/home/torrance/psf.fits", psf);
+
+    clean::convolve(components, psf);
+    img += components;
+    save("/home/torrance/img.fits", img);
+
 }

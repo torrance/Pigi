@@ -96,13 +96,28 @@ public:
     NDBase(std::array<long long, N> dims) : dims(dims) {}
     NDBase(std::array<long long, N> dims, T* ptr) : dims(dims), ptr(ptr) {}
 
+    // Copy constructor
+    NDBase(const NDBase& other) = default;
+
     // Copy assignment
+    NDBase& operator=(const NDBase& other) {
+        shapecheck(*this, other);
+        memcpy(this->ptr, other.ptr, this->size() * sizeof(T));
+        HIPCHECK( hipStreamSynchronize(hipStreamPerThread) );
+        return (*this);
+    }
+
+    // Copy assignment from other pointer type
     template <typename S>
     NDBase& operator=(const NDBase<T, N, S>& other) {
         shapecheck(*this, other);
         memcpy(this->ptr, other.ptr, this->size() * sizeof(T));
+        HIPCHECK( hipStreamSynchronize(hipStreamPerThread) );
         return (*this);
     }
+
+    NDBase(NDBase&& other) = delete;
+    NDBase& operator=(NDBase&& other) = delete;
 
     __host__ __device__ inline T operator[](size_t i) const { return ptr[i]; }
     __host__ __device__ inline T& operator[](size_t i) { return ptr[i]; }
@@ -203,10 +218,15 @@ public:
     }
 
     // Explicit copy constructor
+    explicit Array(const Array& other) : Array(other.shape()) {
+        NDBase<T, N, Pointer>::operator=(other);
+    }
+
+    // Explicit copy constructor from other pointer type
     template <typename S>
     explicit Array(const NDBase<T, N, S>& other) : Array(other.shape()) { (*this) = other; }
 
-    // Copy assignment
+    // Copy assignment from other pointer type
     template <typename S>
     Array& operator=(const NDBase<T, N, S>& other) {
         NDBase<T, N, Pointer>::operator=(other);
