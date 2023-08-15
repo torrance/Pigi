@@ -8,7 +8,7 @@
 
 #include "clean.h"
 #include "dft.h"
-#include "degridop.h"
+#include "degridder.h"
 #include "fits.h"
 #include "invert.h"
 #include "memory.h"

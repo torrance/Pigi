@@ -7,12 +7,13 @@
 #include <hipfft/hipfft.h>
 
 #include "fft.h"
-#include "degridop.h"
 #include "hip.h"
 #include "memory.h"
 #include "util.h"
 #include "uvdatum.h"
 #include "workunit.h"
+
+enum class DegridOp {Replace, Subtract, Add};
 
 template <typename S>
 __host__ __device__ inline void degridop_replace(
