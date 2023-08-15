@@ -106,15 +106,13 @@ std::tuple<HostArray<StokesI<S>, 2>, size_t> major(
             reinterpret_cast<std::complex<S>*>(img_d.end())
         );
 
-        components[idx] += maxval;
-
+        auto val = maxval.real() * static_cast<S>(config.gain);
         auto [xpx, ypx] = imgGridspec.linearToGrid(idx);
 
+        components[idx] += val;
         subtractpsf<StokesI<S>, S>(
-            img_d, imgGridspec, psf_d, psfGridspec, xpx, ypx,
-            maxval.real() * static_cast<S>(config.gain)
+            img_d, imgGridspec, psf_d, psfGridspec, xpx, ypx, val
         );
-        HIPCHECK( hipStreamSynchronize(hipStreamPerThread) );
 
         if (iter % 1000 == 0) fmt::println(
             "   [{} iteration] {:.2g} Jy peak found", iter, std::abs(maxval)
@@ -124,7 +122,6 @@ std::tuple<HostArray<StokesI<S>, 2>, size_t> major(
     }
 
     img = img_d;
-    HIPCHECK( hipStreamSynchronize(hipStreamPerThread) );
 
     maxInit = 0;
     for (auto& val : img) {
@@ -166,7 +163,7 @@ int gaussian(const gsl_vector* params, void* data, gsl_vector* residual) {
     return GSL_SUCCESS;
 }
 
-PSF fitpsf(HostArray<double, 2>& dirtypsf, GridSpec gridspec) {
+PSF fitpsf(const HostArray<double, 2>& dirtypsf, const GridSpec gridspec) {
     // Linear fit method
     const gsl_multifit_nlinear_type* T = gsl_multifit_nlinear_trust;
 
@@ -186,7 +183,7 @@ PSF fitpsf(HostArray<double, 2>& dirtypsf, GridSpec gridspec) {
     fdf.df = NULL; // using default finite-difference Jacobian
     fdf.n = dirtypsf.size();
     fdf.p = params0.size(); // 3 parameters to solve for
-    fdf.params = &dirtypsf;
+    fdf.params = (void*) &dirtypsf;
 
     // Initialize the workspace with function and initial params guess
     int status;
@@ -286,13 +283,12 @@ void convolve(HostArray<T, 2>& img, const HostArray<S, 2>& kernel) {
     }
 
     // Create fft plans
-    // GridSpec gridspec {img_padded.size(0), img_padded.size(1), 0, 0};
     auto planImg = fftPlan<T>(gridspec_padded);
     auto planKernel = fftPlan<S>(gridspec_padded);
 
     // Send to device
-    DeviceArray<T, 2> img_d(img_padded);
-    DeviceArray<S, 2> kernel_d(kernel_padded);
+    DeviceArray<T, 2> img_d {img_padded};
+    DeviceArray<S, 2> kernel_d {kernel_padded};
 
     // FT forward
     fftExec(planImg, img_d, HIPFFT_FORWARD);
@@ -308,7 +304,6 @@ void convolve(HostArray<T, 2>& img, const HostArray<S, 2>& kernel) {
 
     // Copy back from device
     img_padded = img_d;
-    HIPCHECK( hipStreamSynchronize(hipStreamPerThread) );
 
     img = crop(img_padded, xpadding, ypadding);
 }

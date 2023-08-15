@@ -61,7 +61,7 @@ struct PSF {
     }
 };
 
-PSF fitpsf(HostArray<double, 2>& dirtypsf, GridSpec gridspec);
+PSF fitpsf(const HostArray<double, 2>& dirtypsf, const GridSpec gridspec);
 
 template <typename T, typename S>
 void convolve(HostArray<T, 2>& img, const HostArray<S, 2>& kernel);
