@@ -28,6 +28,6 @@ find_library(cfitsio NAMES cfitsio REQUIRED)
 find_library(fmt NAMES fmt REQUIRED)
 find_library(hipfft NAMES hipfft HINTS ${hippath}/lib REQUIRED)
 
-add_executable(test test.cpp)
+add_executable(test src/test.cpp)
 target_compile_options(test PRIVATE ${hipcxxflags})
 target_link_libraries(test PRIVATE ${casa_casa} ${casa_tables} ${gsl} ${cfitsio} ${fmt} ${hipfft} Catch2::Catch2WithMain)
