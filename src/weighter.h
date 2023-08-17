@@ -80,7 +80,7 @@ public:
         norm.yy = norm.yy > 0 ? 1 / norm.yy : 0;
     }
 
-    inline void operator()(UVDatum<T>& uvdatum) override {
+    inline void operator()(UVDatum<T>& uvdatum) const override {
         uvdatum.data *= norm;
     }
 
