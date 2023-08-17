@@ -17,6 +17,7 @@
 #include "taper.h"
 #include "util.h"
 #include "uvdatum.h"
+#include "weighter.h"
 #include "workunit.h"
 
 
@@ -124,10 +125,8 @@ TEMPLATE_TEST_CASE( "Invert", "[invert]", float, double) {
     }
 
     // Weight naturally
-    for (auto& uvdatum : uvdata64) {
-        uvdatum.weights = {1, 1, 1, 1};
-        uvdatum.weights /= uvdata64.size();
-    }
+    const Natural<double> weighter(uvdata64, gridspec);
+    applyWeights(weighter, uvdata64);
 
     // Calculate expected at double precision
     HostArray<StokesI<double>, 2> expected({gridspec.Nx, gridspec.Ny});

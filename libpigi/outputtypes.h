@@ -49,6 +49,16 @@ struct LinearData {
 
     template <typename S>
     __host__ __device__
+    inline auto& operator/=(const LinearData<S>& other) {
+        xx /= other.xx;
+        yx /= other.yx;
+        xy /= other.xy;
+        yy /= other.yy;
+        return *this;
+    }
+
+    template <typename S>
+    __host__ __device__
     inline auto& operator+=(const LinearData<S>& other) {
         xx += other.xx;
         yx += other.yx;
@@ -128,6 +138,12 @@ struct LinearData {
     inline auto isfinite() const {
         return ::isfinite(xx) && ::isfinite(yx) && ::isfinite(yx) && ::isfinite(yy);
     }
+
+    auto begin() { return &xx;}
+    auto end() { return &yy; }
+
+    auto operator[](size_t i) const { return begin()[i]; }
+    auto& operator[](size_t i) { return begin()[i]; }
 
     __host__ __device__
     static LinearData<T> fromBeam(

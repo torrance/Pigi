@@ -58,7 +58,7 @@ struct GridSpec {
     }
 
     template <typename S>
-    inline auto UVtoGrid(S u, S v) {
+    inline auto UVtoGrid(S u, S v) const {
         return std::make_tuple(
             static_cast<S>(u / scaleuv + Nx / 2),
             static_cast<S>(v / scaleuv + Ny / 2)
@@ -66,7 +66,7 @@ struct GridSpec {
     }
 
     template <typename S>
-    inline auto gridToUV(auto upx, auto vpx) {
+    inline auto gridToUV(auto upx, auto vpx) const {
         return std::make_tuple(
             static_cast<S>((upx - Nx / 2) * scaleuv),
             static_cast<S>((vpx - Ny / 2) * scaleuv)
