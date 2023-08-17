@@ -1,1 +1,0 @@
-JULIA_LOAD_PATH="${PWD}:${PWD}/benchmark:@stdlib" julia --threads=auto benchmark/runbenchmarks.jl

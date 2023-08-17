@@ -1,3 +1,0 @@
-[deps]
-BenchmarkTools = "6e4b80f9-dd63-53aa-95a3-0cdb28fa8baf"
-StructArrays = "09ab397b-f2b6-538f-b94a-2f83cf4a842a"
