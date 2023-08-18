@@ -80,16 +80,6 @@ void memcpy(DevicePointer<T> dst, DevicePointer<T> src, size_t sz) {
     );
 }
 
-template <typename T>
-void memset(HostPointer<T> ptr, int val, size_t sz) {
-    memset(static_cast<void*>(ptr), val, sz);
-}
-
-template <typename T>
-void memset(DevicePointer<T> ptr, int val, size_t sz) {
-    HIPCHECK( hipMemsetAsync(ptr, val, sz, hipStreamPerThread) );
-}
-
 template <typename T, int N, typename Pointer>
 class NDBase {
 public:
@@ -149,7 +139,9 @@ public:
     auto shape() const { return dims; }
 
     void zero() {
-        memset(this->ptr, 0, this->size() * sizeof(T));
+        HIPCHECK(
+            hipMemsetAsync(this->ptr, 0, this->size() * sizeof(T), hipStreamPerThread)
+        );
     }
 
     void fill(const T& val) requires(std::is_same<HostPointer<T>, Pointer>::value) {
@@ -218,6 +210,7 @@ public:
     explicit Array(const std::array<long long, N> dims) : NDBase<T, N, Pointer>(dims) {
         malloc(this->ptr, this->size() * sizeof(T));
         this->zero();
+        HIPCHECK( hipStreamSynchronize(hipStreamPerThread) );
     }
 
     // Explicit copy constructor
@@ -237,10 +230,10 @@ public:
     }
 
     // Move constructor
-    Array(Array<T, N, Pointer>&& other) { (*this) = std::move(other); }
+    Array(Array<T, N, Pointer>&& other) noexcept { (*this) = std::move(other); }
 
     // Move assignment
-    Array& operator=(Array<T, N, Pointer>&& other) {
+    Array& operator=(Array<T, N, Pointer>&& other) noexcept {
         using std::swap;
         swap(this->dims, other.dims);
         swap(this->ptr, other.ptr);
@@ -249,7 +242,11 @@ public:
 
     // Destructor
     ~Array() {
-        if (this->ptr) HIPCHECK( hipFreeAsync(this->ptr, hipStreamPerThread) );
+        if (this->ptr) {
+            HIPCHECK( hipFreeAsync(this->ptr, hipStreamPerThread) );
+            HIPCHECK( hipStreamSynchronize(hipStreamPerThread) );
+        }
+        this->ptr = 0;
     }
 
     auto asSpan() {
