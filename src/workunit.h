@@ -93,7 +93,7 @@ auto partition(
     // Also swap out the data storage from vector to 1D HostArray
     // since this is a pinned allocation and makes D->H data transfers
     // in the gridder much faster.
-    std::vector<WorkUnit< S, HostArray<UVDatum<S>, 1> >> workunits;
+    std::vector<WorkUnit<S>> workunits;
     for (auto& [_, wworkunits] : wlayers) {
         while (!wworkunits.empty()) {
             auto& workunit = wworkunits.back();
