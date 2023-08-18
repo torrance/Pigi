@@ -8,6 +8,7 @@
 #include <hip/hip_runtime.h>
 
 #include "gridspec.h"
+#include "memory.h"
 
 // This is a std::numbers polyfill
 // TODO: remove when we can use a more up to date standard library
