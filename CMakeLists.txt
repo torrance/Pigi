@@ -7,6 +7,11 @@ set(CMAKE_CXX_FLAGS "-Wall -Wextra -Wpedantic")
 
 project(Pigi)
 
+# Default build = Release
+if(NOT CMAKE_BUILD_TYPE)
+    set(CMAKE_BUILD_TYPE "Release")
+endif()
+
 # Find hipconfig
 find_program(hipconfig hipconfig REQUIRED)
 
