@@ -48,7 +48,7 @@ TEST_CASE( "Arrays, Spans and H<->D transfers", "[memory]" ) {
 }
 
 TEST_CASE("Measurement Set & Partition", "[mset]") {
-    auto gridspec = GridSpec::fromScaleLM(1000, 1000, std::sin(deg2rad(15. / 60)));
+    auto gridspec = GridSpec::fromScaleLM(1000, 1000, std::sin(deg2rad(15. / 3600)));
     auto subgridspec = GridSpec::fromScaleUV(96, 96, gridspec.scaleuv);
 
     HostArray<ComplexLinearData<double>, 2> Aterms({96, 96});
@@ -60,7 +60,7 @@ TEST_CASE("Measurement Set & Partition", "[mset]") {
     );
 
     auto workunits = partition(
-        *mset.uvdata(), gridspec, subgridspec, 18, 25, Aterms
+        mset, gridspec, subgridspec, 18, 25, Aterms
     );
 
     size_t n {};
