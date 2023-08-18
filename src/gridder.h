@@ -180,8 +180,7 @@ void gridder(
             // Make FFT plan
             auto plan = fftPlan<T>(subgridspec);
 
-            while (auto maybe = workunitsChannel.pop())
-            {
+            while (auto maybe = workunitsChannel.pop()) {
                 // Get next workunit
                 const auto workunit = *maybe;
 
