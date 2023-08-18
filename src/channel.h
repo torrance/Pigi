@@ -10,28 +10,6 @@ class Channel {
 public:
     enum class State { closed, open };
 
-    class Iterator {
-    public:
-        using iterator_category = std::forward_iterator_tag;
-
-        Iterator() = default;
-        Iterator(Channel<T>& chan) : chan(&chan), val(chan.pop()) {}
-
-        auto operator*() { return std::move(*val); }
-        auto operator++() {
-            val = chan->pop();
-            return *this;
-        }
-
-        bool operator!=(const Iterator& other) const {
-            return (bool) val != (bool) other.val;
-        }
-
-    private:
-        Channel<T>* chan {};
-        std::optional<T> val {};
-    };
-
     Channel(size_t buffersize = 0) : buffersize(buffersize) {};
     Channel(const Channel<T>&) = delete;
     Channel& operator=(const Channel<T>&) = delete;
@@ -100,9 +78,6 @@ public:
         cv_pushed.notify_one();
         return true;
     }
-
-    auto begin() { return Iterator(*this); }
-    auto end() { return Iterator(); }
 
 private:
     size_t buffersize {};
