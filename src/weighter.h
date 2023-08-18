@@ -35,7 +35,7 @@
 template <typename T>
 class Weighter {
 public:
-    virtual void operator()(UVDatum<T>&) const;
+    virtual void operator()(UVDatum<T>&) const {};
 };
 
 template <typename T, typename R>
