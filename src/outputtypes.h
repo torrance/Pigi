@@ -14,7 +14,10 @@ struct LinearData {
 
     template <typename S>
     explicit operator LinearData<S>() const {
-        return LinearData<S> {(S) xx, (S) yx, (S) xy, (S) yy };
+        return LinearData<S> {
+            static_cast<S>(xx), static_cast<S>(yx),
+            static_cast<S>(xy), static_cast<S>(yy)
+        };
     }
 
     template <typename S>

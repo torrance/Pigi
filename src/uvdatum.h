@@ -15,9 +15,10 @@ struct alignas(8) UVDatum {
     template <typename S>
     explicit operator UVDatum<S>() const {
         return UVDatum<S> {
-            row, chan, (S) u, (S) v, (S) w,
-            (LinearData<S>) weights,
-            (ComplexLinearData<S>) data
+            row, chan,
+            static_cast<S>(u), static_cast<S>(v), static_cast<S>(w),
+            static_cast<LinearData<S>>(weights),
+            static_cast<ComplexLinearData<S>>(data)
         };
     }
 };
