@@ -1,7 +1,9 @@
 #pragma once
 
+#include <algorithm>
 #include <cmath>
 #include <complex>
+#include <numeric>
 #include <unordered_map>
 #include <vector>
 
@@ -107,5 +109,18 @@ auto partition(
             wworkunits.pop_back();
         }
     }
+
+    // Print some stats
+    std::vector<size_t> sizes;
+    for (const auto& workunit : workunits) sizes.push_back(workunit.data.size());
+
+    std::sort(sizes.begin(), sizes.end());
+    auto median = sizes[sizes.size() / 2];
+    auto mean = std::accumulate(sizes.begin(), sizes.end(), 0) / sizes.size();
+    fmt::println(
+        "Partitioning complete: {} workunits, size min {} < (mean {} median {}) < max {}",
+        sizes.size(), sizes.front(), mean, median, sizes.back()
+    );
+
     return workunits;
 }
