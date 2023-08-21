@@ -44,4 +44,5 @@ target_link_libraries(test PRIVATE ${casa_casa} ${casa_tables} ${gsl} ${cfitsio}
 
 add_executable(benchmark src/benchmark.cpp)
 target_compile_options(benchmark PRIVATE ${hipcxxflags})
+target_include_directories(benchmark PRIVATE ${fmt_INCLUDE_DIR} ${gsl_INCLUDE_DIR} ${thrust_INCLUDE_DIR} ${cfitsio_INCLUDE_DIR} ${casa_INCLUDE_DIRS})
 target_link_libraries(benchmark PRIVATE ${casa_casa} ${casa_tables} ${gsl} ${cfitsio} ${fmt} ${hipfft} Catch2::Catch2WithMain)
