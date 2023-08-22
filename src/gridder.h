@@ -167,7 +167,7 @@ void gridder(
     for (const auto workunit : workunits) { workunitsChannel.push(workunit); }
     workunitsChannel.close();
 
-    // Ensure all stream operators are complete before spanwing new streams
+    // Ensure all stream operators are complete before spawning new streams
     HIPCHECK( hipStreamSynchronize(hipStreamPerThread) );
 
     std::vector<std::thread> threads;
@@ -180,8 +180,8 @@ void gridder(
             // Make FFT plan
             auto plan = fftPlan<T>(subgridspec);
 
-            while (auto maybe = workunitsChannel.pop()) {
-                // Get next workunit
+            while (auto  maybe = workunitsChannel.pop()) {
+                // maybe is a std::optional; let's get the value
                 const auto workunit = *maybe;
 
                 const UVWOrigin origin {workunit->u0, workunit->v0, workunit->w0};

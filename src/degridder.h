@@ -6,6 +6,7 @@
 #include <hip/hip_runtime.h>
 #include <hipfft/hipfft.h>
 
+#include "channel.h"
 #include "fft.h"
 #include "hip.h"
 #include "memory.h"
@@ -170,31 +171,54 @@ void degridder(
 
     auto plan = fftPlan<ComplexLinearData<S>>(workunits.front()->subgridspec);
 
-    for (auto& workunit : workunits) {
-        // Transfer data to device and retrieve A terms
-        DeviceArray<UVDatum<S>, 1> uvdata {workunit->data};
-        const auto& Aleft = Aterms.at(workunit->Aleft.data());
-        const auto& Aright = Aterms.at(workunit->Aright.data());
+    // Create and enqueue the work units
+    Channel<WorkUnit<S>*> workunitsChannel;
+    for (auto workunit : workunits) { workunitsChannel.push(workunit); }
+    workunitsChannel.close();
 
-        // Allocate subgrid and extract from grid
-        auto subgrid = extractSubgrid(grid, *workunit);
+    // Ensure all stream operators are complete before spawning new streams
+    HIPCHECK( hipStreamSynchronize(hipStreamPerThread) );
 
-        fftExec(plan, subgrid, HIPFFT_BACKWARD);
+    std::vector<std::thread> threads;
+    for (
+        size_t i {};
+        i < std::min<size_t>(workunits.size(), std::thread::hardware_concurrency());
+        ++i
+    ) {
+        threads.emplace_back([&] {
+            while (auto maybe = workunitsChannel.pop()) {
+                // maybe is a std::optional; let's get the value
+                auto workunit = *maybe;
 
-        // Apply aterms, taper and normalize post-FFT
-        subgrid.mapInto([norm = subgrid.size()] __device__ (auto cell, auto Aleft, auto Aright, auto t) {
-            return cell.lmul(Aleft).rmul(Aright.adjoint()) *= (t / norm);
-        }, subgrid.asSpan(), Aleft.asSpan(), Aright.asSpan(), subtaper);
+                // Transfer data to device and retrieve A terms
+                DeviceArray<UVDatum<S>, 1> uvdata {workunit->data};
+                const auto& Aleft = Aterms.at(workunit->Aleft.data());
+                const auto& Aright = Aterms.at(workunit->Aright.data());
 
-        gpudft<S>(
-            uvdata,
-            {workunit->u0, workunit->v0, workunit->w0},
-            subgrid, workunit->subgridspec, degridop
-        );
+                // Allocate subgrid and extract from grid
+                auto subgrid = extractSubgrid(grid, *workunit);
 
-        // Transfer data back to host
-        workunit->data = uvdata;
+                fftExec(plan, subgrid, HIPFFT_BACKWARD);
 
-        HIPCHECK( hipStreamSynchronize(hipStreamPerThread) );
+                // Apply aterms, taper and normalize post-FFT
+                subgrid.mapInto([norm = subgrid.size()] __device__ (auto cell, auto Aleft, auto Aright, auto t) {
+                    return cell.lmul(Aleft).rmul(Aright.adjoint()) *= (t / norm);
+                }, subgrid.asSpan(), Aleft.asSpan(), Aright.asSpan(), subtaper);
+
+                gpudft<S>(
+                    uvdata,
+                    {workunit->u0, workunit->v0, workunit->w0},
+                    subgrid, workunit->subgridspec, degridop
+                );
+
+                // Transfer data back to host
+                workunit->data = uvdata;
+
+                // Ensure we're synced before anything goes out of scope
+                HIPCHECK( hipStreamSynchronize(hipStreamPerThread) );
+            }
+        });
     }
+
+    for (auto& t : threads) { t.join(); }
 }
