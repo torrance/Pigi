@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.10)
 
-set(CMAKE_CXX_COMPILER "/opt/rocm/bin/hipcc")
+find_program(CMAKE_CXX_COMPILER "hipcc" HINTS "/opt/rocm/bin")
 set(CMAKE_CXX_STANDARD "20")
 set(CMAKE_CXX_STANDARD_REQUIRED True)
 set(CMAKE_CXX_FLAGS "-Wall -Wextra -Wpedantic")
