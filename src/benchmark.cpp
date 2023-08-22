@@ -1,6 +1,7 @@
 #include <algorithm>
 #include <chrono>
 #include <cmath>
+#include <cstdlib>
 #include <functional>
 #include <numeric>
 #include <thread>
@@ -19,6 +20,8 @@
 #include "taper.h"
 #include "uvdatum.h"
 #include "workunit.h"
+
+const char* TESTDATA = getenv("TESTDATA");
 
 template <typename F>
 auto simple_benchmark(std::string_view name, const int N, const F f) {
@@ -59,6 +62,8 @@ auto simple_benchmark(std::string_view name, const int N, const F f) {
 }
 
 TEST_CASE("MSet reading and paritioning", "[io]") {
+    if (!TESTDATA) { SKIP("TESTDATA path not provided"); }
+
     auto gridspec = GridSpec::fromScaleLM(8000, 8000, std::sin(deg2rad(15. / 3600)));
     auto subgridspec = GridSpec::fromScaleUV(96, 96, gridspec.scaleuv);
 
@@ -66,7 +71,7 @@ TEST_CASE("MSet reading and paritioning", "[io]") {
     Aterms.fill({1, 0, 0, 1});
 
     MeasurementSet mset(
-        "/home/torrance/testdata/1215555160/1215555160.ms",
+        TESTDATA,
         {.chanlow = 0, .chanhigh = 191}
     );
 
@@ -84,6 +89,8 @@ TEST_CASE("MSet reading and paritioning", "[io]") {
 }
 
 TEMPLATE_TEST_CASE("Invert", "[invert]", float, double) {
+    if (!TESTDATA) { SKIP("TESTDATA path not provided"); }
+
     auto gridspec = GridSpec::fromScaleLM(8000, 8000, std::sin(deg2rad(15. / 3600)));
     auto subgridspec = GridSpec::fromScaleUV(96, 96, gridspec.scaleuv);
 
@@ -94,8 +101,8 @@ TEMPLATE_TEST_CASE("Invert", "[invert]", float, double) {
     Aterms.fill({1, 0, 0, 1});
 
     MeasurementSet mset(
-        "/home/torrance/testdata/1215555160/1215555160.ms",
-        {.chanlow = 0, .chanhigh = 11}
+        TESTDATA,
+        {.chanlow = 0, .chanhigh = 383}
     );
 
     // Convert to TestType precision
@@ -114,6 +121,8 @@ TEMPLATE_TEST_CASE("Invert", "[invert]", float, double) {
 }
 
 TEMPLATE_TEST_CASE("Predict", "[predict]", float, double) {
+    if (!TESTDATA) { SKIP("TESTDATA path not provided"); }
+
     auto gridspec = GridSpec::fromScaleLM(8000, 8000, std::sin(deg2rad(15. / 3600)));
     auto subgridspec = GridSpec::fromScaleUV(96, 96, gridspec.scaleuv);
 
@@ -124,8 +133,8 @@ TEMPLATE_TEST_CASE("Predict", "[predict]", float, double) {
     Aterms.fill({1, 0, 0, 1});
 
     MeasurementSet mset(
-        "/home/torrance/testdata/1215555160/1215555160.ms",
-        {.chanlow = 0, .chanhigh = 11}
+        TESTDATA,
+        {.chanlow = 0, .chanhigh = 383}
     );
 
     // Convert to TestType precision
@@ -139,7 +148,7 @@ TEMPLATE_TEST_CASE("Predict", "[predict]", float, double) {
     // Create skymap
     HostArray<StokesI<TestType>, 2> skymap({gridspec.Nx, gridspec.Ny});
 
-    simple_benchmark("Predict", 5, [&] {
+    simple_benchmark("Predict", 1, [&] {
         predict<StokesI<TestType>, TestType>(
             workunits, skymap, gridspec, taper, subtaper, DegridOp::Replace
         );

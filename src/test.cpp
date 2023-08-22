@@ -1,4 +1,5 @@
 #include <cmath>
+#include <cstdlib>
 #include <random>
 #include <vector>
 
@@ -20,6 +21,7 @@
 #include "weighter.h"
 #include "workunit.h"
 
+const char* TESTDATA = getenv("TESTDATA");
 
 TEST_CASE( "Arrays, Spans and H<->D transfers", "[memory]" ) {
     std::vector<int> v(8192, 1);
@@ -48,6 +50,8 @@ TEST_CASE( "Arrays, Spans and H<->D transfers", "[memory]" ) {
 }
 
 TEST_CASE("Measurement Set & Partition", "[mset]") {
+    if (!TESTDATA) { SKIP("TESTDATA path not provided"); }
+
     auto gridspec = GridSpec::fromScaleLM(1000, 1000, std::sin(deg2rad(15. / 3600)));
     auto subgridspec = GridSpec::fromScaleUV(96, 96, gridspec.scaleuv);
 
@@ -55,7 +59,7 @@ TEST_CASE("Measurement Set & Partition", "[mset]") {
     Aterms.fill({1, 0, 0, 1});
 
     MeasurementSet mset(
-        "/home/torrance/testdata/1215555160/1215555160.ms",
+        TESTDATA,
         {.chanlow = 0, .chanhigh = 11}
     );
 
