@@ -33,11 +33,11 @@ Next, build the `test` and `benchmark` programs:
 
 Finally, run with the `TESTDATA` environment variable set to the location of the test data folder. For example:
 
-    TESTDATA=/my/path/1215555160.ms.zip ./test
+    TESTDATA=/my/path/1215555160.ms ./test
 
 Or for benchmarks, similarly:
 
-    TESTDATA=/my/path/1215555160.ms.zip ./benchmark
+    TESTDATA=/my/path/1215555160.ms ./benchmark
 
 ### Other options
 
@@ -49,4 +49,4 @@ Of note, it is possible to run specific tests or benchmarks. You can see a full 
 
 From this selection, you can pass in a subset of tests to run. To run just the `invert` benchmark, for example, run:
 
-    TESTDATA=/my/path/1215555160.ms.zip ./benchmark [invert]
+    TESTDATA=/my/path/1215555160.ms ./benchmark [invert]
