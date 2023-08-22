@@ -17,6 +17,7 @@ public:
     ~Channel() {}
 
     void close() {
+        // Release the mutex before notifying
         {
             std::lock_guard<std::mutex> lock(mutex);
             state = State::closed;
@@ -34,10 +35,7 @@ public:
                 return closed() || !empty();
             });
 
-            if (empty()) {
-                return {};
-            }
-
+            if (empty()) return {};
             tmp = std::move(queue.front());
             queue.pop();
         }
@@ -53,9 +51,7 @@ public:
                 return closed() || !full();
             });
 
-            if (closed()) {
-                return false;
-            }
+            if (closed()) return false;
             queue.push(item);
         }
         cv_pushed.notify_one();
@@ -70,9 +66,7 @@ public:
                 return closed() || !full();
             });
 
-            if (closed()) {
-                return false;
-            }
+            if (closed()) return false;
             queue.push(std::move(item));
         }
         cv_pushed.notify_one();
@@ -87,15 +81,11 @@ private:
     mutable std::condition_variable cv_popped;
     mutable std::condition_variable cv_pushed;
 
-    bool empty() const {
-        return queue.empty();
-    }
+    bool empty() const { return queue.empty(); }
 
     bool full() const {
         return buffersize > 0 && queue.size() >= buffersize;
     }
 
-    bool closed() const {
-        return state == State::closed;
-    }
+    bool closed() const { return state == State::closed; }
 };
