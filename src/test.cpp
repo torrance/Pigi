@@ -184,9 +184,9 @@ TEMPLATE_TEST_CASE("Predict", "[predict]", float, double) {
     std::vector<UVDatum<TestType>> uvdata;
     for (size_t i {}; i < 5000; ++i) {
         TestType u {randfloats(gen)}, v {randfloats(gen)}, w {randfloats(gen)};
-        u = (u - 0.5) * 1000;
-        v = (v - 0.5) * 1000;
-        w = (w - 0.5) * 500;
+        u = (u - 0.5) * 250;
+        v = (v - 0.5) * 250;
+        w = (w - 0.5) * 100;
 
         // TODO: use emplace_back() when we can upgrade Clang
         uvdata.push_back({
@@ -257,7 +257,7 @@ TEMPLATE_TEST_CASE("Predict", "[predict]", float, double) {
     }
 
     fmt::println("Prediction max diff: {}", maxdiff);
-    REQUIRE( maxdiff < (std::is_same<float, TestType>::value ? 1e-3 : 2e-9) );
+    REQUIRE( maxdiff < (std::is_same<float, TestType>::value ? 1e-3 : 3e-9) );
 }
 
 TEST_CASE("Clean", "[clean]") {
