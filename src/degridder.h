@@ -169,8 +169,6 @@ void degridder(
         Aterms.try_emplace(workunit->Aright.data(), workunit->Aright);
     }
 
-    auto plan = fftPlan<ComplexLinearData<S>>(workunits.front()->subgridspec);
-
     // Create and enqueue the work units
     Channel<WorkUnit<S>*> workunitsChannel;
     for (auto workunit : workunits) { workunitsChannel.push(workunit); }
@@ -186,6 +184,9 @@ void degridder(
         ++i
     ) {
         threads.emplace_back([&] {
+            // Make fft plan for each thread
+            auto plan = fftPlan<ComplexLinearData<S>>(workunits.front()->subgridspec);
+
             while (auto maybe = workunitsChannel.pop()) {
                 // maybe is a std::optional; let's get the value
                 auto workunit = *maybe;
@@ -217,6 +218,8 @@ void degridder(
                 // Ensure we're synced before anything goes out of scope
                 HIPCHECK( hipStreamSynchronize(hipStreamPerThread) );
             }
+
+            HIPFFTCHECK( hipfftDestroy(plan) );
         });
     }
 

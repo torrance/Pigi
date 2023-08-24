@@ -177,7 +177,7 @@ void gridder(
         ++i
     ) {
         threads.emplace_back([&] {
-            // Make FFT plan
+            // Make FFT plan for each thread
             auto plan = fftPlan<T>(subgridspec);
 
             while (auto  maybe = workunitsChannel.pop()) {
