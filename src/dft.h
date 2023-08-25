@@ -59,5 +59,4 @@ void idft(
     );
 
     img = img_d;
-    HIPCHECK( hipStreamSynchronize(hipStreamPerThread) );
 }

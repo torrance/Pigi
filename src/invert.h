@@ -84,7 +84,6 @@ HostArray<T<S>, 2> invert(
         wcorrect<T<S>, S>(wlayerd, gridspec, w0);
 
         wlayer = wlayerd;
-        HIPCHECK( hipStreamSynchronize(hipStreamPerThread) );
         img += wlayer;
     }
 

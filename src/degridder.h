@@ -174,9 +174,6 @@ void degridder(
     for (auto workunit : workunits) { workunitsChannel.push(workunit); }
     workunitsChannel.close();
 
-    // Ensure all stream operators are complete before spawning new streams
-    HIPCHECK( hipStreamSynchronize(hipStreamPerThread) );
-
     std::vector<std::thread> threads;
     for (
         size_t i {};
@@ -214,9 +211,6 @@ void degridder(
 
                 // Transfer data back to host
                 workunit->data = uvdata;
-
-                // Ensure we're synced before anything goes out of scope
-                HIPCHECK( hipStreamSynchronize(hipStreamPerThread) );
             }
 
             HIPFFTCHECK( hipfftDestroy(plan) );
