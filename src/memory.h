@@ -2,6 +2,7 @@
 
 #include <array>
 #include <algorithm>
+#include <mutex>
 #include <type_traits>
 #include <vector>
 
@@ -9,6 +10,10 @@
 #include <hip/hip_runtime.h>
 
 #include "hip.h"
+
+// This mutex serializes calls to hipMallocAsync() and hipFreeAsync()
+// to avoid a deadlock bug occurring in hip v5.2.3
+std::mutex memlock;
 
 enum class MemoryStorage { Host, Device };
 
@@ -50,7 +55,10 @@ void malloc(HostPointer<T>& ptr, size_t sz) {
 
 template <typename T>
 void malloc(DevicePointer<T>& ptr, size_t sz) {
-    HIPCHECK( hipMallocAsync(&ptr, sz, hipStreamPerThread) ); }
+    std::lock_guard lock(memlock);
+    HIPCHECK( hipMallocAsync(&ptr, sz, hipStreamPerThread) );
+    HIPCHECK( hipStreamSynchronize(hipStreamPerThread) );
+}
 
 template <typename T>
 void memcpy(HostPointer<T> dst, HostPointer<T> src, size_t sz) {
@@ -243,6 +251,7 @@ public:
     // Destructor
     ~Array() {
         if (this->ptr) {
+            std::lock_guard lock(memlock);
             HIPCHECK( hipFreeAsync(this->ptr, hipStreamPerThread) );
             HIPCHECK( hipStreamSynchronize(hipStreamPerThread) );
         }
