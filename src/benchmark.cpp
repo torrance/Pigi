@@ -44,7 +44,7 @@ auto simple_benchmark(std::string_view name, const int N, const F f) {
     // Calculate mean, median and variance of timings
     std::sort(timings.begin(), timings.end());
     double median {timings[N / 2]};
-    if (N % 2 == 1) {
+    if (N % 2 == 1 && N > 1) {
         // Special case for even samples
         median += timings[N / 2 -1];
         median /= 2;
@@ -116,7 +116,7 @@ TEMPLATE_TEST_CASE("Invert", "[invert]", float, double) {
 
     auto workunits = partition(uvdata, gridspec, subgridspec, 18, 25, Aterms);
 
-    simple_benchmark("Invert", 5, [&] {
+    simple_benchmark("Invert", 1, [&] {
         return invert<StokesI, TestType>(
             workunits, gridspec, taper, subtaper
         );
