@@ -143,10 +143,6 @@ public:
     Iterator end() { return Iterator{ std::numeric_limits<T>::max() }; }
 };
 
-template <typename F, typename T, typename... Ts> __global__
-void _map(size_t N, F f, T x, Ts... xs);
-
-#ifdef __HIPCC__
 template <typename F, typename T, typename... Ts>
 __global__
 void _map(size_t N, F f, T x, Ts... xs) {
@@ -158,9 +154,8 @@ void _map(size_t N, F f, T x, Ts... xs) {
         f(x[idx], xs[idx]...);
     }
 }
-#endif
 
-auto _mapforward(auto x) { return x; }
+auto _mapforward(const auto& x) { return x; }
 
 template <typename T, int N, typename Pointer>
 Span<T, N, Pointer> _mapforward(Array<T, N, Pointer>& x) { return x; }
