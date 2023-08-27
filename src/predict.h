@@ -29,7 +29,7 @@ void predict(
         map([] (auto& img, const auto t) {
             if (t == 0) img = T{};
             else img /= t;
-        }, imgd.asSpan(), taperd.asSpan());
+        }, imgd, taperd);
     }
 
     // Copy subtaper to device
@@ -54,7 +54,7 @@ void predict(
             auto [l, m] = gridspec.linearToSky<S>(idx);
             img *= cispi(-2 * w0 * ndash(l, m));
             wlayer = img;
-        }, Iota(), imgd.asSpan(), wlayer.asSpan());
+        }, Iota(), imgd, wlayer);
 
         fftExec(plan, wlayer, HIPFFT_FORWARD);
         degridder<T, S>(wworkunits, wlayer, subtaperd, degridop);

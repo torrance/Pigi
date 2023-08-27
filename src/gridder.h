@@ -199,7 +199,7 @@ void gridder(
                 // Apply taper and perform FFT normalization
                 map([N = subgrid.size()] (auto& cell, const auto t) {
                     cell *= (t / N);
-                }, subgrid.asSpan(), subtaper);
+                }, subgrid, subtaper);
 
                 // FFT
                 fftExec(plan, subgrid, HIPFFT_FORWARD);

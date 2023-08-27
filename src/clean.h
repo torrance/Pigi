@@ -74,7 +74,9 @@ void subtractpsf(
     );
     hipLaunchKernelGGL(
         fn, nblocks, nthreads, 0, hipStreamPerThread,
-        img.asSpan(), imgGridspec, psf.asSpan(), psfGridspec, xpeak, ypeak, f
+        static_cast<DeviceSpan<T, 2>>(img), imgGridspec,
+        static_cast<DeviceSpan<T, 2>>(psf), psfGridspec,
+        xpeak, ypeak, f
     );
 }
 
@@ -357,7 +359,7 @@ void convolve(HostArray<T, 2>& img, const HostArray<S, 2>& kernel) {
     // Multiply in FT domain and normalize
     map([=] __device__ (auto& img, auto kernel) {
         img *= (kernel /= gridspec_padded.size());
-    }, img_d.asSpan(), kernel_d.asSpan());
+    }, img_d, kernel_d);
 
     // FT backward
     fftExec(planImg, img_d, HIPFFT_BACKWARD);

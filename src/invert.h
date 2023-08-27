@@ -52,7 +52,7 @@ HostArray<T<S>, 2> invert(
             auto [l, m] = gridspec.linearToSky<S>(idx);
             wlayerd *= cispi(2 * w0 * ndash(l, m));
             imgd += wlayerd;
-        }, Iota(), imgd.asSpan(), wlayerd.asSpan());
+        }, Iota(), imgd, wlayerd);
     }
 
     // Copy img to host

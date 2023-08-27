@@ -201,7 +201,7 @@ void degridder(
                 // Apply aterms, taper and normalize post-FFT
                 map([norm = subgrid.size()] __device__ (auto& cell, auto Aleft, auto Aright, auto t) {
                     cell.lmul(Aleft).rmul(Aright.adjoint()) *= (t / norm);
-                }, subgrid.asSpan(), Aleft.asSpan(), Aright.asSpan(), subtaper);
+                }, subgrid, Aleft, Aright, subtaper);
 
                 gpudft<S>(
                     uvdata,

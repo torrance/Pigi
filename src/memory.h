@@ -248,15 +248,11 @@ public:
         this->ptr = 0;
     }
 
-    auto asSpan() {
+    operator Span<T, N, Pointer>() {
         return Span<T, N, Pointer> {this->dims, this->ptr};
     }
 
-    auto asSpan() const {
-        return Span<T, N, Pointer> {this->dims, this->ptr};
-    }
-
-    operator Span<T, N, Pointer>() const {
+    operator const Span<T, N, Pointer>() const {
         return Span<T, N, Pointer> {this->dims, this->ptr};
     }
 

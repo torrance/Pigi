@@ -142,3 +142,39 @@ public:
     Iterator begin() { return Iterator{ 0 }; }
     Iterator end() { return Iterator{ std::numeric_limits<T>::max() }; }
 };
+
+template <typename F, typename T, typename... Ts> __global__
+void _map(size_t N, F f, T x, Ts... xs);
+
+#ifdef __HIPCC__
+template <typename F, typename T, typename... Ts>
+__global__
+void _map(size_t N, F f, T x, Ts... xs) {
+    for (
+        size_t idx = blockIdx.x * blockDim.x + threadIdx.x;
+        idx < N;
+        idx += blockDim.x * gridDim.x
+    ) {
+        f(x[idx], xs[idx]...);
+    }
+}
+#endif
+
+auto _mapforward(auto x) { return x; }
+
+template <typename T, int N, typename Pointer>
+Span<T, N, Pointer> _mapforward(Array<T, N, Pointer>& x) { return x; }
+
+template <typename T, int N, typename Pointer>
+const Span<T, N, Pointer> _mapforward(const Array<T, N, Pointer>& x) { return x; }
+
+template<typename F, typename T, typename... Ts>
+void map(F f, T&& x, Ts&&... xs) {
+    size_t N { std::min({x.size(), xs.size()...}) };
+    auto fn = _map<F, decltype(_mapforward(x)), decltype(_mapforward(xs))...>;
+    auto [nblocks, nthreads] = getKernelConfig(fn, N);
+    hipLaunchKernelGGL(
+        fn, nblocks, nthreads, 0, hipStreamPerThread,
+        N, f, _mapforward(x), _mapforward(xs)...
+    );
+}
