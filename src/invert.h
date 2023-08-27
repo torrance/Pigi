@@ -48,10 +48,10 @@ HostArray<T<S>, 2> invert(
         fftExec(plan, wlayerd, HIPFFT_BACKWARD);
 
         // Apply wcorrection and append layer onto img
-        imgd.mapInto([gridspec=gridspec, w0=w0] __device__ (auto idx, auto imgd, auto& wlayerd) {
+        map([gridspec=gridspec, w0=w0] __device__ (auto idx, auto& imgd, auto wlayerd) {
             auto [l, m] = gridspec.linearToSky<S>(idx);
             wlayerd *= cispi(2 * w0 * ndash(l, m));
-            return imgd += wlayerd;
+            imgd += wlayerd;
         }, Iota(), imgd.asSpan(), wlayerd.asSpan());
     }
 

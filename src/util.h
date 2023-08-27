@@ -137,16 +137,8 @@ public:
     __host__ __device__
     T operator[](size_t i) { return i; }
 
+    size_t size() { return std::numeric_limits<T>::max(); }
+
     Iterator begin() { return Iterator{ 0 }; }
     Iterator end() { return Iterator{ std::numeric_limits<T>::max() }; }
 };
-
-template <typename T, typename S, int N, typename R>
-void shapecheck(const NDBase<T, N, S>&, const Iota<R>&) {
-    // Do nothing
-}
-
-template <typename T, typename S, int N, typename R>
-void shapecheck(const Iota<R>&, const NDBase<T, N, S>&) {
-    // Do nothing
-}

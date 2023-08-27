@@ -47,19 +47,27 @@ auto getKernelConfig(T fn, int N, size_t sharedMem=0) {
     );
 };
 
-template <typename F, typename T, typename... Ss> __global__
-void mapInto(F f, T out, Ss... ins);
+template <typename F, typename T, typename... Ts> __global__
+void _map(size_t N, F f, T x, Ts... xs);
 
 #ifdef __HIPCC__
-template <typename F, typename T, typename... Ss>
+template <typename F, typename T, typename... Ts>
 __global__
-void mapInto(F f, T out, Ss... ins) {
+void _map(size_t N, F f, T x, Ts... xs) {
     for (
         size_t idx = blockIdx.x * blockDim.x + threadIdx.x;
-        idx < out.size();
+        idx < N;
         idx += blockDim.x * gridDim.x
     ) {
-        out[idx] = f(ins[idx]...);
+        f(x[idx], xs[idx]...);
     }
 }
 #endif
+
+template<typename F, typename T, typename... Ts>
+void map(F f, T x, Ts... xs) {
+    size_t N { std::min({x.size(), xs.size()...}) };
+    auto fn = _map<F, T, Ts...>;
+    auto [nblocks, nthreads] = getKernelConfig(fn, N);
+    hipLaunchKernelGGL(fn, nblocks, nthreads, 0, hipStreamPerThread, N, f, x, xs...);
+}

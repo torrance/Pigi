@@ -26,9 +26,9 @@ void predict(
     DeviceArray<T, 2> imgd {img};
     {
         DeviceArray<S, 2> taperd {taper};
-        imgd.mapInto([] (auto& img, auto& t) {
-            if (t == 0) return T{};
-            return img /= t;
+        map([] (auto& img, const auto t) {
+            if (t == 0) img = T{};
+            else img /= t;
         }, imgd.asSpan(), taperd.asSpan());
     }
 
@@ -50,10 +50,11 @@ void predict(
         fmt::println("Processing w={} layer...", w0);
 
         // Apply w-decorrection and copy to wlayer
-        wlayer.mapInto([w0=w0, gridspec=gridspec] __device__ (auto idx, auto img) {
+        map([w0=w0, gridspec=gridspec] __device__ (auto idx, auto img, auto& wlayer) {
             auto [l, m] = gridspec.linearToSky<S>(idx);
-            return img *= cispi(-2 * w0 * ndash(l, m));
-        }, Iota(), imgd.asSpan());
+            img *= cispi(-2 * w0 * ndash(l, m));
+            wlayer = img;
+        }, Iota(), imgd.asSpan(), wlayer.asSpan());
 
         fftExec(plan, wlayer, HIPFFT_FORWARD);
         degridder<T, S>(wworkunits, wlayer, subtaperd, degridop);

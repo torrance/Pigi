@@ -355,8 +355,8 @@ void convolve(HostArray<T, 2>& img, const HostArray<S, 2>& kernel) {
     fftExec(planKernel, kernel_d, HIPFFT_FORWARD);
 
     // Multiply in FT domain and normalize
-    img_d.mapInto([=] __device__ (auto img, auto kernel) {
-        return (img *= kernel) /= gridspec_padded.size();
+    map([=] __device__ (auto& img, auto kernel) {
+        img *= (kernel /= gridspec_padded.size());
     }, img_d.asSpan(), kernel_d.asSpan());
 
     // FT backward
