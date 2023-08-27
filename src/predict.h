@@ -1,6 +1,6 @@
 #pragma once
 
-#include <set>
+#include <map>
 
 #include <fmt/format.h>
 #include <hip/hip_runtime.h>
@@ -13,32 +13,6 @@
 #include "memory.h"
 #include "workunit.h"
 
-
-template<typename T, typename S>
-__global__
-void _wdecorrect(DeviceSpan<T, 2> wlayer, const GridSpec gridspec, const S w0) {
-    for (
-        size_t idx = blockIdx.x * blockDim.x + threadIdx.x;
-        idx < gridspec.size();
-        idx += blockDim.x * gridDim.x
-    ) {
-        auto [l, m] = gridspec.linearToSky<S>(idx);
-        wlayer[idx] *= cispi(-2 * w0 * ndash(l, m));
-    }
-}
-
-template<typename T, typename S>
-void wdecorrect(DeviceSpan<T, 2> wlayer, const GridSpec gridspec, const S w0) {
-    auto fn = _wdecorrect<T, S>;
-    auto [nblocks, nthreads] = getKernelConfig(
-        fn, gridspec.size()
-    );
-    hipLaunchKernelGGL(
-        fn, nblocks, nthreads, 0, hipStreamPerThread,
-        wlayer, gridspec, w0
-    );
-}
-
 template <typename T, typename S>
 void predict(
     HostSpan<WorkUnit<S>, 1> workunits,
@@ -48,39 +22,40 @@ void predict(
     const HostSpan<S, 2> subtaper,
     const DegridOp degridop
 ) {
-    // Apply inverse taper
-    HostArray<T, 2> imgcopy {img.shape()};
-    std::transform(
-        img.begin(), img.end(),
-        taper.begin(), imgcopy.begin(), [](T val, const S& t) {
+    // Copy img to device apply inverse taper
+    DeviceArray<T, 2> imgd {img};
+    {
+        DeviceArray<S, 2> taperd {taper};
+        imgd.mapInto([] (auto& img, auto& t) {
             if (t == 0) return T{};
-            return val /= t;
-    });
+            return img /= t;
+        }, imgd.asSpan(), taperd.asSpan());
+    }
 
-    // Transfer subtaper to device
+    // Copy subtaper to device
     DeviceArray<S, 2> subtaperd {subtaper};
-
-    // Get unique w terms
-    std::set<S> ws;
-    for (auto& workunit : workunits) { ws.insert(workunit.w0); }
 
     auto plan = fftPlan<T>(gridspec);
 
-    for (const S w0 : ws) {
+    // Create wlayer on device
+    DeviceArray<T, 2> wlayer {img.shape()};
+
+    // Sort workunits into wlayers
+    std::map<S, std::vector<WorkUnit<S>*>> wlayers;
+    for (auto& workunit : workunits) {
+        wlayers[workunit.w0].push_back(&workunit);
+    }
+
+    for (auto& [w0, wworkunits] : wlayers) {
         fmt::println("Processing w={} layer...", w0);
 
-        DeviceArray<T, 2> wlayer {imgcopy};
-        wdecorrect<T, S>(wlayer, gridspec, w0);
+        // Apply w-decorrection and copy to wlayer
+        wlayer.mapInto([w0=w0, gridspec=gridspec] __device__ (auto idx, auto img) {
+            auto [l, m] = gridspec.linearToSky<S>(idx);
+            return img *= cispi(-2 * w0 * ndash(l, m));
+        }, Iota(), imgd.asSpan());
+
         fftExec(plan, wlayer, HIPFFT_FORWARD);
-
-        // We use pointers to avoid any kind of copy of the underlying data
-        // (since each workunit owns its own data).
-        // TODO: use a views filter instead?
-        std::vector<WorkUnit<S>*> wworkunits;
-        for (auto& workunit : workunits) {
-            if (workunit.w0 == w0) wworkunits.push_back(&workunit);
-        }
-
         degridder<T, S>(wworkunits, wlayer, subtaperd, degridop);
     }
 }

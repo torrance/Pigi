@@ -112,3 +112,41 @@ template <typename T>
 auto crop(HostArray<T, 2>& img, long long edge) {
     return crop(img, edge, edge);
 }
+
+template <typename T=size_t>
+class Iota {
+public:
+    class Iterator {
+    public:
+        Iterator(T val) : val(val) {}
+
+        Iterator& operator++() {
+            ++val;
+            return *this;
+        }
+
+        T operator*() const { return val; }
+
+        bool operator==(const Iterator& other) const { return val == other.val; }
+        bool operator!=(const Iterator& other) const { return !(*this == other); }
+
+    private:
+        T val;
+    };
+
+    __host__ __device__
+    T operator[](size_t i) { return i; }
+
+    Iterator begin() { return Iterator{ 0 }; }
+    Iterator end() { return Iterator{ std::numeric_limits<T>::max() }; }
+};
+
+template <typename T, typename S, int N, typename R>
+void shapecheck(const NDBase<T, N, S>&, const Iota<R>&) {
+    // Do nothing
+}
+
+template <typename T, typename S, int N, typename R>
+void shapecheck(const Iota<R>&, const NDBase<T, N, S>&) {
+    // Do nothing
+}
