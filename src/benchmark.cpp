@@ -3,7 +3,6 @@
 #include <cmath>
 #include <cstdlib>
 #include <functional>
-#include <numeric>
 #include <random>
 #include <thread>
 #include <vector>
@@ -50,11 +49,10 @@ auto simple_benchmark(std::string_view name, const int N, const F f) {
         median /= 2;
     }
     auto mean = std::accumulate(timings.begin(), timings.end(), 0.) / N;
-    auto variance = std::transform_reduce(
-        timings.begin(), timings.end(), 0., std::plus{}, [=] (auto timing) {
-            return std::pow(timing - mean, 2);
-        }
-    );
+    double variance {};
+    for (auto timing : timings) {
+        variance += std::pow(timing - mean, 2);
+    }
 
     fmt::println(
         "Benchmark: {} ({} samples) mean: {:.6f} +/- {:.6f} s median: {:.6f} s",
