@@ -17,6 +17,17 @@
 #include "uvdatum.h"
 #include "workunit.h"
 
+/**
+ * Ceiling integer division
+ */
+template <typename T, typename S>
+requires(std::is_integral<T>::value && std::is_integral<S>::value)
+__host__ __device__
+auto cld(T x, S y) {
+    return (x + y - 1) / y;
+}
+
+
 template <typename T, typename S, bool makePSF>
 __global__
 void _gpudift(
@@ -27,34 +38,56 @@ void _gpudift(
     const DeviceSpan< UVDatum<S>, 1 > uvdata,
     const GridSpec subgridspec
 ) {
+    const int cachesize {256};
+
+    // Workaround for avoiding initialization of shared variables
+    __shared__ char smem[cachesize * sizeof(UVDatum<S>)];
+    auto uvdatacache = reinterpret_cast<UVDatum<S>*>(smem);
+
     for (
         size_t idx = blockIdx.x * blockDim.x + threadIdx.x;
-        idx < subgridspec.size();
+        idx < blockDim.x * cld(subgridspec.size(), (size_t) blockDim.x);
         idx += blockDim.x * gridDim.x
     ) {
         auto [l, m] = subgridspec.linearToSky<S>(idx);
         S n {ndash(l, m)};
 
         ComplexLinearData<S> cell {};
-        for (auto uvdatum : uvdata) {
-            auto phase = cispi(
-                2 * (
-                    (uvdatum.u - origin.u0) * l +
-                    (uvdatum.v - origin.v0) * m +
-                    (uvdatum.w - origin.w0) * n
-                )
-            );
 
-            if (makePSF) {
-                uvdatum.data = {1, 0, 0, 1};
+        for (size_t i {}; i < uvdata.size(); i += cachesize) {
+            // Populate cache
+            if (threadIdx.x < cachesize && threadIdx.x + i < uvdata.size()) {
+                uvdatacache[threadIdx.x] = uvdata[threadIdx.x + i];
             }
+            __syncthreads();
 
-            uvdatum.data *= uvdatum.weights;
-            uvdatum.data *= phase;
-            cell += uvdatum.data;
+            // Read through cache
+            for (size_t j {}; j < min(cachesize, uvdata.size() - i); ++j) {
+                // Retrieve value from cache
+                auto uvdatum = uvdatacache[j];
+
+                auto phase = cispi(
+                    2 * (
+                        (uvdatum.u - origin.u0) * l +
+                        (uvdatum.v - origin.v0) * m +
+                        (uvdatum.w - origin.w0) * n
+                    )
+                );
+
+                if (makePSF) {
+                    uvdatum.data = {1, 0, 0, 1};
+                }
+
+                uvdatum.data *= uvdatum.weights;
+                uvdatum.data *= phase;
+                cell += uvdatum.data;
+            }
+            __syncthreads();
         }
 
-        subgrid[idx] = T::fromBeam(cell, Aleft[idx], Aright[idx]);
+        if (idx < subgridspec.size()) {
+            subgrid[idx] = T::fromBeam(cell, Aleft[idx], Aright[idx]);
+        }
     }
 }
 
