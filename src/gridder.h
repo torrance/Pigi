@@ -92,9 +92,8 @@ void gpudift(
 ) {
     if (makePSF) {
         auto fn = _gpudift<T, S, true>;
-        auto [nblocks, nthreads] = getKernelConfig(
-            fn, subgridspec.size()
-        );
+        int nthreads {256}; // hardcoded to match the cache size
+        int nblocks = (int) subgridspec.size() / nthreads + 1;
         hipLaunchKernelGGL(
             fn, nblocks, nthreads, 0, hipStreamPerThread,
             subgrid, Aleft, Aright,
@@ -102,9 +101,8 @@ void gpudift(
         );
     } else {
         auto fn = _gpudift<T, S, false>;
-        auto [nblocks, nthreads] = getKernelConfig(
-            fn, subgridspec.size()
-        );
+        int nthreads {256}; // hardcoded to match the cache size
+        int nblocks = (int) subgridspec.size() / nthreads + 1;
         hipLaunchKernelGGL(
             fn, nblocks, nthreads, 0, hipStreamPerThread,
             subgrid, Aleft, Aright,
