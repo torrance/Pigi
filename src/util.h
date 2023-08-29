@@ -173,3 +173,13 @@ void map(F f, T&& x, Ts&&... xs) {
         N, f, _mapforward(x), _mapforward(xs)...
     );
 }
+
+/**
+ * Ceiling integer division
+ */
+template <typename T, typename S>
+requires(std::is_integral<T>::value && std::is_integral<S>::value)
+__host__ __device__
+inline auto cld(T x, S y) {
+    return (x + y - 1) / y;
+}

@@ -46,24 +46,44 @@ void _gpudft(
     const GridSpec subgridspec,
     const DegridOp degridop
 ) {
+    const int cachesize {1024};
+    __shared__ char smem[cachesize * sizeof(ComplexLinearData<T>)];
+    auto subgridcache = reinterpret_cast<ComplexLinearData<T>*>(smem);
+
     for (
         size_t idx = blockIdx.x * blockDim.x + threadIdx.x;
-        idx < uvdata.size();
+        idx < blockDim.x * cld(uvdata.size(), (size_t) blockDim.x);
         idx += blockDim.x * gridDim.x
     ) {
-        UVDatum<T> uvdatum {uvdata[idx]};
+        UVDatum<T> uvdatum;
+        if (idx < uvdata.size()) uvdatum = uvdata[idx];
 
         ComplexLinearData<T> data;
-        for (size_t i {}; i < subgridspec.size(); ++i) {
-            auto [l, m] = subgridspec.linearToSky<T>(i);
-            auto phase = cispi(-2 * (
-                (uvdatum.u - origin.u0) * l +
-                (uvdatum.v - origin.v0) * m +
-                (uvdatum.w - origin.w0) * ndash(l, m)
-            ));
-            auto cell = subgrid[i];
-            cell *= phase;
-            data += cell;
+        for (size_t i {}; i < subgridspec.size(); i += cachesize) {
+            // Populate cache
+            for (
+                size_t j = threadIdx.x;
+                j < cachesize && i + j < subgridspec.size();
+                j += blockDim.x
+            ) {
+                subgridcache[j] = subgrid[i + j];
+            }
+            __syncthreads();
+
+            // Cycle through cache
+            for (size_t j {}; j < cachesize && i + j < subgridspec.size(); ++j) {
+                auto [l, m] = subgridspec.linearToSky<T>(i + j);
+                auto phase = cispi(-2 * (
+                    (uvdatum.u - origin.u0) * l +
+                    (uvdatum.v - origin.v0) * m +
+                    (uvdatum.w - origin.w0) * ndash(l, m)
+                ));
+                auto cell = subgridcache[j];
+                cell *= phase;
+                data += cell;
+            }
+
+            __syncthreads();
         }
 
         switch (degridop) {
@@ -78,7 +98,7 @@ void _gpudft(
             break;
         }
 
-        uvdata[idx] = uvdatum;
+        if (idx < uvdata.size()) uvdata[idx] = uvdatum;
     }
 }
 
