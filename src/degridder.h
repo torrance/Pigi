@@ -111,9 +111,8 @@ void gpudft(
     const DegridOp degridop
 ) {
     auto fn = _gpudft<T>;
-    auto [nblocks, nthreads] = getKernelConfig(
-        fn, uvdata.size()
-    );
+    int nthreads {256};
+    int nblocks = cld(uvdata.size(), nthreads);
     hipLaunchKernelGGL(
         fn, nblocks, nthreads, 0, hipStreamPerThread,
         uvdata, origin, subgrid, subgridspec, degridop
