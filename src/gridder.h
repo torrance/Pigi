@@ -27,11 +27,11 @@ void _gpudift(
     const DeviceSpan< UVDatum<S>, 1 > uvdata,
     const GridSpec subgridspec
 ) {
-    const int cachesize {256};
+    const size_t cachesize {256};
 
     // Workaround for avoiding initialization of shared variables
-    __shared__ char smem[cachesize * sizeof(UVDatum<S>)];
-    auto uvdatacache = reinterpret_cast<UVDatum<S>*>(smem);
+    __shared__ char _cache[cachesize * sizeof(UVDatum<S>)];
+    auto cache = reinterpret_cast<float4*>(_cache);
 
     for (
         size_t idx = blockIdx.x * blockDim.x + threadIdx.x;
@@ -44,16 +44,31 @@ void _gpudift(
         ComplexLinearData<S> cell {};
 
         for (size_t i {}; i < uvdata.size(); i += cachesize) {
+            const size_t N = min(cachesize, uvdata.size() - i);
+
             // Populate cache
-            if (threadIdx.x < cachesize && threadIdx.x + i < uvdata.size()) {
-                uvdatacache[threadIdx.x] = uvdata[threadIdx.x + i];
+            for (size_t j = threadIdx.x; j < N; j += blockDim.x) {
+                auto uvdatum = uvdata[threadIdx.x + i];
+                auto uvdatum_ptr = reinterpret_cast<float4*>(&uvdatum);
+
+                // Stripe the contents of uvdatum into the cache as float4 chunks
+                for (size_t k {}; k < sizeof(UVDatum<S>) / sizeof(float4); ++k) {
+                    cache[k * N + j] = uvdatum_ptr[k];
+                }
             }
             __syncthreads();
 
             // Read through cache
             for (size_t j {}; j < min(cachesize, uvdata.size() - i); ++j) {
-                // Retrieve value from cache
-                auto uvdatum = uvdatacache[j];
+                // Retrieve value of uvdatum from the cache
+                UVDatum<S> uvdatum;
+                auto uvdatum_ptr = reinterpret_cast<float4*>(&uvdatum);
+
+                auto joffset = (j + threadIdx.x) % N;
+                for (size_t k {}; k < sizeof(UVDatum<S>) / sizeof(float4); ++k) {
+                    uvdatum_ptr[k] = cache[k * N + joffset];
+                }
+
 
                 auto phase = cispi(
                     2 * (

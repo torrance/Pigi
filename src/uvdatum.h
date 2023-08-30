@@ -3,7 +3,7 @@
 #include "outputtypes.h"
 
 template <typename T>
-struct alignas(8) UVDatum {
+struct alignas(16) UVDatum {
     size_t row;
     size_t chan;
     T u;
