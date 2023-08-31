@@ -18,7 +18,7 @@
 #include "workunit.h"
 
 template <typename T, typename S, bool makePSF>
-__global__
+__launch_bounds__(128) __global__
 void _gpudift(
     DeviceSpan<T, 2> subgrid,
     const DeviceSpan< ComplexLinearData<S>, 2 > Aleft,
@@ -27,7 +27,7 @@ void _gpudift(
     const DeviceSpan< UVDatum<S>, 1 > uvdata,
     const GridSpec subgridspec
 ) {
-    const size_t cachesize {256};
+    const size_t cachesize {128};
 
     // Workaround for avoiding initialization of shared variables
     __shared__ char _cache[cachesize * sizeof(UVDatum<S>)];
@@ -64,11 +64,9 @@ void _gpudift(
                 UVDatum<S> uvdatum;
                 auto uvdatum_ptr = reinterpret_cast<float4*>(&uvdatum);
 
-                auto joffset = (j + threadIdx.x) % N;
                 for (size_t k {}; k < sizeof(UVDatum<S>) / sizeof(float4); ++k) {
-                    uvdatum_ptr[k] = cache[k * N + joffset];
+                    uvdatum_ptr[k] = cache[k * N + j];
                 }
-
 
                 auto phase = cispi(
                     2 * (
@@ -107,7 +105,7 @@ void gpudift(
 ) {
     if (makePSF) {
         auto fn = _gpudift<T, S, true>;
-        int nthreads {256}; // hardcoded to match the cache size
+        int nthreads {128}; // hardcoded to match the cache size
         int nblocks = cld(subgridspec.size(), nthreads);
         hipLaunchKernelGGL(
             fn, nblocks, nthreads, 0, hipStreamPerThread,
@@ -116,7 +114,7 @@ void gpudift(
         );
     } else {
         auto fn = _gpudift<T, S, false>;
-        int nthreads {256}; // hardcoded to match the cache size
+        int nthreads {128}; // hardcoded to match the cache size
         int nblocks = cld(subgridspec.size(), nthreads);
         hipLaunchKernelGGL(
             fn, nblocks, nthreads, 0, hipStreamPerThread,
