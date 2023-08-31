@@ -48,7 +48,7 @@ void _gpudift(
 
             // Populate cache
             for (size_t j = threadIdx.x; j < N; j += blockDim.x) {
-                auto uvdatum = uvdata[threadIdx.x + i];
+                auto uvdatum = uvdata[i + j];
                 auto uvdatum_ptr = reinterpret_cast<float4*>(&uvdatum);
 
                 // Stripe the contents of uvdatum into the cache as float4 chunks
@@ -59,7 +59,7 @@ void _gpudift(
             __syncthreads();
 
             // Read through cache
-            for (size_t j {}; j < min(cachesize, uvdata.size() - i); ++j) {
+            for (size_t j {}; j < N; ++j) {
                 // Retrieve value of uvdatum from the cache
                 UVDatum<S> uvdatum;
                 auto uvdatum_ptr = reinterpret_cast<float4*>(&uvdatum);
