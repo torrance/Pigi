@@ -29,9 +29,11 @@ void _gpudift(
 ) {
     const size_t cachesize {256};
 
-    // Workaround for avoiding initialization of shared variables
-    __shared__ char _cache[cachesize * sizeof(UVDatum<S>)];
-    auto cache = reinterpret_cast<float4*>(_cache);
+    __shared__ S ucache[cachesize], vcache[cachesize], wcache[cachesize];
+    __shared__ S weightscache[4][cachesize];
+
+    __shared__ char _datacache[4][cachesize * sizeof(std::complex<S>)];
+    auto datacache = (std::complex<S> (&) [4][cachesize]) (_datacache);
 
     for (
         size_t idx = blockIdx.x * blockDim.x + threadIdx.x;
@@ -49,42 +51,46 @@ void _gpudift(
             // Populate cache
             for (size_t j = threadIdx.x; j < N; j += blockDim.x) {
                 auto uvdatum = uvdata[threadIdx.x + i];
-                auto uvdatum_ptr = reinterpret_cast<float4*>(&uvdatum);
 
-                // Stripe the contents of uvdatum into the cache as float4 chunks
-                for (size_t k {}; k < sizeof(UVDatum<S>) / sizeof(float4); ++k) {
-                    cache[k * N + j] = uvdatum_ptr[k];
-                }
+                ucache[j] = uvdatum.u;
+                vcache[j] = uvdatum.v;
+                wcache[j] = uvdatum.w;
+
+                weightscache[0][j] = uvdatum.weights.xx;
+                weightscache[1][j] = uvdatum.weights.yx;
+                weightscache[2][j] = uvdatum.weights.xy;
+                weightscache[3][j] = uvdatum.weights.yy;
+
+                datacache[0][j] = uvdatum.data.xx;
+                datacache[1][j] = uvdatum.data.yx;
+                datacache[2][j] = uvdatum.data.xy;
+                datacache[3][j] = uvdatum.data.yy;
+
             }
             __syncthreads();
 
             // Read through cache
             for (size_t j {}; j < min(cachesize, uvdata.size() - i); ++j) {
-                // Retrieve value of uvdatum from the cache
-                UVDatum<S> uvdatum;
-                auto uvdatum_ptr = reinterpret_cast<float4*>(&uvdatum);
-
+                // Use a joffset value to avoid bank conflicts
                 auto joffset = (j + threadIdx.x) % N;
-                for (size_t k {}; k < sizeof(UVDatum<S>) / sizeof(float4); ++k) {
-                    uvdatum_ptr[k] = cache[k * N + joffset];
-                }
-
 
                 auto phase = cispi(
                     2 * (
-                        (uvdatum.u - origin.u0) * l +
-                        (uvdatum.v - origin.v0) * m +
-                        (uvdatum.w - origin.w0) * n
+                        (ucache[joffset] - origin.u0) * l +
+                        (vcache[joffset] - origin.v0) * m +
+                        (wcache[joffset] - origin.w0) * n
                     )
                 );
 
                 if (makePSF) {
-                    uvdatum.data = {1, 0, 0, 1};
+                    cell.xx += phase * weightscache[0][joffset];
+                    cell.yy += phase * weightscache[3][joffset];
+                } else {
+                    cell.xx += phase * weightscache[0][joffset] * datacache[0][joffset];
+                    cell.yx += phase * weightscache[1][joffset] * datacache[1][joffset];
+                    cell.xy += phase * weightscache[2][joffset] * datacache[2][joffset];
+                    cell.yy += phase * weightscache[3][joffset] * datacache[3][joffset];
                 }
-
-                uvdatum.data *= uvdatum.weights;
-                uvdatum.data *= phase;
-                cell += uvdatum.data;
             }
             __syncthreads();
         }
