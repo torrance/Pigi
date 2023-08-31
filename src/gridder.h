@@ -18,7 +18,7 @@
 #include "workunit.h"
 
 template <typename T, typename S, bool makePSF>
-__launch_bounds__(128) __global__
+__global__
 void _gpudift(
     DeviceSpan<T, 2> subgrid,
     const DeviceSpan< ComplexLinearData<S>, 2 > Aleft,

@@ -38,7 +38,7 @@ __host__ __device__ inline void degridop_subtract(
 }
 
 template <typename T>
-__launch_bounds__(256) __global__
+__global__
 void _gpudft(
     DeviceSpan<UVDatum<T>, 1> uvdata,
     const UVWOrigin<T> origin,
