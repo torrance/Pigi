@@ -71,7 +71,8 @@ auto partition(
                 -radius <= upx - workunit.u0px + 0.5 &&
                 upx - workunit.u0px + 0.5 <= radius &&
                 -radius <= vpx - workunit.v0px + 0.5 &&
-                vpx - workunit.v0px + 0.5 <= radius
+                vpx - workunit.v0px + 0.5 <= radius &&
+                workunit.data.size() < 100000
             ) {
                 workunit.data.push_back(uvdatum);
                 found = true;
