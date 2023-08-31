@@ -38,7 +38,7 @@ __host__ __device__ inline void degridop_subtract(
 }
 
 template <typename T>
-__launch_bounds__(512) __global__
+__launch_bounds__(256) __global__
 void _gpudft(
     DeviceSpan<UVDatum<T>, 1> uvdata,
     const UVWOrigin<T> origin,
@@ -46,7 +46,7 @@ void _gpudft(
     const GridSpec subgridspec,
     const DegridOp degridop
 ) {
-    const int cachesize {512};
+    const int cachesize {256};
     __shared__ char smem[cachesize * sizeof(ComplexLinearData<T>)];
     auto cache = reinterpret_cast<float4* __restrict__>(smem);
 
@@ -61,7 +61,7 @@ void _gpudft(
         ComplexLinearData<T> data;
 
         for (size_t i {}; i < subgridspec.size(); i += cachesize) {
-            const size_t N = min(cachesize, uvdata.size() - i);
+            const size_t N = min(cachesize, subgridspec.size() - i);
 
             // Populate cache
             for (size_t j = threadIdx.x; j < N; j += blockDim.x) {
@@ -124,7 +124,7 @@ void gpudft(
     const DegridOp degridop
 ) {
     auto fn = _gpudft<T>;
-    int nthreads {512};
+    int nthreads {256};
     int nblocks = cld(uvdata.size(), nthreads);
     hipLaunchKernelGGL(
         fn, nblocks, nthreads, 0, hipStreamPerThread,
