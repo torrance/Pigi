@@ -31,7 +31,7 @@ void _gpudift(
 
     // Workaround for avoiding initialization of shared variables
     __shared__ char _cache[cachesize * sizeof(UVDatum<S>)];
-    auto cache = reinterpret_cast<float4*>(_cache);
+    auto cache = reinterpret_cast<float4* __restrict__>(_cache);
 
     for (
         size_t idx = blockIdx.x * blockDim.x + threadIdx.x;

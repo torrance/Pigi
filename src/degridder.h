@@ -38,7 +38,7 @@ __host__ __device__ inline void degridop_subtract(
 }
 
 template <typename T>
-__global__
+__launch_bounds__(512) __global__
 void _gpudft(
     DeviceSpan<UVDatum<T>, 1> uvdata,
     const UVWOrigin<T> origin,
@@ -46,9 +46,9 @@ void _gpudft(
     const GridSpec subgridspec,
     const DegridOp degridop
 ) {
-    const int cachesize {1024};
+    const int cachesize {512};
     __shared__ char smem[cachesize * sizeof(ComplexLinearData<T>)];
-    auto subgridcache = reinterpret_cast<ComplexLinearData<T>*>(smem);
+    auto cache = reinterpret_cast<float4* __restrict__>(smem);
 
     for (
         size_t idx = blockIdx.x * blockDim.x + threadIdx.x;
@@ -59,14 +59,19 @@ void _gpudft(
         if (idx < uvdata.size()) uvdatum = uvdata[idx];
 
         ComplexLinearData<T> data;
+
         for (size_t i {}; i < subgridspec.size(); i += cachesize) {
+            const size_t N = min(cachesize, uvdata.size() - i);
+
             // Populate cache
-            for (
-                size_t j = threadIdx.x;
-                j < cachesize && i + j < subgridspec.size();
-                j += blockDim.x
-            ) {
-                subgridcache[j] = subgrid[i + j];
+            for (size_t j = threadIdx.x; j < N; j += blockDim.x) {
+                auto cell = subgrid[i + j];
+                auto cell_ptr = reinterpret_cast<float4*>(&cell);
+
+                // Stripe the contents of cell into the cache as float4 chunks
+                for (size_t k {}; k < sizeof(ComplexLinearData<T>) / sizeof(float4); ++k) {
+                    cache[k * N + j] = cell_ptr[k];
+                }
             }
             __syncthreads();
 
@@ -78,7 +83,15 @@ void _gpudft(
                     (uvdatum.v - origin.v0) * m +
                     (uvdatum.w - origin.w0) * ndash(l, m)
                 ));
-                auto cell = subgridcache[j];
+
+                // Retrieve vall of cell from the cache
+                ComplexLinearData<T> cell;
+                auto cell_ptr = reinterpret_cast<float4*>(&cell);
+
+                for (size_t k {}; k < sizeof(ComplexLinearData<T>) / sizeof(float4); ++k) {
+                    cell_ptr[k] = cache[k * N + j];
+                }
+
                 cell *= phase;
                 data += cell;
             }
@@ -111,7 +124,7 @@ void gpudft(
     const DegridOp degridop
 ) {
     auto fn = _gpudft<T>;
-    int nthreads {256};
+    int nthreads {512};
     int nblocks = cld(uvdata.size(), nthreads);
     hipLaunchKernelGGL(
         fn, nblocks, nthreads, 0, hipStreamPerThread,

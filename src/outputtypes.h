@@ -8,7 +8,7 @@
 #include "util.h"
 
 template <typename T>
-struct LinearData {
+struct alignas(16) LinearData {
     // COLUMN MAJOR
     T xx {}, yx {}, xy {}, yy {};
 
