@@ -31,7 +31,7 @@ void _gpudift(
 
     // Workaround for avoiding initialization of shared variables
     __shared__ char _cache[cachesize * sizeof(UVDatum<S>)];
-    auto cache = reinterpret_cast<float4* __restrict__>(_cache);
+    auto cache = reinterpret_cast<UVDatum<S>* __restrict__>(_cache);
 
     for (
         size_t idx = blockIdx.x * blockDim.x + threadIdx.x;
@@ -48,25 +48,14 @@ void _gpudift(
 
             // Populate cache
             for (size_t j = threadIdx.x; j < N; j += blockDim.x) {
-                auto uvdatum = uvdata[i + j];
-                auto uvdatum_ptr = reinterpret_cast<float4*>(&uvdatum);
-
-                // Stripe the contents of uvdatum into the cache as float4 chunks
-                for (size_t k {}; k < sizeof(UVDatum<S>) / sizeof(float4); ++k) {
-                    cache[k * N + j] = uvdatum_ptr[k];
-                }
+                cache[j] = uvdata[i + j];
             }
             __syncthreads();
 
             // Read through cache
             for (size_t j {}; j < N; ++j) {
                 // Retrieve value of uvdatum from the cache
-                UVDatum<S> uvdatum;
-                auto uvdatum_ptr = reinterpret_cast<float4*>(&uvdatum);
-
-                for (size_t k {}; k < sizeof(UVDatum<S>) / sizeof(float4); ++k) {
-                    uvdatum_ptr[k] = cache[k * N + j];
-                }
+                UVDatum<S> uvdatum = cache[j];
 
                 auto phase = cispi(
                     2 * (
@@ -76,7 +65,7 @@ void _gpudift(
                     )
                 );
 
-                if (makePSF) {
+                if constexpr(makePSF) {
                     uvdatum.data = {1, 0, 0, 1};
                 }
 

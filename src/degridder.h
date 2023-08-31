@@ -48,7 +48,7 @@ void _gpudft(
 ) {
     const int cachesize {256};
     __shared__ char smem[cachesize * sizeof(ComplexLinearData<T>)];
-    auto cache = reinterpret_cast<float4* __restrict__>(smem);
+    auto cache = reinterpret_cast<ComplexLinearData<T>* __restrict__>(smem);
 
     for (
         size_t idx = blockIdx.x * blockDim.x + threadIdx.x;
@@ -65,18 +65,12 @@ void _gpudft(
 
             // Populate cache
             for (size_t j = threadIdx.x; j < N; j += blockDim.x) {
-                auto cell = subgrid[i + j];
-                auto cell_ptr = reinterpret_cast<float4*>(&cell);
-
-                // Stripe the contents of cell into the cache as float4 chunks
-                for (size_t k {}; k < sizeof(ComplexLinearData<T>) / sizeof(float4); ++k) {
-                    cache[k * N + j] = cell_ptr[k];
-                }
+                cache[j] = subgrid[i + j];
             }
             __syncthreads();
 
             // Cycle through cache
-            for (size_t j {}; j < cachesize && i + j < subgridspec.size(); ++j) {
+            for (size_t j {}; j < N; ++j) {
                 auto [l, m] = subgridspec.linearToSky<T>(i + j);
                 auto phase = cispi(-2 * (
                     (uvdatum.u - origin.u0) * l +
@@ -84,14 +78,7 @@ void _gpudft(
                     (uvdatum.w - origin.w0) * ndash(l, m)
                 ));
 
-                // Retrieve vall of cell from the cache
-                ComplexLinearData<T> cell;
-                auto cell_ptr = reinterpret_cast<float4*>(&cell);
-
-                for (size_t k {}; k < sizeof(ComplexLinearData<T>) / sizeof(float4); ++k) {
-                    cell_ptr[k] = cache[k * N + j];
-                }
-
+                auto cell = cache[j];
                 cell *= phase;
                 data += cell;
             }
