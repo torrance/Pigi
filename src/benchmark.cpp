@@ -27,13 +27,12 @@ const char* TESTDATA = getenv("TESTDATA");
 
 template <typename F>
 auto simple_benchmark(std::string_view name, const int N, const F f) {
-    // Perform one warm up and keep the result to return
-    auto ret = f();
+    decltype(f()) ret;
 
     std::vector<double> timings;
     for (int n {}; n < N; ++n) {
         auto start = std::chrono::steady_clock::now();
-        f();
+        ret = f();
         auto end = std::chrono::steady_clock::now();
         timings.push_back(
             std::chrono::duration_cast<std::chrono::microseconds>(end - start).count()
@@ -178,7 +177,12 @@ TEMPLATE_TEST_CASE("gpudift kernel", "[gpudift]", float, double) {
         });
     }
 
-    auto uvdata_d = DeviceArray<UVDatum<TestType>, 1>::fromVector(uvdata_h);
+    std::vector<DeviceArray<UVDatum<TestType>, 1>> uvdata_ds;
+    for (size_t i {}; i < 25; ++i) {
+        uvdata_ds.push_back(
+            DeviceArray<UVDatum<TestType>, 1>::fromVector(uvdata_h)
+        );
+    }
 
     auto subgridspec = GridSpec::fromScaleLM(96, 96, deg2rad(15. / 3600));
     UVWOrigin<TestType> origin {0, 0, 0};
@@ -189,10 +193,10 @@ TEMPLATE_TEST_CASE("gpudift kernel", "[gpudift]", float, double) {
 
     DeviceArray<StokesI<TestType>, 2> subgrid({subgridspec.Nx, subgridspec.Ny});
 
-    simple_benchmark("gpudift", 10, [&] {
+    simple_benchmark("gpudift", 1, [&] {
         for (size_t i {}; i < 25; ++i) {
             gpudift<StokesI<TestType>, TestType>(
-                subgrid, Aterm_d, Aterm_d, origin, uvdata_d, subgridspec, false
+                subgrid, Aterm_d, Aterm_d, origin, uvdata_ds[i], subgridspec, false
             );
         }
         HIPCHECK( hipStreamSynchronize(hipStreamPerThread) );
@@ -221,17 +225,35 @@ TEMPLATE_TEST_CASE("gpudft kernel", "[gpudft]", float, double) {
         });
     }
 
-    auto uvdata_d = DeviceArray<UVDatum<TestType>, 1>::fromVector(uvdata_h);
-
     auto subgridspec = GridSpec::fromScaleLM(96, 96, deg2rad(15. / 3600));
+    HostArray<ComplexLinearData<TestType>, 2> subgrid_h({subgridspec.Nx, subgridspec.Ny});
+    for (size_t i {}; i < subgridspec.size(); ++i) {
+        subgrid_h[i] = {
+            {rand(gen), rand(gen)},
+            {rand(gen), rand(gen)},
+            {rand(gen), rand(gen)},
+            {rand(gen), rand(gen)}
+        };
+    }
+
+    std::vector<DeviceArray<UVDatum<TestType>, 1>> uvdata_ds;
+    std::vector<DeviceArray<ComplexLinearData<TestType>, 2>> subgrid_ds;
+
+    for (size_t i {}; i < 25; ++i) {
+        uvdata_ds.push_back(
+            DeviceArray<UVDatum<TestType>, 1>::fromVector(uvdata_h)
+        );
+        subgrid_ds.push_back(
+            DeviceArray<ComplexLinearData<TestType>, 2>(subgrid_h)
+        );
+    }
+
     UVWOrigin<TestType> origin {0, 0, 0};
 
-    DeviceArray<ComplexLinearData<TestType>, 2> subgrid({subgridspec.Nx, subgridspec.Ny});
-
-    simple_benchmark("gpudft", 10, [&] {
+    simple_benchmark("gpudft", 1, [&] {
         for (size_t i {}; i < 25; ++i) {
             gpudft<TestType>(
-                uvdata_d, origin, subgrid, subgridspec, DegridOp::Replace
+                uvdata_ds[i], origin, subgrid_ds[i], subgridspec, DegridOp::Replace
             );
         }
         HIPCHECK( hipStreamSynchronize(hipStreamPerThread) );
