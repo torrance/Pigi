@@ -35,7 +35,7 @@ void _gpudift(
 
     for (
         size_t idx = blockIdx.x * blockDim.x + threadIdx.x;
-        idx < blockDim.x * cld(subgridspec.size(), (size_t) blockDim.x);
+        idx < blockDim.x * cld<size_t>(subgridspec.size(), blockDim.x);
         idx += blockDim.x * gridDim.x
     ) {
         auto [l, m] = subgridspec.linearToSky<S>(idx);
@@ -95,7 +95,7 @@ void gpudift(
     if (makePSF) {
         auto fn = _gpudift<T, S, true>;
         int nthreads {128}; // hardcoded to match the cache size
-        int nblocks = cld(subgridspec.size(), nthreads);
+        int nblocks = cld<size_t>(subgridspec.size(), nthreads);
         hipLaunchKernelGGL(
             fn, nblocks, nthreads, 0, hipStreamPerThread,
             subgrid, Aleft, Aright,
@@ -104,7 +104,7 @@ void gpudift(
     } else {
         auto fn = _gpudift<T, S, false>;
         int nthreads {128}; // hardcoded to match the cache size
-        int nblocks = cld(subgridspec.size(), nthreads);
+        int nblocks = cld<size_t>(subgridspec.size(), nthreads);
         hipLaunchKernelGGL(
             fn, nblocks, nthreads, 0, hipStreamPerThread,
             subgrid, Aleft, Aright,

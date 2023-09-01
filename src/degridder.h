@@ -52,7 +52,7 @@ void _gpudft(
 
     for (
         size_t idx = blockIdx.x * blockDim.x + threadIdx.x;
-        idx < blockDim.x * cld(uvdata.size(), (size_t) blockDim.x);
+        idx < blockDim.x * cld<size_t>(uvdata.size(), blockDim.x);
         idx += blockDim.x * gridDim.x
     ) {
         UVDatum<T> uvdatum;
@@ -112,7 +112,7 @@ void gpudft(
 ) {
     auto fn = _gpudft<T>;
     int nthreads {256};
-    int nblocks = cld(uvdata.size(), nthreads);
+    int nblocks = cld<size_t>(uvdata.size(), nthreads);
     hipLaunchKernelGGL(
         fn, nblocks, nthreads, 0, hipStreamPerThread,
         uvdata, origin, subgrid, subgridspec, degridop

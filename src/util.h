@@ -177,9 +177,9 @@ void map(F f, T&& x, Ts&&... xs) {
 /**
  * Ceiling integer division
  */
-template <typename T, typename S>
-requires(std::is_integral<T>::value && std::is_integral<S>::value)
+template <typename T>
+requires(std::is_integral<T>::value)
 __host__ __device__
-inline auto cld(T x, S y) {
+inline auto cld(T x, T y) {
     return (x + y - 1) / y;
 }
