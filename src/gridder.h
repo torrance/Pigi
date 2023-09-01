@@ -27,11 +27,12 @@ void _gpudift(
     const DeviceSpan< UVDatum<S>, 1 > uvdata,
     const GridSpec subgridspec
 ) {
+    // Set up the shared mem cache
     const size_t cachesize {128};
+    constexpr int ratio {sizeof(UVDatum<S>) / sizeof(float4)};
 
-    // Workaround for avoiding initialization of shared variables
-    __shared__ char _cache[cachesize * sizeof(UVDatum<S>)];
-    auto cache = reinterpret_cast<UVDatum<S>* __restrict__>(_cache);
+    __shared__ float4 _cache[cachesize * ratio];
+    auto cache = reinterpret_cast<UVDatum<S>*>(_cache);
 
     for (
         size_t idx = blockIdx.x * blockDim.x + threadIdx.x;
@@ -47,14 +48,19 @@ void _gpudift(
             const size_t N = min(cachesize, uvdata.size() - i);
 
             // Populate cache
-            for (size_t j = threadIdx.x; j < N; j += blockDim.x) {
-                cache[j] = uvdata[i + j];
+            // We cast to float4 to allow coalesced memory access to global memory,
+            // and to avoid bank conflicts when writing to shared memory.
+            auto _uvdata = reinterpret_cast<const float4*>(uvdata.data());
+            for (size_t j = threadIdx.x, ibase = i * ratio; j < N * ratio; j += blockDim.x) {
+                _cache[j] = _uvdata[ibase + j];
             }
             __syncthreads();
 
             // Read through cache
             for (size_t j {}; j < N; ++j) {
                 // Retrieve value of uvdatum from the cache
+                // This shared mem load is broadcast across the warp and so we
+                // don't need to worry about bank conflicts
                 UVDatum<S> uvdatum = cache[j];
 
                 auto phase = cispi(

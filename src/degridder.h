@@ -46,9 +46,12 @@ void _gpudft(
     const GridSpec subgridspec,
     const DegridOp degridop
 ) {
+    // Set up the shared mem cache
     const int cachesize {256};
-    __shared__ char smem[cachesize * sizeof(ComplexLinearData<T>)];
-    auto cache = reinterpret_cast<ComplexLinearData<T>* __restrict__>(smem);
+    constexpr int ratio {sizeof(ComplexLinearData<T>) / sizeof(float4)};
+
+    __shared__ float4 _cache[cachesize * ratio];
+    auto cache = reinterpret_cast<ComplexLinearData<T>*>(_cache);
 
     for (
         size_t idx = blockIdx.x * blockDim.x + threadIdx.x;
@@ -64,8 +67,11 @@ void _gpudft(
             const size_t N = min(cachesize, subgridspec.size() - i);
 
             // Populate cache
-            for (size_t j = threadIdx.x; j < N; j += blockDim.x) {
-                cache[j] = subgrid[i + j];
+            // We cast to float4 to allow coalesced memory access to global memory,
+            // and to avoid bank conflicts when writing to shared memory.
+            auto _subgrid = reinterpret_cast<const float4*>(subgrid.data());
+            for (size_t j = threadIdx.x, ibase = i * ratio; j < N * ratio; j += blockDim.x) {
+                _cache[j] = _subgrid[ibase + j];
             }
             __syncthreads();
 
@@ -78,6 +84,9 @@ void _gpudft(
                     (uvdatum.w - origin.w0) * ndash(l, m)
                 ));
 
+                // Load subgrid cell from the cache
+                // This shared mem load is broadcast across the warp and so we
+                // don't need to worry about bank conflicts
                 auto cell = cache[j];
                 cell *= phase;
                 data += cell;
