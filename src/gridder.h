@@ -28,7 +28,7 @@ void _gpudift(
     const GridSpec subgridspec
 ) {
     // Set up the shared mem cache
-    const size_t cachesize {128};
+    const size_t cachesize {256};
     constexpr int ratio {sizeof(UVDatum<S>) / sizeof(float4)};
 
     __shared__ float4 _cache[cachesize * ratio];
@@ -100,7 +100,7 @@ void gpudift(
 ) {
     if (makePSF) {
         auto fn = _gpudift<T, S, true>;
-        int nthreads {128}; // hardcoded to match the cache size
+        int nthreads {256}; // hardcoded to match the cache size
         int nblocks = cld<size_t>(subgridspec.size(), nthreads);
         hipLaunchKernelGGL(
             fn, nblocks, nthreads, 0, hipStreamPerThread,
@@ -109,7 +109,7 @@ void gpudift(
         );
     } else {
         auto fn = _gpudift<T, S, false>;
-        int nthreads {128}; // hardcoded to match the cache size
+        int nthreads {256}; // hardcoded to match the cache size
         int nblocks = cld<size_t>(subgridspec.size(), nthreads);
         hipLaunchKernelGGL(
             fn, nblocks, nthreads, 0, hipStreamPerThread,
