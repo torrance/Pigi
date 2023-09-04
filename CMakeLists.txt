@@ -3,7 +3,8 @@ cmake_minimum_required(VERSION 3.10)
 find_program(CMAKE_CXX_COMPILER "hipcc" HINTS "/opt/rocm/bin")
 set(CMAKE_CXX_STANDARD "20")
 set(CMAKE_CXX_STANDARD_REQUIRED True)
-set(CMAKE_CXX_FLAGS "-Wall -Wextra -Wpedantic")
+set(CMAKE_CXX_FLAGS "-Wall -Wextra -Wpedantic -Wundef -Wuninitialized -Winit-self -Wshadow -Waggregate-return -Wcast-qual -Wswitch-default -Wswitch-enum -Wunreachable-code")
+# TODO: add -Wconversion ?
 
 project(Pigi)
 
