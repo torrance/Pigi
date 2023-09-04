@@ -217,7 +217,7 @@ void gridder(
                 const auto& Aright = Aterms.at(workunit->Aright.data());
 
                 // Allocate subgrid
-                DeviceArray<T, 2> subgrid {{subgridspec.Nx, subgridspec.Ny}};
+                DeviceArray<T, 2> subgrid {subgridspec.Nx, subgridspec.Ny};
 
                 // DFT
                 gpudift<T, S>(

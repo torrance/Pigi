@@ -57,7 +57,7 @@ void save(std::string_view fname, HostArray<S, 2>& arr) {
 
 template <typename S>
 void save(std::string_view fname, HostArray<StokesI<S>, 2>& stokesI) {
-    HostArray<S, 2> stokesIreal(stokesI.shape());
+    HostArray<S, 2> stokesIreal {stokesI.shape()};
     for (size_t i {}; i < stokesI.size(); ++i) {
         stokesIreal[i] = stokesI[i].I.real();
     }
@@ -66,7 +66,7 @@ void save(std::string_view fname, HostArray<StokesI<S>, 2>& stokesI) {
 
 template <typename S>
 void save(std::string_view fname, HostArray<std::complex<S>, 2>& img) {
-    HostArray<S, 2> imgreal(img.shape());
+    HostArray<S, 2> imgreal {img.shape()};
     for (size_t i {}; i < img.size(); ++i) {
         imgreal[i] = img[i].real();
     }

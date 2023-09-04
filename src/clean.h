@@ -95,7 +95,7 @@ std::tuple<HostArray<StokesI<S>, 2>, size_t> major(
     const GridSpec psfGridspec,
     const Config config
 ) {
-    HostArray<StokesI<S>, 2> components({img.size(0), img.size(1)});
+    HostArray<StokesI<S>, 2> components {img.shape()};
 
     // Clean down to either:
     //   1. the explicit threshold limit, or
@@ -112,8 +112,8 @@ std::tuple<HostArray<StokesI<S>, 2>, size_t> major(
     ;
 
     // Transfer img and psf to device
-    DeviceArray<StokesI<S>, 2> img_d(img);
-    DeviceArray<StokesI<S>, 2> psf_d(psf);
+    DeviceArray<StokesI<S>, 2> img_d {img};
+    DeviceArray<StokesI<S>, 2> psf_d {psf};
 
     size_t iter {};
     while (++iter < config.niter) {
@@ -199,7 +199,7 @@ struct PSF {
 
     template <typename T>
     HostArray<T, 2> draw(GridSpec gridspec) {
-        HostArray<T, 2> psf({gridspec.Nx, gridspec.Ny});
+        HostArray<T, 2> psf {gridspec.Nx, gridspec.Ny};
 
         // Convert major, minor from radians to pixels
         // and FWHM to sigma
@@ -322,12 +322,8 @@ void convolve(HostArray<T, 2>& img, const HostArray<S, 2>& kernel) {
     // Pad the images
     long long xpadding {img.size(0) / 2};
     long long ypadding {img.size(1) / 2};
-    HostArray<T, 2> img_padded(
-        {2 * img.size(0), 2 * img.size(1)}
-    );
-    HostArray<S, 2> kernel_padded(
-        {2 * kernel.size(0), 2 * kernel.size(1)}
-    );
+    HostArray<T, 2> img_padded {2 * img.size(0), 2 * img.size(1)};
+    HostArray<S, 2> kernel_padded {2 * kernel.size(0), 2 * kernel.size(1)};
 
     GridSpec gridspec {img.size(0), img.size(1), 0, 0};
     GridSpec gridspec_padded {img_padded.size(0), img_padded.size(1), 0, 0};

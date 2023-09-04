@@ -105,7 +105,7 @@ auto partition(
                 workunit.u0px, workunit.v0px,
                 workunit.u0, workunit.v0, workunit.w0,
                 workunit.subgridspec, workunit.Aleft, workunit.Aright,
-                HostArray<UVDatum<S>, 1>::fromVector(workunit.data)
+                HostArray<UVDatum<S>, 1>{workunit.data}
             });
             wworkunits.pop_back();
         }

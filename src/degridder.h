@@ -162,9 +162,9 @@ auto extractSubgrid(
     const WorkUnit<S>& workunit
 ) {
     // Allocate subgrid matrix
-    DeviceArray<ComplexLinearData<S>, 2> subgrid(
-        {workunit.subgridspec.Nx, workunit.subgridspec.Ny}
-    );
+    DeviceArray<ComplexLinearData<S>, 2> subgrid {
+        workunit.subgridspec.Nx, workunit.subgridspec.Ny
+    };
 
     // Create dummy gridspec to have access to gridToLinear() method
     GridSpec gridspec {grid.size(0), grid.size(1), 0, 0};

@@ -95,7 +95,7 @@ public:
 
     template <typename R>
     Uniform(const R& uvdata, GridSpec gridspec)
-        : gridspec(gridspec), griddedWeights({gridspec.Nx, gridspec.Ny}) {
+        : gridspec(gridspec), griddedWeights{gridspec.Nx, gridspec.Ny} {
 
         // Sum weights for each grid cell
         for (const UVDatum<T>& uvdatum : uvdata) {
@@ -152,7 +152,7 @@ class Briggs : public Weighter<T> {
 public:
     template <typename R>
     Briggs(R& uvdata, GridSpec gridspec, double robust)
-        : robust(robust), gridspec(gridspec), griddedWeights({gridspec.Nx, gridspec.Ny}) {
+        : robust(robust), gridspec(gridspec), griddedWeights{gridspec.Nx, gridspec.Ny} {
 
         // Sum weights for each grid cell
         for (const UVDatum<T>& uvdatum : uvdata) {

@@ -67,7 +67,7 @@ TEST_CASE("MSet reading and paritioning", "[io]") {
     auto gridspec = GridSpec::fromScaleLM(8000, 8000, std::sin(deg2rad(15. / 3600)));
     auto subgridspec = GridSpec::fromScaleUV(96, 96, gridspec.scaleuv);
 
-    HostArray<ComplexLinearData<double>, 2> Aterms({96, 96});
+    HostArray<ComplexLinearData<double>, 2> Aterms {96, 96};
     Aterms.fill({1, 0, 0, 1});
 
     MeasurementSet mset(
@@ -97,7 +97,7 @@ TEMPLATE_TEST_CASE("Invert", "[invert]", float, double) {
     auto taper = kaiserbessel<TestType>(gridspec);
     auto subtaper = kaiserbessel<TestType>(subgridspec);
 
-    HostArray<ComplexLinearData<TestType>, 2> Aterms({96, 96});
+    HostArray<ComplexLinearData<TestType>, 2> Aterms {96, 96};
     Aterms.fill({1, 0, 0, 1});
 
     MeasurementSet mset(
@@ -135,7 +135,7 @@ TEMPLATE_TEST_CASE("Predict", "[predict]", float, double) {
     auto taper = kaiserbessel<TestType>(gridspec);
     auto subtaper = kaiserbessel<TestType>(subgridspec);
 
-    HostArray<ComplexLinearData<TestType>, 2> Aterms({96, 96});
+    HostArray<ComplexLinearData<TestType>, 2> Aterms {96, 96};
     Aterms.fill({1, 0, 0, 1});
 
     MeasurementSet mset(
@@ -152,7 +152,7 @@ TEMPLATE_TEST_CASE("Predict", "[predict]", float, double) {
     auto workunits = partition(uvdata, gridspec, subgridspec, 18, 25, Aterms);
 
     // Create skymap
-    HostArray<StokesI<TestType>, 2> skymap({gridspec.Nx, gridspec.Ny});
+    HostArray<StokesI<TestType>, 2> skymap {gridspec.Nx, gridspec.Ny};
 
     // Trigger precalculation of kernel configuration
     {
@@ -194,18 +194,18 @@ TEMPLATE_TEST_CASE("gpudift kernel", "[gpudift]", float, double) {
     std::vector<DeviceArray<UVDatum<TestType>, 1>> uvdata_ds;
     for (size_t i {}; i < 25; ++i) {
         uvdata_ds.push_back(
-            DeviceArray<UVDatum<TestType>, 1>::fromVector(uvdata_h)
+            DeviceArray<UVDatum<TestType>, 1> {uvdata_h}
         );
     }
 
     auto subgridspec = GridSpec::fromScaleLM(96, 96, deg2rad(15. / 3600));
     UVWOrigin<TestType> origin {0, 0, 0};
 
-    HostArray<ComplexLinearData<TestType>, 2> Aterm_h({subgridspec.Nx, subgridspec.Ny});
+    HostArray<ComplexLinearData<TestType>, 2> Aterm_h {subgridspec.Nx, subgridspec.Ny};
     Aterm_h.fill({1, 0, 0, 1});
-    DeviceArray<ComplexLinearData<TestType>, 2> Aterm_d(Aterm_h);
+    DeviceArray<ComplexLinearData<TestType>, 2> Aterm_d {Aterm_h};
 
-    DeviceArray<StokesI<TestType>, 2> subgrid({subgridspec.Nx, subgridspec.Ny});
+    DeviceArray<StokesI<TestType>, 2> subgrid {subgridspec.Nx, subgridspec.Ny};
 
     simple_benchmark("gpudift", 1, [&] {
         for (size_t i {}; i < 25; ++i) {
@@ -240,7 +240,7 @@ TEMPLATE_TEST_CASE("gpudft kernel", "[gpudft]", float, double) {
     }
 
     auto subgridspec = GridSpec::fromScaleLM(96, 96, deg2rad(15. / 3600));
-    HostArray<ComplexLinearData<TestType>, 2> subgrid_h({subgridspec.Nx, subgridspec.Ny});
+    HostArray<ComplexLinearData<TestType>, 2> subgrid_h {subgridspec.Nx, subgridspec.Ny};
     for (size_t i {}; i < subgridspec.size(); ++i) {
         subgrid_h[i] = {
             {rand(gen), rand(gen)},
@@ -255,10 +255,10 @@ TEMPLATE_TEST_CASE("gpudft kernel", "[gpudft]", float, double) {
 
     for (size_t i {}; i < 25; ++i) {
         uvdata_ds.push_back(
-            DeviceArray<UVDatum<TestType>, 1>::fromVector(uvdata_h)
+            DeviceArray<UVDatum<TestType>, 1> {uvdata_h}
         );
         subgrid_ds.push_back(
-            DeviceArray<ComplexLinearData<TestType>, 2>(subgrid_h)
+            DeviceArray<ComplexLinearData<TestType>, 2> {subgrid_h}
         );
     }
 

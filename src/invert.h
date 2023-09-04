@@ -26,8 +26,8 @@ HostArray<T<S>, 2> invert(
     const HostSpan<S, 2> subtaper,
     const bool makePSF = false
 ) {
-    DeviceArray<T<S>, 2> imgd {{gridspec.Nx, gridspec.Ny}};
-    DeviceArray<T<S>, 2> wlayerd {{gridspec.Nx, gridspec.Ny}};
+    DeviceArray<T<S>, 2> imgd {gridspec.Nx, gridspec.Ny};
+    DeviceArray<T<S>, 2> wlayerd {gridspec.Nx, gridspec.Ny};
     DeviceArray<S, 2> subtaperd {subtaper};
 
     auto plan = fftPlan<T<S>>(gridspec);

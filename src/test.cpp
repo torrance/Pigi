@@ -30,7 +30,7 @@ TEST_CASE( "Arrays, Spans and H<->D transfers", "[memory]" ) {
     REQUIRE( hs[0] == 1 );
     REQUIRE( hs[8191] == 1 );
 
-    HostArray<int, 1> ha({8192});
+    HostArray<int, 1> ha {8192};
     REQUIRE( ha[0] == 0 );
     REQUIRE( ha[8191] == 0 );
 
@@ -38,7 +38,7 @@ TEST_CASE( "Arrays, Spans and H<->D transfers", "[memory]" ) {
     REQUIRE( ha[0] == 1 );
     REQUIRE( ha[8191] == 1 );
 
-    DeviceArray<int, 1> da(ha);
+    DeviceArray<int, 1> da {ha};
 
     ha.zero();
     REQUIRE( ha[0] == 0 );
@@ -55,7 +55,7 @@ TEST_CASE("Measurement Set & Partition", "[mset]") {
     auto gridspec = GridSpec::fromScaleLM(1000, 1000, std::sin(deg2rad(15. / 3600)));
     auto subgridspec = GridSpec::fromScaleUV(96, 96, gridspec.scaleuv);
 
-    HostArray<ComplexLinearData<double>, 2> Aterms({96, 96});
+    HostArray<ComplexLinearData<double>, 2> Aterms {96, 96};
     Aterms.fill({1, 0, 0, 1});
 
     MeasurementSet mset(
@@ -83,7 +83,7 @@ TEMPLATE_TEST_CASE( "Invert", "[invert]", float, double) {
     int wstep = 25;
 
     // Create dummy Aterms
-    HostArray<ComplexLinearData<TestType>, 2> Aterms({96, 96});
+    HostArray<ComplexLinearData<TestType>, 2> Aterms {96, 96};
     Aterms.fill({1, 0, 0, 1});
 
     // Create tapers
@@ -133,7 +133,7 @@ TEMPLATE_TEST_CASE( "Invert", "[invert]", float, double) {
     applyWeights(weighter, uvdata64);
 
     // Calculate expected at double precision
-    HostArray<StokesI<double>, 2> expected({gridspec.Nx, gridspec.Ny});
+    HostArray<StokesI<double>, 2> expected {gridspec.Nx, gridspec.Ny};
     idft<StokesI<double>, double>(expected, uvdata64, gridspec, 1);
 
     // Cast to float or double
@@ -168,7 +168,7 @@ TEMPLATE_TEST_CASE("Predict", "[predict]", float, double) {
     auto gridspec = GridSpec::fromScaleUV(2000, 2000, 1);
 
     // Create skymap
-    HostArray<StokesI<TestType>, 2> skymap({gridspec.Nx, gridspec.Ny});
+    HostArray<StokesI<TestType>, 2> skymap {gridspec.Nx, gridspec.Ny};
 
     std::mt19937 gen(1234);
     std::uniform_int_distribution<int> randints(700, 1300);
@@ -226,7 +226,7 @@ TEMPLATE_TEST_CASE("Predict", "[predict]", float, double) {
     auto subtaper = kaiserbessel<TestType>(subgridspec);
     int padding {17};
     int wstep {25};
-    HostArray<ComplexLinearData<TestType>, 2> Aterms({subgridspec.Nx, subgridspec.Ny});
+    HostArray<ComplexLinearData<TestType>, 2> Aterms {subgridspec.Nx, subgridspec.Ny};
     Aterms.fill({1, 0, 0, 1});
 
     auto workunits = partition(
@@ -262,7 +262,7 @@ TEMPLATE_TEST_CASE("Predict", "[predict]", float, double) {
 
 TEST_CASE("Clean", "[clean]") {
     auto gridspec = GridSpec::fromScaleLM(1000, 1000, deg2rad(1. / 60));
-    HostArray<StokesI<double>, 2> expected({1000, 1000});
+    HostArray<StokesI<double>, 2> expected {1000, 1000};
 
     std::mt19937 gen(1234);
     std::uniform_int_distribution<size_t> randidx(0, expected.size());
@@ -277,8 +277,8 @@ TEST_CASE("Clean", "[clean]") {
     auto dirtyPSF = expectedPSF.template draw<StokesI<double>>(gridspec);
 
     // TODO: These casts are mess. Find a consistent type.
-    HostArray<double, 2> dirtyPSF_real(dirtyPSF.shape());
-    HostArray<std::complex<double>, 2> dirtyPSF_complex(dirtyPSF.shape());
+    HostArray<double, 2> dirtyPSF_real {dirtyPSF.shape()};
+    HostArray<std::complex<double>, 2> dirtyPSF_complex {dirtyPSF.shape()};
     for (size_t i {}; i < dirtyPSF.size(); ++i) {
         dirtyPSF_real[i] = dirtyPSF[i].real();
         dirtyPSF_complex[i] = dirtyPSF[i].I;

@@ -206,9 +206,18 @@ class Array : public NDBase<T, N, Pointer> {
 public:
     explicit Array() = default;
 
-    explicit Array(const std::array<long long, N> dims) : NDBase<T, N, Pointer>(dims) {
+    explicit Array(const std::array<long long, N>& dims) : NDBase<T, N, Pointer>(dims) {
         malloc(this->ptr, this->size() * sizeof(T));
         this->zero();
+    }
+
+    explicit Array(long long dim0) requires(N == 1) :
+        Array(std::array{dim0}) {}
+    explicit Array(long long dim0, long long dim1) requires(N == 2):
+        Array(std::array{dim0, dim1}) {}
+
+    explicit Array(const std::vector<T>& vec) requires(N == 1) : Array(vec.size()) {
+        memcpy(this->ptr, HostPointer<T> {vec.data()}, this->size() * sizeof(T));
     }
 
     // Explicit copy constructor
@@ -254,12 +263,6 @@ public:
 
     operator const Span<T, N, Pointer>() const {
         return Span<T, N, Pointer> {this->dims, this->ptr};
-    }
-
-    static auto fromVector(const std::vector<T>& other) requires(N == 1) {
-        Array<T, N, Pointer> arr({static_cast<long long>(other.size())});
-        memcpy(arr.ptr, HostPointer<T> {other.data()}, arr.size() * sizeof(T));
-        return arr;
     }
 };
 
