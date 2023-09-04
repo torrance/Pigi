@@ -120,9 +120,6 @@ public:
         return (*this);
     }
 
-    Span(Span&& other) = delete;
-    Span& operator=(Span&& other) = delete;
-
     __host__ __device__ inline T operator[](size_t i) const { return ptr[i]; }
     __host__ __device__ inline T& operator[](size_t i) { return ptr[i]; }
 
@@ -224,7 +221,7 @@ public:
     }
 
     // Move constructor
-    Array(Array<T, N, Pointer>&& other) noexcept { (*this) = std::move(other); }
+    Array(Array<T, N, Pointer>&& other) noexcept { *this = std::move(other); }
 
     // Move assignment
     Array& operator=(Array<T, N, Pointer>&& other) noexcept {

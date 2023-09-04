@@ -88,7 +88,7 @@ template <typename T> requires(std::is_floating_point<T>::value)
 inline T rad2deg(const T& x) { return x * 180 / ::pi_v<T>; }
 
 template <typename T>
-auto crop(HostArray<T, 2>& img, long long edgex, long long edgey) {
+auto crop(HostSpan<T, 2> img, long long edgex, long long edgey) {
     HostArray<T, 2> cropped{
         std::max(img.size(0) - 2 * edgex, 0ll),
         std::max(img.size(1) - 2 * edgey, 0ll)
@@ -109,7 +109,7 @@ auto crop(HostArray<T, 2>& img, long long edgex, long long edgey) {
 }
 
 template <typename T>
-auto crop(HostArray<T, 2>& img, long long edge) {
+auto crop(HostSpan<T, 2> img, long long edge) {
     return crop(img, edge, edge);
 }
 

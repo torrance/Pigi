@@ -225,7 +225,7 @@ struct PSF {
     }
 };
 
-PSF fitpsf(const HostArray<double, 2>& dirtypsf, const GridSpec gridspec) {
+PSF fitpsf(const HostSpan<double, 2> dirtypsf, const GridSpec gridspec) {
     // Linear fit method
     const gsl_multifit_nlinear_type* T = gsl_multifit_nlinear_trust;
 
@@ -316,7 +316,7 @@ PSF fitpsf(const HostArray<double, 2>& dirtypsf, const GridSpec gridspec) {
 }
 
 template <typename T, typename S>
-void convolve(HostArray<T, 2>& img, const HostArray<S, 2>& kernel) {
+void convolve(HostSpan<T, 2> img, const HostSpan<S, 2> kernel) {
     shapecheck(img, kernel);
 
     // Pad the images
@@ -363,7 +363,7 @@ void convolve(HostArray<T, 2>& img, const HostArray<S, 2>& kernel) {
     // Copy back from device
     img_padded = img_d;
 
-    img = crop(img_padded, xpadding, ypadding);
+    img = crop<T>(img_padded, xpadding, ypadding);
 }
 
 }

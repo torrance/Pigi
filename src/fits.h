@@ -27,7 +27,7 @@ template <>
 int getfitsdatatype<double>() { return TDOUBLE; }
 
 template <typename S> requires(std::is_floating_point<S>::value)
-void save(std::string_view fname, HostArray<S, 2>& arr) {
+void save(std::string_view fname, HostSpan<S, 2>&arr) {
     // Append '!' to filename to indicate to cfitsio to overwrite existing file
     std::string fpath("!");
     fpath += fname;
@@ -56,7 +56,7 @@ void save(std::string_view fname, HostArray<S, 2>& arr) {
 }
 
 template <typename S>
-void save(std::string_view fname, HostArray<StokesI<S>, 2>& stokesI) {
+void save(std::string_view fname, HostSpan<StokesI<S>, 2> stokesI) {
     HostArray<S, 2> stokesIreal {stokesI.shape()};
     for (size_t i {}; i < stokesI.size(); ++i) {
         stokesIreal[i] = stokesI[i].I.real();
@@ -65,7 +65,7 @@ void save(std::string_view fname, HostArray<StokesI<S>, 2>& stokesI) {
 }
 
 template <typename S>
-void save(std::string_view fname, HostArray<std::complex<S>, 2>& img) {
+void save(std::string_view fname, HostSpan<std::complex<S>, 2> img) {
     HostArray<S, 2> imgreal {img.shape()};
     for (size_t i {}; i < img.size(); ++i) {
         imgreal[i] = img[i].real();
