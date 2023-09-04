@@ -61,11 +61,11 @@ public:
         casacore::ArrayColumn<float> weightspectrumCol;
         casacore::ArrayColumn<std::complex<float>> dataCol;
 
-        casacore::Array<double> uvw;
-        casacore::Array<bool> flag;
-        casacore::Array<float> weight;
-        casacore::Array<float> weightspectrum;
-        casacore::Array<std::complex<float>> data;
+        casacore::Array<double> uvwArray;
+        casacore::Array<bool> flagArray;
+        casacore::Array<float> weightArray;
+        casacore::Array<float> weightspectrumArray;
+        casacore::Array<std::complex<float>> dataArray;
 
         void rebuild_cache() {
             // Reset the cache and cache pointer
@@ -83,28 +83,28 @@ public:
             };
 
             // Fetch row data in arrays
-            uvwCol.get(nrow, uvw);
-            weightCol.get(nrow, weight);
-            flagCol.getSlice(nrow, slice, flag);
-            weightspectrumCol.getSlice(nrow, slice, weightspectrum);
-            dataCol.getSlice(nrow, slice, data);
+            uvwCol.get(nrow, uvwArray);
+            weightCol.get(nrow, weightArray);
+            flagCol.getSlice(nrow, slice, flagArray);
+            weightspectrumCol.getSlice(nrow, slice, weightspectrumArray);
+            dataCol.getSlice(nrow, slice, dataArray);
 
-            auto uvwIter = uvw.begin();
+            auto uvwIter = uvwArray.begin();
             double u_m {*(uvwIter++)}, v_m {*(uvwIter++)}, w_m {*(uvwIter++)};
 
             bool flagrow {flagrowCol.get(nrow)};
 
             LinearData<double> weightRow;
-            auto weightIter = weight.begin();
+            auto weightIter = weightArray.begin();
             weightRow.xx = *weightIter; ++weightIter;
             weightRow.xy = *weightIter; ++weightIter;
             weightRow.yx = *weightIter; ++weightIter;
             weightRow.yy = *weightIter; ++weightIter;
             weightRow *= !flagrow;  // Flagged row has the effect to set all to zero
 
-            auto dataIter = data.begin();
-            auto weightspectrumIter = weightspectrum.begin();
-            auto flagIter = flag.begin();
+            auto dataIter = dataArray.begin();
+            auto weightspectrumIter = weightspectrumArray.begin();
+            auto flagIter = flagArray.begin();
 
             for (size_t ncol {}; ncol < lambdas.size(); ++ncol) {
                 double u = u_m / lambdas[ncol];
