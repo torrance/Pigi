@@ -93,17 +93,20 @@ void memcpy(DevicePointer<T> dst, DevicePointer<T> src, size_t sz) {
 }
 
 template <typename T, int N, typename Pointer>
-class NDBase {
+class Span {
 public:
-    NDBase() = default;
-    NDBase(std::array<long long, N> dims) : dims(dims) {}
-    NDBase(std::array<long long, N> dims, T* ptr) : dims(dims), ptr(ptr) {}
+    Span() = default;
+    Span(std::array<long long, N> dims, T* ptr = NULL) : dims(dims), ptr(ptr) {}
+
+    Span(std::vector<T>& vec) requires(
+        N == 1 && std::is_same<HostPointer<T>, Pointer>::value
+    ) : Span<T, N, Pointer>({static_cast<long long>(vec.size())}, vec.data())  {}
 
     // Copy constructor
-    NDBase(const NDBase& other) = default;
+    Span(const Span& other) = default;
 
     // Copy assignment
-    NDBase& operator=(const NDBase& other) {
+    Span& operator=(const Span& other) {
         shapecheck(*this, other);
         memcpy(this->ptr, other.ptr, this->size() * sizeof(T));
         return (*this);
@@ -111,14 +114,14 @@ public:
 
     // Copy assignment from other pointer type
     template <typename S>
-    NDBase& operator=(const NDBase<T, N, S>& other) {
+    Span& operator=(const Span<T, N, S>& other) {
         shapecheck(*this, other);
         memcpy(this->ptr, other.ptr, this->size() * sizeof(T));
         return (*this);
     }
 
-    NDBase(NDBase&& other) = delete;
-    NDBase& operator=(NDBase&& other) = delete;
+    Span(Span&& other) = delete;
+    Span& operator=(Span&& other) = delete;
 
     __host__ __device__ inline T operator[](size_t i) const { return ptr[i]; }
     __host__ __device__ inline T& operator[](size_t i) { return ptr[i]; }
@@ -163,8 +166,8 @@ public:
 
     // These friends are required to allow copy assignment between classes with different
     // memory storage locations.
-    friend NDBase<T, N, HostPointer<T>>;
-    friend NDBase<T, N, DevicePointer<T>>;
+    friend Span<T, N, HostPointer<T>>;
+    friend Span<T, N, DevicePointer<T>>;
 
 protected:
     std::array<long long, N> dims {};
@@ -172,28 +175,12 @@ protected:
 };
 
 template <typename T, typename S, typename R, typename Q, int N>
-void shapecheck(const NDBase<T, N, S>& lhs, const NDBase<R, N, Q>& rhs) {
+void shapecheck(const Span<T, N, S>& lhs, const Span<R, N, Q>& rhs) {
     if (lhs.shape() != rhs.shape()) {
         fmt::println("Incompatible array shapes");
         abort();
     }
 }
-
-template <typename T, int N, typename Pointer>
-class Span : public NDBase<T, N, Pointer> {
-public:
-    explicit Span(std::array<long long, N> dims, T* ptr) : NDBase<T, N, Pointer>(dims, ptr) {}
-
-    Span(std::vector<T>& vec) requires(N == 1 && std::is_same<HostPointer<T>, Pointer>::value) :
-        NDBase<T, N, Pointer>({static_cast<long long>(vec.size())}, vec.data())  {}
-
-    // Copy assignment
-    template <typename S>
-    Span& operator=(const NDBase<T, N, S>& other) {
-        NDBase<T, N, Pointer>::operator=(other);
-        return (*this);
-    }
-};
 
 template <typename T, int N>
 using HostSpan = Span<T, N, HostPointer<T>>;
@@ -202,11 +189,11 @@ template <typename T, int N>
 using DeviceSpan = Span<T, N, DevicePointer<T>>;
 
 template <typename T, int N, typename Pointer>
-class Array : public NDBase<T, N, Pointer> {
+class Array : public Span<T, N, Pointer> {
 public:
     explicit Array() = default;
 
-    explicit Array(const std::array<long long, N>& dims) : NDBase<T, N, Pointer>(dims) {
+    explicit Array(const std::array<long long, N>& dims) : Span<T, N, Pointer>(dims) {
         malloc(this->ptr, this->size() * sizeof(T));
         this->zero();
     }
@@ -222,17 +209,17 @@ public:
 
     // Explicit copy constructor
     explicit Array(const Array& other) : Array(other.shape()) {
-        NDBase<T, N, Pointer>::operator=(other);
+        Span<T, N, Pointer>::operator=(other);
     }
 
     // Explicit copy constructor from other pointer type
     template <typename S>
-    explicit Array(const NDBase<T, N, S>& other) : Array(other.shape()) { (*this) = other; }
+    explicit Array(const Span<T, N, S>& other) : Array(other.shape()) { (*this) = other; }
 
     // Copy assignment from other pointer type
     template <typename S>
-    Array& operator=(const NDBase<T, N, S>& other) {
-        NDBase<T, N, Pointer>::operator=(other);
+    Array& operator=(const Span<T, N, S>& other) {
+        Span<T, N, Pointer>::operator=(other);
         return (*this);
     }
 
@@ -256,14 +243,6 @@ public:
         }
         this->ptr = 0;
     }
-
-    operator Span<T, N, Pointer>() {
-        return Span<T, N, Pointer> {this->dims, this->ptr};
-    }
-
-    operator const Span<T, N, Pointer>() const {
-        return Span<T, N, Pointer> {this->dims, this->ptr};
-    }
 };
 
 template <typename T, int N>
@@ -273,14 +252,14 @@ template <typename T, int N>
 using DeviceArray = Array<T, N, DevicePointer<T>>;
 
 template <typename T, typename S, int N>
-auto& operator+=(NDBase<T, N, HostPointer<T>>& lhs, const NDBase<S, N, HostPointer<S>>& rhs) {
+auto& operator+=(Span<T, N, HostPointer<T>>& lhs, const Span<S, N, HostPointer<S>>& rhs) {
     shapecheck(lhs, rhs);
     for (size_t i {}; i < lhs.size(); ++i) lhs[i] += rhs[i];
     return lhs;
 }
 
 template <typename T, typename S, int N>
-auto& operator/=(NDBase<T, N, HostPointer<T>>& lhs, const NDBase<S, N, HostPointer<S>>& rhs) {
+auto& operator/=(Span<T, N, HostPointer<T>>& lhs, const Span<S, N, HostPointer<S>>& rhs) {
     shapecheck(lhs, rhs);
     for (size_t i {}; i < lhs.size(); ++i) lhs[i] /= rhs[i];
     return lhs;
