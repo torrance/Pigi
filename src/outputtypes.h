@@ -253,19 +253,9 @@ struct StokesI {
         Aleft.inv();
         Aright.inv().adjoint();
 
-        T power {};
-        for (auto J : {
-            ComplexLinearData<T> {1, 0, 0, 0},
-            ComplexLinearData<T> {0, 1, 0, 0},
-            ComplexLinearData<T> {0, 0, 1, 0},
-            ComplexLinearData<T> {0, 0, 0, 1}
-        }) {
-            // J = invAleft * selector * invAright
-            J.lmul(Aleft).rmul(Aright);
-            power += std::abs(J.xx.real() + J.yy.real()) +
-                    std::abs(J.xx.imag() + J.yy.imag());
-        }
-        return power / 2;
+        ComplexLinearData<T> J {{1, 1}, {1, 1}, {1, 1}, {1, 1}};
+        J.lmul(Aleft).rmul(Aright);
+        return std::abs(J.xx.real() + J.yy.real()) / 2;
     }
 
     __host__ __device__
@@ -279,19 +269,9 @@ struct StokesI {
         Aright.adjoint().inv();
 
         // Calculate norm
-        T norm {};
-        for (auto J : {
-            ComplexLinearData<T> {1, 0, 0, 0},
-            ComplexLinearData<T> {0, 1, 0, 0},
-            ComplexLinearData<T> {0, 0, 1, 0},
-            ComplexLinearData<T> {0, 0, 0, 1}
-        }) {
-            // J = invAleft * selector * invAright
-            J.lmul(Aleft).rmul(Aright);
-            norm += std::abs(J.xx.real() + J.yy.real()) +
-                    std::abs(J.xx.imag() + J.yy.imag());
-        }
-        norm /= 2;
+        ComplexLinearData<T> J {{1, 1}, {1, 1}, {1, 1}, {1, 1}};
+        J.lmul(Aleft).rmul(Aright);
+        auto norm = std::abs(J.xx.real() + J.yy.real()) / 2;
 
         // Finally, apply beam correction and normalize
         // (inv(Aleft) * this * inv(Aright)') / norm
