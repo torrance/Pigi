@@ -128,7 +128,7 @@ TEMPLATE_TEST_CASE_SIG(
     (double, (MWABeam<double>), -4)
 ) {
     // Config
-    auto gridspec = GridSpec::fromScaleLM(1500, 1500, std::sin(deg2rad(15. / 3600)));
+    auto gridspec = GridSpec::fromScaleLM(1500, 1500, std::sin(deg2rad(2.5 / 60)));
     auto subgridspec = GridSpec::fromScaleUV(96, 96, gridspec.scaleuv);
     int padding = 18;
     int wstep = 25;
@@ -138,7 +138,7 @@ TEMPLATE_TEST_CASE_SIG(
     // Create Aterms
     BEAM beam;
     if constexpr(std::is_same<Beam::Gaussian<Q>, BEAM>::value) {
-        beam = BEAM(gridorigin, deg2rad(3.));
+        beam = BEAM(gridorigin, deg2rad(20.));
     }
     auto Aterm = beam.gridResponse(subgridspec, gridorigin, freq);
 
@@ -155,8 +155,8 @@ TEMPLATE_TEST_CASE_SIG(
         // Create a list of Ra/Dec sources
         std::vector<std::tuple<double, double, ComplexLinearData<double>>> sources;
         for (size_t i {}; i < 250; ++i) {
-            double l { std::sin( deg2rad((rand(gen) - 0.5) * 5) ) };
-            double m { std::sin( deg2rad((rand(gen) - 0.5) * 5) ) };
+            double l { std::sin( deg2rad((rand(gen) - 0.5) * 50) ) };
+            double m { std::sin( deg2rad((rand(gen) - 0.5) * 50) ) };
 
             auto jones = static_cast<ComplexLinearData<double>>(
                 beam.pointResponse(lmToAzEl(l, m, gridorigin), freq)
@@ -168,9 +168,9 @@ TEMPLATE_TEST_CASE_SIG(
             double u = rand(gen), v = rand(gen), w = rand(gen);
 
             // Scale uv to be in -500 <= +500 and w 0 < 500
-            u = (u - 0.5) * 1000;
-            v = (v - 0.5) * 1000;
-            w*= 500;
+            u = (u - 0.5) * 200;
+            v = (v - 0.5) * 200;
+            w*= 200;
 
             ComplexLinearData<double> data;
             for (auto [l, m, jones] : sources) {
