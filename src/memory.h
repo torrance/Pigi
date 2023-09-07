@@ -240,6 +240,17 @@ public:
         }
         this->ptr = 0;
     }
+
+    template <typename R>
+    explicit operator Array<R, N, HostPointer<R>>() const requires(
+        std::is_same<Pointer, HostPointer<T>>::value
+    ) {
+        Array<R, N, HostPointer<R>> other {this->shape()};
+        for (size_t i {}; i < this->size(); ++i) {
+            other[i] = static_cast<R>((*this)[i]);
+        }
+        return other;
+    }
 };
 
 template <typename T, int N>
