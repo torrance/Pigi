@@ -20,6 +20,12 @@ struct alignas(16) LinearData {
         };
     }
 
+    bool operator==(const LinearData& other) const {
+        return xx == other.xx && yx == other.yx && xy == other.xy && yy == other.yy;
+    }
+
+    bool operator!=(const LinearData& other) const { return !(*this == other); };
+
     template <typename S>
     __host__ __device__
     inline auto& operator*=(const S& c) {

@@ -49,6 +49,41 @@ TEST_CASE( "Arrays, Spans and H<->D transfers", "[memory]" ) {
     REQUIRE( ha[8191] == 1 );
 }
 
+TEST_CASE("Matrix tests", "[matrix]") {
+    ComplexLinearData<double> A {12, 44, 3, 32};
+    ComplexLinearData<double> B {{42, 1}, {4, 7}, {31, -3}, {-3, -5}};
+
+    auto C = A;
+    C.lmul(B);
+    REQUIRE(
+        C == ComplexLinearData<double>{{1868, -120}, {-84, -136}, {1118, -93}, {-84, -139}}
+    );
+
+    C = A;
+    C.rmul(B);
+    REQUIRE(
+        C == ComplexLinearData<double>{{516, 33}, {1976, 268}, {363, -51}, {1268, -292}}
+    );
+
+    C = A;
+    C.inv().adjoint();
+    REQUIRE((
+        std::abs(C.xx - 0.126984) < 1e-5 &&
+        std::abs(C.yx - -0.0119048) < 1e-5 &&
+        std::abs(C.xy - -0.174603) < 1e-5 &&
+        std::abs(C.yy - 0.047619) < 1e-5
+    ));
+
+    C = B;
+    C.adjoint().inv();
+    REQUIRE((
+        std::abs(C.xx - std::complex<double>{0.0117647, -0.000309598}) < 1e-5 &&
+        std::abs(C.yx - std::complex<double>{0.028483, 0.0560372}) < 1e-5 &&
+        std::abs(C.xy - std::complex<double>{0.0162539, -0.000773994}) < 1e-5 &&
+        std::abs(C.yy - std::complex<double>{-0.0472136, -0.0704334}) < 1e-5
+    ));
+}
+
 TEST_CASE("Measurement Set & Partition", "[mset]") {
     if (!TESTDATA) { SKIP("TESTDATA path not provided"); }
 
