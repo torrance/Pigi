@@ -7,6 +7,7 @@
 #include <catch2/catch_template_test_macros.hpp>
 #include <fmt/format.h>
 
+#include "beam.h"
 #include "clean.h"
 #include "dft.h"
 #include "degridder.h"
@@ -110,20 +111,40 @@ TEST_CASE("Measurement Set & Partition", "[mset]") {
     REQUIRE( n == 2790000 );
 }
 
-TEMPLATE_TEST_CASE( "Invert", "[invert]", float, double) {
+// Catch2 doesn't seem to support namespace separators
+// so we rename these here
+template <typename Q> using UniformBeam = Beam::Uniform<Q>;
+template <typename Q> using GaussianBeam = Beam::Gaussian<Q>;
+template <typename Q> using MWABeam = Beam::MWA<Q>;
+
+TEMPLATE_TEST_CASE_SIG(
+    "Invert", "[invert]",
+    ((typename Q, typename BEAM, int THRESHOLD), Q, BEAM, THRESHOLD),
+    (float, (UniformBeam<float>), -5),
+    (double, (UniformBeam<double>), -10),
+    (float, (GaussianBeam<float>), -5),
+    (double, (GaussianBeam<double>), -10),
+    (float, (MWABeam<float>), -4),
+    (double, (MWABeam<double>), -4)
+) {
     // Config
     auto gridspec = GridSpec::fromScaleLM(1500, 1500, std::sin(deg2rad(15. / 3600)));
     auto subgridspec = GridSpec::fromScaleUV(96, 96, gridspec.scaleuv);
     int padding = 18;
     int wstep = 25;
+    double freq = 150e6;
+    AzEl gridorigin {0, pi_v<double> / 2};
 
-    // Create dummy Aterms
-    HostArray<ComplexLinearData<TestType>, 2> Aterms {96, 96};
-    Aterms.fill({1, 0, 0, 1});
+    // Create Aterms
+    BEAM beam;
+    if constexpr(std::is_same<Beam::Gaussian<Q>, BEAM>::value) {
+        beam = BEAM(gridorigin, deg2rad(3.));
+    }
+    auto Aterm = beam.gridResponse(subgridspec, gridorigin, freq);
 
     // Create tapers
-    auto taper = kaiserbessel<TestType>(gridspec);
-    auto subtaper = kaiserbessel<TestType>(subgridspec);
+    auto taper = kaiserbessel<Q>(gridspec);
+    auto subtaper = kaiserbessel<Q>(subgridspec);
 
     // Create uvdata
     std::vector<UVDatum<double>> uvdata64;
@@ -132,11 +153,15 @@ TEMPLATE_TEST_CASE( "Invert", "[invert]", float, double) {
         std::uniform_real_distribution<double> rand(0, 1);
 
         // Create a list of Ra/Dec sources
-        std::vector<std::tuple<double, double>> sources;
+        std::vector<std::tuple<double, double, ComplexLinearData<double>>> sources;
         for (size_t i {}; i < 250; ++i) {
-            double ra { deg2rad((rand(gen) - 0.5) * 5) };
-            double dec { deg2rad((rand(gen) - 0.5) * 5) };
-            sources.emplace_back(ra, dec);
+            double l { std::sin( deg2rad((rand(gen) - 0.5) * 5) ) };
+            double m { std::sin( deg2rad((rand(gen) - 0.5) * 5) ) };
+
+            auto jones = static_cast<ComplexLinearData<double>>(
+                beam.pointResponse(lmToAzEl(l, m, gridorigin), freq)
+            );
+            sources.emplace_back(l, m, jones);
         }
 
         for (size_t i {}; i < 20000; ++i) {
@@ -148,12 +173,15 @@ TEMPLATE_TEST_CASE( "Invert", "[invert]", float, double) {
             w*= 500;
 
             ComplexLinearData<double> data;
-            for (auto [ra, dec] : sources) {
-                double l { std::sin(ra) }, m = { std::sin(dec) };
+            for (auto [l, m, jones] : sources) {
                 auto phase = cispi(-2 * (
                     u * l + v * m + w * ndash(l, m)
                 ));
-                data += ComplexLinearData<double> {phase, 0, 0, phase};
+
+                ComplexLinearData<double> cell {phase, 0, 0, phase};
+                cell.lmul(jones);
+                cell.rmul(jones.adjoint());
+                data += cell;
             }
 
             // TODO: use emplace_back() when we can upgrade Clang
@@ -169,21 +197,33 @@ TEMPLATE_TEST_CASE( "Invert", "[invert]", float, double) {
 
     // Calculate expected at double precision
     HostArray<StokesI<double>, 2> expected {gridspec.Nx, gridspec.Ny};
-    idft<StokesI<double>, double>(expected, uvdata64, gridspec, 1);
+    {
+        auto jones = static_cast<HostArray<ComplexLinearData<double>, 2>>(
+            beam.gridResponse(gridspec, gridorigin, freq)
+        );
+        idft<StokesI<double>, double>(expected, jones, uvdata64, gridspec);
+    }
 
     // Cast to float or double
-    std::vector<UVDatum<TestType>> uvdata;
+    std::vector<UVDatum<Q>> uvdata;
     for (const auto& uvdatum : uvdata64) {
-        uvdata.push_back(static_cast<UVDatum<TestType>>(uvdatum));
+        uvdata.push_back(static_cast<UVDatum<Q>>(uvdatum));
     }
 
     auto workunits = partition(
-        uvdata, gridspec, subgridspec, padding, wstep, Aterms
+        uvdata, gridspec, subgridspec, padding, wstep, Aterm
     );
 
-    auto img = invert<StokesI, TestType>(
+    auto img = invert<StokesI, Q>(
         workunits, gridspec, taper, subtaper
     );
+
+    // Correct for beam
+    auto jonesgrid = beam.gridResponse(gridspec, gridorigin, freq);
+    HostArray<StokesI<Q>, 2> power {gridspec.Nx, gridspec.Ny};
+    for (size_t i {}; i < gridspec.size(); ++i) {
+        img[i] *= StokesI<Q>::beamPower(jonesgrid[i], jonesgrid[i]);
+    }
 
     double maxdiff {};
     for (size_t nx = 250; nx < 1250; ++nx) {
@@ -196,7 +236,7 @@ TEMPLATE_TEST_CASE( "Invert", "[invert]", float, double) {
         }
     }
     fmt::println("Max diff: {:g}", maxdiff);
-    REQUIRE( maxdiff < (std::is_same<float, TestType>::value ? 1e-5 : 2e-10) );
+    REQUIRE( maxdiff < std::pow(10, THRESHOLD));
 }
 
 TEMPLATE_TEST_CASE("Predict", "[predict]", float, double) {

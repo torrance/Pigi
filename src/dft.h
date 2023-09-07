@@ -13,9 +13,9 @@
 template <typename T, typename S>
 __global__ void _idft(
     DeviceSpan<T, 2> img,
+    DeviceSpan<ComplexLinearData<S>, 2> jones,
     DeviceSpan<UVDatum<S>, 1> uvdata,
-    GridSpec gridspec,
-    S normfactor
+    GridSpec gridspec
 ) {
     for (
         size_t idx = blockIdx.x * blockDim.x + threadIdx.x;
@@ -34,7 +34,11 @@ __global__ void _idft(
             cell += uvdatum.data;
         }
 
-        cell /= normfactor;
+        // Retrieve and apply beam correction
+        auto j = jones[idx];
+        j.inv();
+        cell.lmul(j);
+        cell.rmul(j.adjoint());
         img[idx] = cell;
     }
 }
@@ -42,11 +46,12 @@ __global__ void _idft(
 template <typename T, typename S>
 void idft(
     HostSpan<T, 2> img,
+    HostSpan<ComplexLinearData<S>, 2> jones,
     HostSpan<UVDatum<S>, 1> uvdata,
-    GridSpec gridspec,
-    S normfactor
+    GridSpec gridspec
 ) {
     DeviceArray<T, 2> img_d {img};
+    DeviceArray<ComplexLinearData<S>, 2> jones_d {jones};
     DeviceArray<UVDatum<S>, 1> uvdata_d {uvdata};
 
     auto fn = _idft<T, S>;
@@ -55,7 +60,7 @@ void idft(
     );
     hipLaunchKernelGGL(
         fn, nblocks, nthreads, 0, hipStreamPerThread,
-        img_d, uvdata_d, gridspec, normfactor
+        img_d, jones_d, uvdata_d, gridspec
     );
 
     img = img_d;

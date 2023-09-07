@@ -219,6 +219,18 @@ struct StokesI {
         return *this;
     }
 
+    __host__ __device__
+    inline auto& operator *=(const StokesI<T> x) {
+        I *= x.I;
+        return *this;
+    }
+
+    __host__ __device__
+    inline auto& operator /=(const StokesI<T> x) {
+        I /= x.I;
+        return *this;
+    }
+
     template<typename S>
     __host__ __device__
     inline auto& operator*=(const S x) {
@@ -235,6 +247,26 @@ struct StokesI {
 
     __host__ __device__
     inline T real() { return I.real(); }
+
+    static StokesI<T> beamPower(ComplexLinearData<T> Aleft, ComplexLinearData<T> Aright) {
+        // These are inplace
+        Aleft.inv();
+        Aright.inv().adjoint();
+
+        T power {};
+        for (auto J : {
+            ComplexLinearData<T> {1, 0, 0, 0},
+            ComplexLinearData<T> {0, 1, 0, 0},
+            ComplexLinearData<T> {0, 0, 1, 0},
+            ComplexLinearData<T> {0, 0, 0, 1}
+        }) {
+            // J = invAleft * selector * invAright
+            J.lmul(Aleft).rmul(Aright);
+            power += std::abs(J.xx.real() + J.yy.real()) +
+                    std::abs(J.xx.imag() + J.yy.imag());
+        }
+        return power / 2;
+    }
 
     __host__ __device__
     static StokesI<T> fromBeam(
@@ -259,7 +291,7 @@ struct StokesI {
             norm += std::abs(J.xx.real() + J.yy.real()) +
                     std::abs(J.xx.imag() + J.yy.imag());
         }
-        norm *= 0.5;
+        norm /= 2;
 
         // Finally, apply beam correction and normalize
         // (inv(Aleft) * this * inv(Aright)') / norm

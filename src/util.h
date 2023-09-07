@@ -82,10 +82,10 @@ inline T ndash(const T l, const T m) {
 }
 
 template <typename T> requires(std::is_floating_point<T>::value)
-inline T deg2rad(const T& x) { return x * ::pi_v<T> / 180; }
+constexpr inline T deg2rad(const T& x) { return x * ::pi_v<T> / 180; }
 
 template <typename T> requires(std::is_floating_point<T>::value)
-inline T rad2deg(const T& x) { return x * 180 / ::pi_v<T>; }
+constexpr inline T rad2deg(const T& x) { return x * 180 / ::pi_v<T>; }
 
 template <typename T>
 auto crop(HostSpan<T, 2> img, long long edgex, long long edgey) {
