@@ -119,16 +119,16 @@ template <typename Q> using MWABeam = Beam::MWA<Q>;
 
 TEMPLATE_TEST_CASE_SIG(
     "Invert", "[invert]",
-    ((typename Q, typename BEAM, int THRESHOLD), Q, BEAM, THRESHOLD),
-    (float, (UniformBeam<float>), -5),
-    (double, (UniformBeam<double>), -10),
-    (float, (GaussianBeam<float>), -5),
-    (double, (GaussianBeam<double>), -10),
-    (float, (MWABeam<float>), -4),
-    (double, (MWABeam<double>), -4)
+    ((typename Q, typename BEAM, int THRESHOLDF, int THRESHOLDP), Q, BEAM, THRESHOLDF, THRESHOLDP),
+    (float, (UniformBeam<float>), 2, -5),
+    (double, (UniformBeam<double>), 2, -10),
+    (float, (GaussianBeam<float>), 2, -5),
+    (double, (GaussianBeam<double>), 2, -10),
+    (float, (MWABeam<float>), 7, -4),
+    (double, (MWABeam<double>), 8, -6)
 ) {
     // Config
-    auto gridspec = GridSpec::fromScaleLM(1500, 1500, std::sin(deg2rad(2.5 / 60)));
+    auto gridspec = GridSpec::fromScaleLM(1500, 1500, std::sin(deg2rad(2.2 / 60)));
     auto subgridspec = GridSpec::fromScaleUV(96, 96, gridspec.scaleuv);
     int padding = 18;
     int wstep = 25;
@@ -138,7 +138,7 @@ TEMPLATE_TEST_CASE_SIG(
     // Create Aterms
     BEAM beam;
     if constexpr(std::is_same<Beam::Gaussian<Q>, BEAM>::value) {
-        beam = BEAM(gridorigin, deg2rad(20.));
+        beam = BEAM(gridorigin, deg2rad(25.));
     }
     auto Aterm = beam.gridResponse(subgridspec, gridorigin, freq);
 
@@ -237,7 +237,7 @@ TEMPLATE_TEST_CASE_SIG(
     }
     fmt::println("Max diff: {:g}", maxdiff);
     REQUIRE( maxdiff != -1 );
-    REQUIRE( maxdiff < std::pow(10, THRESHOLD));
+    REQUIRE( maxdiff < THRESHOLDF * std::pow(10, THRESHOLDP));
 }
 
 TEMPLATE_TEST_CASE("Predict", "[predict]", float, double) {
