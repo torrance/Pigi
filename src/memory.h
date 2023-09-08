@@ -55,9 +55,13 @@ void malloc(HostPointer<T>& ptr, size_t sz) {
 
 template <typename T>
 void malloc(DevicePointer<T>& ptr, size_t sz) {
-    std::lock_guard lock(memlock);
-    HIPCHECK( hipMallocAsync(&ptr, sz, hipStreamPerThread) );
+    // To avoid holding the lock for longer than necessary, sync first
     HIPCHECK( hipStreamSynchronize(hipStreamPerThread) );
+    {
+        std::lock_guard lock(memlock);
+        HIPCHECK( hipMallocAsync(&ptr, sz, hipStreamPerThread) );
+        HIPCHECK( hipStreamSynchronize(hipStreamPerThread) );
+    }
 }
 
 template <typename T>
