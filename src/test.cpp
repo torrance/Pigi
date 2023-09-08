@@ -225,7 +225,7 @@ TEMPLATE_TEST_CASE_SIG(
         img[i] *= StokesI<Q>::beamPower(jonesgrid[i], jonesgrid[i]);
     }
 
-    double maxdiff {};
+    double maxdiff {-1};
     for (size_t nx = 250; nx < 1250; ++nx) {
         for (size_t ny = 250; ny < 1250; ++ny) {
             auto idx = gridspec.gridToLinear(nx, ny);
@@ -236,6 +236,7 @@ TEMPLATE_TEST_CASE_SIG(
         }
     }
     fmt::println("Max diff: {:g}", maxdiff);
+    REQUIRE( maxdiff != -1 );
     REQUIRE( maxdiff < std::pow(10, THRESHOLD));
 }
 
@@ -319,7 +320,7 @@ TEMPLATE_TEST_CASE("Predict", "[predict]", float, double) {
         }
     }
 
-    double maxdiff {};
+    double maxdiff {-1};
     for (size_t i {}; i < uvdata.size(); ++i) {
         auto diff = uvdata[i].data;
         diff -= expected[i].data;
@@ -332,6 +333,7 @@ TEMPLATE_TEST_CASE("Predict", "[predict]", float, double) {
     }
 
     fmt::println("Prediction max diff: {}", maxdiff);
+    REQUIRE( maxdiff != -1 );
     REQUIRE( maxdiff < (std::is_same<float, TestType>::value ? 1e-3 : 3e-9) );
 }
 
