@@ -13,8 +13,8 @@ class MeasurementSet {
 public:
     class Iterator {
     public:
-        Iterator(MeasurementSet& mset, size_t nrow = 0) :
-            mset(mset), lambdas(mset.freqs), nrow(nrow - 1),
+        Iterator(MeasurementSet& mset, long nstart = 0) :
+            mset(mset), lambdas(mset.freqs), nstart(nstart),
             uvwCol(mset.tbl, "UVW"),
             flagrowCol(mset.tbl, "FLAG_ROW"),
             flagCol(mset.tbl, "FLAG"),
@@ -42,7 +42,7 @@ public:
         }
 
         bool operator==(const Iterator& other) const {
-            return nrow == other.nrow;
+            return nstart == other.nstart;
         }
 
         bool operator!=(const Iterator& other) const { return !(*this == other); }
@@ -52,7 +52,7 @@ public:
         std::vector<double> lambdas;
         std::vector<UVDatum<double>> cache;
         std::vector<UVDatum<double>>::iterator cache_current;
-        size_t nrow {};
+        long nstart {};
 
         casacore::ArrayColumn<double> uvwCol;
         casacore::ScalarColumn<bool> flagrowCol;
@@ -62,95 +62,121 @@ public:
         casacore::ArrayColumn<std::complex<float>> dataCol;
 
         casacore::Array<double> uvwArray;
+        casacore::Vector<bool> flagrowArray;
         casacore::Array<bool> flagArray;
         casacore::Array<float> weightArray;
         casacore::Array<float> weightspectrumArray;
         casacore::Array<std::complex<float>> dataArray;
 
         void rebuild_cache() {
-            // Reset the cache and cache pointer
-            // Do this always, as end() relies on this behaviour
+            // Clear the cache
             cache.clear();
-            cache_current = cache.begin();
+
+            // Hardcode the batchsize for now
+            const long batchsize = 100;
 
             // Early return if we've finished the table
-            if (++nrow >= mset.tbl.nrow()) return;
+            if (nstart == -1 || nstart >= static_cast<long>(mset.tbl.nrow())) {
+                nstart = -1;
+                return;
+            }
+
+            // Note: nend is inclusive, so subtract 1
+            long nend = std::min(
+                nstart + batchsize,
+                static_cast<long>(mset.tbl.nrow())
+            ) - 1;
 
             // Set up slicers
-            casacore::Slicer slice {
-                    casacore::IPosition {0, mset.chanlow}, casacore::IPosition {3, mset.chanhigh},
-                    casacore::Slicer::endIsLast
+            casacore::Slicer rowSlice {
+                casacore::IPosition {nstart},
+                casacore::IPosition {nend},
+                casacore::Slicer::endIsLast
+            };
+
+            casacore::Slicer arraySlice {
+                casacore::IPosition {0, mset.chanlow},
+                casacore::IPosition {3, mset.chanhigh},
+                casacore::Slicer::endIsLast
             };
 
             // Fetch row data in arrays
-            uvwCol.get(nrow, uvwArray);
-            weightCol.get(nrow, weightArray);
-            flagCol.getSlice(nrow, slice, flagArray);
-            weightspectrumCol.getSlice(nrow, slice, weightspectrumArray);
-            dataCol.getSlice(nrow, slice, dataArray);
+            uvwCol.getColumnRange(rowSlice, uvwArray, true);
+            weightCol.getColumnRange(rowSlice, weightArray, true);
+            flagrowCol.getColumnRange(rowSlice, flagrowArray, true);
+            flagCol.getColumnRange(rowSlice, arraySlice, flagArray, true);
+            weightspectrumCol.getColumnRange(rowSlice, arraySlice, weightspectrumArray, true);
+            dataCol.getColumnRange(rowSlice, arraySlice, dataArray, true);
 
+            // Create iterators
             auto uvwIter = uvwArray.begin();
-            double u_m {*(uvwIter++)}, v_m {*(uvwIter++)}, w_m {*(uvwIter++)};
-
-            bool flagrow {flagrowCol.get(nrow)};
-
-            LinearData<double> weightRow;
+            auto flagrowIter = flagrowArray.begin();
             auto weightIter = weightArray.begin();
-            weightRow.xx = *weightIter; ++weightIter;
-            weightRow.xy = *weightIter; ++weightIter;
-            weightRow.yx = *weightIter; ++weightIter;
-            weightRow.yy = *weightIter; ++weightIter;
-            weightRow *= !flagrow;  // Flagged row has the effect to set all to zero
-
             auto dataIter = dataArray.begin();
             auto weightspectrumIter = weightspectrumArray.begin();
             auto flagIter = flagArray.begin();
 
-            for (size_t ncol {}; ncol < lambdas.size(); ++ncol) {
-                double u = u_m / lambdas[ncol];
-                double v = v_m / lambdas[ncol];
-                double w = w_m / lambdas[ncol];
+            for (long nrow {nstart}; nrow <= nend; ++nrow) {
+                double u_m = *uvwIter; ++uvwIter;
+                double v_m = *uvwIter; ++uvwIter;
+                double w_m = *uvwIter; ++uvwIter;
 
-                LinearData<double> weights;
-                weights.xx = *weightspectrumIter; ++weightspectrumIter;
-                weights.xy = *weightspectrumIter; ++weightspectrumIter;
-                weights.yx = *weightspectrumIter; ++weightspectrumIter;
-                weights.yy = *weightspectrumIter; ++weightspectrumIter;
+                bool flagrow = *flagrowIter; ++flagrowIter;
 
-                // Negate the flags so that flagged data = 0 when used as a weight
-                LinearData<bool> flags;
-                flags.xx = !*flagIter; ++flagIter;
-                flags.xy = !*flagIter; ++flagIter;
-                flags.yx = !*flagIter; ++flagIter;
-                flags.yy = !*flagIter; ++flagIter;
+                LinearData<double> weightRow;
+                weightRow.xx = *weightIter; ++weightIter;
+                weightRow.xy = *weightIter; ++weightIter;
+                weightRow.yx = *weightIter; ++weightIter;
+                weightRow.yy = *weightIter; ++weightIter;
+                weightRow *= !flagrow;  // Flagged row has the effect to set all to zero
 
-                (weights *= weightRow) *= flags;
+                for (size_t ncol {}; ncol < lambdas.size(); ++ncol) {
+                    double u = u_m / lambdas[ncol];
+                    double v = v_m / lambdas[ncol];
+                    double w = w_m / lambdas[ncol];
 
-                ComplexLinearData<double> data;
-                data.xx = *dataIter; ++dataIter;
-                data.xy = *dataIter; ++dataIter;
-                data.yx = *dataIter; ++dataIter;
-                data.yy = *dataIter; ++dataIter;
+                    LinearData<double> weights;
+                    weights.xx = *weightspectrumIter; ++weightspectrumIter;
+                    weights.xy = *weightspectrumIter; ++weightspectrumIter;
+                    weights.yx = *weightspectrumIter; ++weightspectrumIter;
+                    weights.yy = *weightspectrumIter; ++weightspectrumIter;
 
-                if (!weights.isfinite() || !data.isfinite()) {
-                    data = {};
-                    weights = {};
-                }
+                    // Negate the flags so that flagged data = 0 when used as a weight
+                    LinearData<bool> flags;
+                    flags.xx = !*flagIter; ++flagIter;
+                    flags.xy = !*flagIter; ++flagIter;
+                    flags.yx = !*flagIter; ++flagIter;
+                    flags.yy = !*flagIter; ++flagIter;
 
-                // We can always force w >= 0, since V(u, v, w) = V*(-u, -v, -w)
-                // and this helps reduce the number of distinct w-layers.
-                if (w < 0) {
-                    u = -u; v = -v; w = -w;
-                    data = data.adjoint();
-                    weights = weights.adjoint();
-                }
+                    (weights *= weightRow) *= flags;
 
-                cache.push_back(UVDatum<double> {
-                    nrow, ncol, u, v, w, weights, data
-                });
-            }
+                    ComplexLinearData<double> data;
+                    data.xx = *dataIter; ++dataIter;
+                    data.xy = *dataIter; ++dataIter;
+                    data.yx = *dataIter; ++dataIter;
+                    data.yy = *dataIter; ++dataIter;
+
+                    if (!weights.isfinite() || !data.isfinite()) {
+                        data = {};
+                        weights = {};
+                    }
+
+                    // We can always force w >= 0, since V(u, v, w) = V*(-u, -v, -w)
+                    // and this helps reduce the number of distinct w-layers.
+                    if (w < 0) {
+                        u = -u; v = -v; w = -w;
+                        data = data.adjoint();
+                        weights = weights.adjoint();
+                    }
+
+                    cache.push_back(UVDatum<double> {
+                        static_cast<size_t>(nrow), ncol, u, v, w, weights, data
+                    });
+                }  // chan iteration
+            }  // nrow iteration
 
             cache_current = cache.begin(); // Reset iterator, as it may have changed
+            nstart += batchsize;
         }
     };
 
@@ -187,7 +213,7 @@ public:
     }
 
     auto begin() { return Iterator(*this); }
-    auto end() { return Iterator(*this, tbl.nrow()); }
+    auto end() { return Iterator(*this, -1); }
 
 private:
     casacore::Table tbl;
