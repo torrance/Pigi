@@ -194,9 +194,11 @@ class Array : public Span<T, N, Pointer> {
 public:
     explicit Array() = default;
 
-    explicit Array(const std::array<long long, N>& dims) : Span<T, N, Pointer>(dims) {
+    explicit Array(const std::array<long long, N>& dims, const bool zero = true) :
+        Span<T, N, Pointer>(dims) {
+
         malloc(this->ptr, this->size() * sizeof(T));
-        this->zero();
+        if (zero) this->zero();
     }
 
     explicit Array(long long dim0) requires(N == 1) :
@@ -204,18 +206,22 @@ public:
     explicit Array(long long dim0, long long dim1) requires(N == 2):
         Array(std::array{dim0, dim1}) {}
 
-    explicit Array(const std::vector<T>& vec) requires(N == 1) : Array(vec.size()) {
+    explicit Array(const std::vector<T>& vec) requires(N == 1) :
+        Array{{static_cast<long long>(vec.size())}, false} {
+
         memcpy(this->ptr, HostPointer<T> {vec.data()}, this->size() * sizeof(T));
     }
 
     // Explicit copy constructor
-    explicit Array(const Array& other) : Array(other.shape()) {
+    explicit Array(const Array& other) : Array{other.shape(), false} {
         Span<T, N, Pointer>::operator=(other);
     }
 
     // Explicit copy constructor from other pointer type
     template <typename S>
-    explicit Array(const Span<T, N, S>& other) : Array(other.shape()) { (*this) = other; }
+    explicit Array(const Span<T, N, S>& other) : Array{other.shape(), false} {
+        (*this) = other;
+    }
 
     // Copy assignment from other pointer type
     template <typename S>
@@ -255,7 +261,7 @@ public:
     explicit operator Array<R, N, HostPointer<R>>() const requires(
         std::is_same<Pointer, HostPointer<T>>::value
     ) {
-        Array<R, N, HostPointer<R>> other {this->shape()};
+        Array<R, N, HostPointer<R>> other {this->shape(), false};
         for (size_t i {}; i < this->size(); ++i) {
             other[i] = static_cast<R>((*this)[i]);
         }
