@@ -35,11 +35,8 @@ __global__ void _idft(
         }
 
         // Retrieve and apply beam correction
-        auto j = jones[idx];
-        j.inv();
-        cell.lmul(j);
-        cell.rmul(j.adjoint());
-        img[idx] = cell;
+        auto j = jones[idx].inv();
+        img[idx] = matmul(matmul(j, cell), j.adjoint());
     }
 }
 

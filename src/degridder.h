@@ -227,8 +227,8 @@ void degridder(
                 fftExec(plan, subgrid, HIPFFT_BACKWARD);
 
                 // Apply aterms, taper and normalize post-FFT
-                map([norm = subgrid.size()] __device__ (auto& cell, auto Aleft, auto Aright, auto t) {
-                    cell.lmul(Aleft).rmul(Aright.adjoint()) *= (t / norm);
+                map([norm = subgrid.size()] __device__ (auto& cell, const auto& Aleft, const auto& Aright, const auto t) {
+                    cell = matmul(matmul(Aleft, cell), Aright.adjoint()) *= (t / norm);
                 }, subgrid, Aleft, Aright, subtaper);
 
                 gpudft<S>(

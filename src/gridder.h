@@ -82,8 +82,24 @@ void _gpudift(
             __syncthreads();
         }
 
+        // Grab A terms and apply beam corrections and normalization
+        const auto Al = Aleft[idx].inv();
+        const auto Ar = Aright[idx].inv().adjoint();
+
+        // Apply beam to cell: inv(Aleft) * cell * inv(Aright)^H
+        // Implicit conversion from LinearData to output T
+        T output = matmul(matmul(Al, cell), Ar);
+
+        // Calculate norm
+        T norm = matmul(
+            matmul(Al, ComplexLinearData<S>{{1, 1}, {1, 1}, {1, 1}, {1, 1}}), Ar
+        );
+
+        // Finally, apply norm
+        output /= norm.abs();
+
         if (idx < subgridspec.size()) {
-            subgrid[idx] = T::fromBeam(cell, Aleft[idx], Aright[idx]);
+            subgrid[idx] = output;
         }
     }
 }

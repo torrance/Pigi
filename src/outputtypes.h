@@ -86,61 +86,15 @@ struct alignas(16) LinearData {
         return *this;
     }
 
-    template <typename S>
     __host__ __device__
-    inline auto& lmul(const LinearData<S>& other) {
-        auto tmpxx = other.xx * xx + other.xy * yx;
-        auto tmpyx = other.yx * xx + other.yy * yx;
-        auto tmpxy = other.xx * xy + other.xy * yy;
-        auto tmpyy = other.yx * xy + other.yy * yy;
-
-        xx = tmpxx;
-        yx = tmpyx;
-        xy = tmpxy;
-        yy = tmpyy;
-
-        return *this;
-    }
-
-    template <typename S>
-    __host__ __device__
-    inline auto& rmul(const LinearData<S>& other) {
-        auto tmpxx = xx * other.xx + xy * other.yx;
-        auto tmpyx = yx * other.xx + yy * other.yx;
-        auto tmpxy = xx * other.xy + xy * other.yy;
-        auto tmpyy = yx * other.xy + yy * other.yy;
-
-        xx = tmpxx;
-        yx = tmpyx;
-        xy = tmpxy;
-        yy = tmpyy;
-
-        return *this;
-    }
-
-    __host__ __device__
-    inline auto& inv() {
+    inline LinearData<T> inv() const {
         auto f = T{1} / ((xx * yy) - (xy * yx));
-        xx *= f;
-        yy *= f;
-        xy *= -f;
-        yx *= -f;
-
-        T tmp {xx}; xx = yy; yy = tmp;
-
-        return *this;
+        return {f * yy, -f * yx, -f * xy, f * xx};
     }
 
     __host__ __device__
-    inline auto& adjoint() {
-        T tmp {xy}; xy = yx; yx = tmp;
-
-        xx = ::conj(xx);
-        yx = ::conj(yx);
-        xy = ::conj(xy);
-        yy = ::conj(yy);
-
-        return *this;
+    inline LinearData<T> adjoint() const {
+        return {::conj(xx), ::conj(xy), ::conj(yx), ::conj(yy)};
     }
 
     __host__ __device__
@@ -153,25 +107,6 @@ struct alignas(16) LinearData {
 
     auto operator[](size_t i) const { return begin()[i]; }
     auto& operator[](size_t i) { return begin()[i]; }
-
-    __host__ __device__
-    static LinearData<T> fromBeam(
-        LinearData<T> val,
-        LinearData<T> Aleft,
-        LinearData<T> Aright
-    ) {
-        // These are inplace
-        Aleft.inv();
-        Aright.adjoint().inv();
-
-        // No normalisation performed
-
-        // Finally, apply beam correction
-        // (inv(Aleft) * this * inv(Aright)')
-        val.lmul(Aleft).rmul(Aright);
-
-        return val;
-    }
 };
 
 template<typename T>
@@ -189,6 +124,18 @@ struct fmt::formatter<LinearData<T>> {
         );
     }
 };
+
+template<typename T, typename S>
+__host__ __device__
+inline auto matmul(const LinearData<T>& lhs, const LinearData<S>& rhs) {
+    using R = decltype(lhs.xx * lhs.yy);
+    return LinearData<R> {
+        lhs.xx * rhs.xx + lhs.xy * rhs.yx,
+        lhs.yx * rhs.xx + lhs.yy * rhs.yx,
+        lhs.xx * rhs.xy + lhs.xy * rhs.yy,
+        lhs.yx * rhs.xy + lhs.yy * rhs.yy
+    };
+}
 
 template <typename T>
 struct StokesI {
@@ -248,36 +195,14 @@ struct StokesI {
     __host__ __device__
     inline T real() { return I.real(); }
 
-    static StokesI<T> beamPower(ComplexLinearData<T> Aleft, ComplexLinearData<T> Aright) {
-        // These are inplace
-        Aleft.inv();
-        Aright.inv().adjoint();
-
-        ComplexLinearData<T> J {{1, 1}, {1, 1}, {1, 1}, {1, 1}};
-        J.lmul(Aleft).rmul(Aright);
-        return std::abs(J.xx.real() + J.yy.real()) / 2;
-    }
-
     __host__ __device__
-    static StokesI<T> fromBeam(
-        ComplexLinearData<T> val,
-        ComplexLinearData<T> Aleft,
-        ComplexLinearData<T> Aright
-    ) {
-        // These are inplace
-        Aleft.inv();
-        Aright.adjoint().inv();
+    inline T abs() { return {std::abs(I)}; }
 
-        // Calculate norm
-        ComplexLinearData<T> J {{1, 1}, {1, 1}, {1, 1}, {1, 1}};
-        J.lmul(Aleft).rmul(Aright);
-        auto norm = std::abs(J.xx.real() + J.yy.real()) / 2;
-
-        // Finally, apply beam correction and normalize
-        // (inv(Aleft) * this * inv(Aright)') / norm
-        val.lmul(Aleft).rmul(Aright);
-        val /= norm;
-
-        return val;
+    static StokesI<T> beamPower(ComplexLinearData<T>& Aleft, ComplexLinearData<T>& Aright) {
+        StokesI<T> norm = matmul(
+            matmul(Aleft.inv(), ComplexLinearData<T> {{1, 1}, {1, 1}, {1, 1}, {1, 1}}),
+            Aright.inv().adjoint()
+        );
+        return 1 / norm.abs();
     }
 };

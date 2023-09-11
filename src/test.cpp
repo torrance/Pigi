@@ -54,20 +54,17 @@ TEST_CASE("Matrix tests", "[matrix]") {
     ComplexLinearData<double> A {12, 44, 3, 32};
     ComplexLinearData<double> B {{42, 1}, {4, 7}, {31, -3}, {-3, -5}};
 
-    auto C = A;
-    C.lmul(B);
+    auto C = matmul(B, A);
     REQUIRE(
         C == ComplexLinearData<double>{{1868, -120}, {-84, -136}, {1118, -93}, {-84, -139}}
     );
 
-    C = A;
-    C.rmul(B);
+    C = matmul(A, B);
     REQUIRE(
         C == ComplexLinearData<double>{{516, 33}, {1976, 268}, {363, -51}, {1268, -292}}
     );
 
-    C = A;
-    C.inv().adjoint();
+    C = A.inv().adjoint();
     REQUIRE((
         std::abs(C.xx - 0.126984) < 1e-5 &&
         std::abs(C.yx - -0.0119048) < 1e-5 &&
@@ -75,8 +72,7 @@ TEST_CASE("Matrix tests", "[matrix]") {
         std::abs(C.yy - 0.047619) < 1e-5
     ));
 
-    C = B;
-    C.adjoint().inv();
+    C = B.adjoint().inv();
     REQUIRE((
         std::abs(C.xx - std::complex<double>{0.0117647, -0.000309598}) < 1e-5 &&
         std::abs(C.yx - std::complex<double>{0.028483, 0.0560372}) < 1e-5 &&
@@ -179,9 +175,7 @@ TEMPLATE_TEST_CASE_SIG(
                 ));
 
                 ComplexLinearData<double> cell {phase, 0, 0, phase};
-                cell.lmul(jones);
-                cell.rmul(jones.adjoint());
-                data += cell;
+                data += matmul(matmul(jones, cell), jones.adjoint());
             }
 
             // TODO: use emplace_back() when we can upgrade Clang
@@ -222,7 +216,7 @@ TEMPLATE_TEST_CASE_SIG(
     auto jonesgrid = beam.gridResponse(gridspec, gridorigin, freq);
     HostArray<StokesI<Q>, 2> power {gridspec.Nx, gridspec.Ny};
     for (size_t i {}; i < gridspec.size(); ++i) {
-        img[i] *= StokesI<Q>::beamPower(jonesgrid[i], jonesgrid[i]);
+        img[i] /= StokesI<Q>::beamPower(jonesgrid[i], jonesgrid[i]);
     }
 
     double maxdiff {-1};

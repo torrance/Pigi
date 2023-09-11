@@ -141,8 +141,8 @@ public:
                 // and this helps reduce the number of distinct w-layers.
                 if (w < 0) {
                     u = -u; v = -v; w = -w;
-                    data.adjoint();
-                    weights.adjoint();
+                    data = data.adjoint();
+                    weights = weights.adjoint();
                 }
 
                 cache.push_back(UVDatum<double> {
