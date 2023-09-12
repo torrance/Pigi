@@ -18,6 +18,9 @@ constexpr T pi_v = static_cast<T>(3.14159265358979323846264338327950288419716939
 __device__ void sincospif(float, float*, float*);  // Supress IDE warning about device function
 __device__ void sincospi(double, double*, double*);  // Suppress IDE warning about device function
 
+// Non Clang compilers don't allow specialisation based
+// on compute location, so we need to conditionally include these
+#if defined(__clang__) || defined(__CUDA_ARCH__)
 __device__ inline auto cispi(const float& theta) {
     float real, imag;
     sincospif(theta, &imag, &real);
@@ -29,7 +32,8 @@ __device__ inline auto cispi(const double& theta) {
     sincospi(theta, &imag, &real);
     return std::complex(real, imag);
 }
-
+#endif
+#if !defined(__CUDA_ARCH__)
 template <typename T>
 __host__ inline auto cispi(const T& theta) {
     auto pi = ::pi_v<T>;
@@ -37,7 +41,7 @@ __host__ inline auto cispi(const T& theta) {
         std::cos(theta * pi), std::sin(theta * pi)
     };
 }
-
+#endif
 
 template <typename T>
 struct fmt::formatter<std::complex<T>> {

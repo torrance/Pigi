@@ -97,7 +97,6 @@ struct alignas(16) LinearData {
         return {::conj(xx), ::conj(xy), ::conj(yx), ::conj(yy)};
     }
 
-    __host__ __device__
     inline auto isfinite() const {
         return ::isfinite(xx) && ::isfinite(yx) && ::isfinite(yx) && ::isfinite(yy);
     }
@@ -141,7 +140,7 @@ template <typename T>
 struct StokesI {
     std::complex<T> I {};
 
-    __host__ __device__ StokesI() = default;
+    StokesI() = default;
 
     template <typename S>
     __host__ __device__ StokesI(const S& I) : I{I} {}

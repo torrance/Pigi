@@ -241,7 +241,7 @@ void gridder(
                 );
 
                 // Apply taper and perform FFT normalization
-                map([N = subgrid.size()] (auto& cell, const auto t) {
+                map([N = subgrid.size()] __device__ (auto& cell, const auto t) {
                     cell *= (t / N);
                 }, subgrid, subtaper);
 

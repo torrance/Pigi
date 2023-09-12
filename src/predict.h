@@ -26,7 +26,7 @@ void predict(
     DeviceArray<T, 2> imgd {img};
     {
         DeviceArray<S, 2> taperd {taper};
-        map([] (auto& img, const auto t) {
+        map([] __device__ (auto& img, const auto t) {
             if (t == 0) img = T{};
             else img /= t;
         }, imgd, taperd);
