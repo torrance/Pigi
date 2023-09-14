@@ -128,7 +128,10 @@ std::tuple<HostArray<StokesI<S>, 2>, size_t> major(
         // Copy max value host -> device
         StokesI<S> maxval;
         HIPCHECK(
-            hipMemcpyDtoHAsync(&maxval, maxptr, sizeof(StokesI<S>), hipStreamPerThread)
+            hipMemcpyAsync(
+                static_cast<void*>(&maxval), static_cast<void*>(maxptr),
+                sizeof(StokesI<S>), hipMemcpyDeviceToHost, hipStreamPerThread
+            )
         );
         HIPCHECK( hipStreamSynchronize(hipStreamPerThread) );
 
