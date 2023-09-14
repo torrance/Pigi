@@ -20,7 +20,7 @@ enum class MemoryStorage { Host, Device };
 template <typename T, MemoryStorage M>
 class BasePointer {
 public:
-    __host__ __device__ BasePointer() = default;
+    BasePointer() = default;
     __host__ __device__ BasePointer(const T* ptr) : ptr(const_cast<T*>(ptr)) {}
 
     __host__ __device__ inline T& operator*() const { return *ptr; }
