@@ -145,7 +145,7 @@ struct StokesI {
     __host__ __device__ StokesI(const S& I) : I{I} {}
 
     __host__ __device__
-    StokesI(const ComplexLinearData<T> data) : I((T) 0.5 * (data.xx + data.yy)) {}
+    StokesI(const ComplexLinearData<T>& data) : I((T) 0.5 * (data.xx + data.yy)) {}
 
     __host__ __device__
     operator ComplexLinearData<T>() const {
@@ -153,25 +153,25 @@ struct StokesI {
     }
 
     __host__ __device__
-    inline auto& operator +=(const StokesI<T> x) {
+    inline auto& operator +=(const StokesI<T>& x) {
         I += x.I;
         return *this;
     }
 
     __host__ __device__
-    inline auto& operator -=(const StokesI<T> x) {
+    inline auto& operator -=(const StokesI<T>& x) {
         I -= x.I;
         return *this;
     }
 
     __host__ __device__
-    inline auto& operator *=(const StokesI<T> x) {
+    inline auto& operator *=(const StokesI<T>& x) {
         I *= x.I;
         return *this;
     }
 
     __host__ __device__
-    inline auto& operator /=(const StokesI<T> x) {
+    inline auto& operator /=(const StokesI<T>& x) {
         I /= x.I;
         return *this;
     }
