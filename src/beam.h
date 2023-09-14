@@ -105,7 +105,11 @@ private:
 template <typename Q>
 class MWA : public Beam<Q> {
 public:
-    MWA() {
+    MWA(
+        const std::array<uint32_t, 16>& delays = {},
+        const std::array<double, 16>& amps = {1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1}
+    ) : delays(delays), amps(amps) {
+
         // Allocate FEE beam or throw error
         auto err = new_fee_beam_from_env(&feebeam);
         if (err != 0) {
@@ -115,11 +119,6 @@ public:
             throw std::runtime_error(msg);
         }
     }
-
-    MWA(const std::array<uint32_t, 16>& delays) : delays(delays), MWA() {}
-
-    MWA(const std::array<uint32_t, 16>& delays, const std::array<double, 16>& amps) :
-        delays(delays), amps(amps), MWA() {}
 
     MWA(const MWA&) = delete;
     MWA(MWA&& other) {
@@ -219,7 +218,7 @@ public:
 
 private:
     std::array<uint32_t, 16> delays {};
-    std::array<double, 16> amps = {1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1};
+    std::array<double, 16> amps {};
     FEEBeam* feebeam {};
 
     // MWA lattitude: −26°42′11′′.94986
