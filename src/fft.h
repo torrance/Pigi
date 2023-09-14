@@ -50,7 +50,7 @@ hipfftHandle fftPlan([[maybe_unused]] const GridSpec gridspec) {
 }
 
 template<>
-hipfftHandle fftPlan<std::complex<float>>(const GridSpec gridspec) {
+hipfftHandle fftPlan<thrust::complex<float>>(const GridSpec gridspec) {
     hipfftHandle plan {};
     int rank[] {(int) gridspec.Ny, (int) gridspec.Nx}; // COL MAJOR
     HIPFFTCHECK( hipfftPlanMany(
@@ -65,7 +65,7 @@ hipfftHandle fftPlan<std::complex<float>>(const GridSpec gridspec) {
 }
 
 template<>
-hipfftHandle fftPlan<std::complex<double>>(const GridSpec gridspec) {
+hipfftHandle fftPlan<thrust::complex<double>>(const GridSpec gridspec) {
     hipfftHandle plan {};
     int rank[] {(int) gridspec.Ny, (int) gridspec.Nx}; // COL MAJOR
     HIPFFTCHECK( hipfftPlanMany(
@@ -139,7 +139,7 @@ hipfftHandle fftPlan<StokesI<double>>(const GridSpec gridspec) {
     return plan;
 }
 
-void fftExec(hipfftHandle plan, DeviceSpan<std::complex<float>, 2> grid, int direction) {
+void fftExec(hipfftHandle plan, DeviceSpan<thrust::complex<float>, 2> grid, int direction) {
     fftshift(grid);
     hipfftExecC2C(
         plan,
@@ -150,7 +150,7 @@ void fftExec(hipfftHandle plan, DeviceSpan<std::complex<float>, 2> grid, int dir
     fftshift(grid);
 }
 
-void fftExec(hipfftHandle plan, DeviceSpan<std::complex<double>, 2> grid, int direction) {
+void fftExec(hipfftHandle plan, DeviceSpan<thrust::complex<double>, 2> grid, int direction) {
     fftshift(grid);
     hipfftExecZ2Z(
         plan,

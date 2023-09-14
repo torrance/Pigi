@@ -1,9 +1,8 @@
 #pragma once
 
-#include <complex>
-
 #include <fmt/format.h>
 #include <hip/hip_runtime.h>
+#include <thrust/complex.h>
 
 #include "util.h"
 
@@ -109,7 +108,7 @@ struct alignas(16) LinearData {
 };
 
 template<typename T>
-using ComplexLinearData = LinearData<std::complex<T>>;
+using ComplexLinearData = LinearData<thrust::complex<T>>;
 
 template <typename T>
 struct fmt::formatter<LinearData<T>> {
@@ -138,7 +137,7 @@ inline auto matmul(const LinearData<T>& lhs, const LinearData<S>& rhs) {
 
 template <typename T>
 struct StokesI {
-    std::complex<T> I {};
+    thrust::complex<T> I {};
 
     StokesI() = default;
 
@@ -195,7 +194,7 @@ struct StokesI {
     inline T real() { return I.real(); }
 
     __host__ __device__
-    inline T abs() { return {std::abs(I)}; }
+    inline T abs() { return thrust::abs(I); }
 
     static StokesI<T> beamPower(ComplexLinearData<T>& Aleft, ComplexLinearData<T>& Aright) {
         StokesI<T> norm = matmul(

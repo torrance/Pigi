@@ -65,7 +65,7 @@ void save(std::string_view fname, HostSpan<StokesI<S>, 2> stokesI) {
 }
 
 template <typename S>
-void save(std::string_view fname, HostSpan<std::complex<S>, 2> img) {
+void save(std::string_view fname, HostSpan<thrust::complex<S>, 2> img) {
     HostArray<S, 2> imgreal {img.shape()};
     for (size_t i {}; i < img.size(); ++i) {
         imgreal[i] = img[i].real();

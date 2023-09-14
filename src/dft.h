@@ -1,7 +1,5 @@
 #pragma once
 
-#include <complex>
-
 #include <hip/hip_runtime.h>
 
 #include "gridspec.h"

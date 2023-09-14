@@ -6,6 +6,7 @@
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/catch_template_test_macros.hpp>
 #include <fmt/format.h>
+#include <thrust/complex.h>
 
 #include "beam.h"
 #include "clean.h"
@@ -66,18 +67,18 @@ TEST_CASE("Matrix tests", "[matrix]") {
 
     C = A.inv().adjoint();
     REQUIRE((
-        std::abs(C.xx - 0.126984) < 1e-5 &&
-        std::abs(C.yx - -0.0119048) < 1e-5 &&
-        std::abs(C.xy - -0.174603) < 1e-5 &&
-        std::abs(C.yy - 0.047619) < 1e-5
+        thrust::abs(C.xx - 0.126984) < 1e-5 &&
+        thrust::abs(C.yx - -0.0119048) < 1e-5 &&
+        thrust::abs(C.xy - -0.174603) < 1e-5 &&
+        thrust::abs(C.yy - 0.047619) < 1e-5
     ));
 
     C = B.adjoint().inv();
     REQUIRE((
-        std::abs(C.xx - std::complex<double>{0.0117647, -0.000309598}) < 1e-5 &&
-        std::abs(C.yx - std::complex<double>{0.028483, 0.0560372}) < 1e-5 &&
-        std::abs(C.xy - std::complex<double>{0.0162539, -0.000773994}) < 1e-5 &&
-        std::abs(C.yy - std::complex<double>{-0.0472136, -0.0704334}) < 1e-5
+        thrust::abs(C.xx - thrust::complex<double>{0.0117647, -0.000309598}) < 1e-5 &&
+        thrust::abs(C.yx - thrust::complex<double>{0.028483, 0.0560372}) < 1e-5 &&
+        thrust::abs(C.xy - thrust::complex<double>{0.0162539, -0.000773994}) < 1e-5 &&
+        thrust::abs(C.yy - thrust::complex<double>{-0.0472136, -0.0704334}) < 1e-5
     ));
 }
 
@@ -223,8 +224,8 @@ TEMPLATE_TEST_CASE_SIG(
     for (size_t nx = 250; nx < 1250; ++nx) {
         for (size_t ny = 250; ny < 1250; ++ny) {
             auto idx = gridspec.gridToLinear(nx, ny);
-            double diff = std::abs(
-                expected[idx].I - std::complex<double>(img[idx].I)
+            double diff = thrust::abs(
+                expected[idx].I - thrust::complex<double>(img[idx].I)
             );
             maxdiff = std::max(maxdiff, diff);
         }
@@ -272,7 +273,7 @@ TEMPLATE_TEST_CASE("Predict", "[predict]", float, double) {
         // Find non-empty pixels
         std::vector<size_t> idxs;
         for (size_t i {}; i < skymap.size(); ++i) {
-            if (std::abs(skymap[i].I) != 0) idxs.push_back(i);
+            if (thrust::abs(skymap[i].I) != 0) idxs.push_back(i);
         }
 
         // For each UVDatum, sum over non-empty pixels
@@ -321,8 +322,8 @@ TEMPLATE_TEST_CASE("Predict", "[predict]", float, double) {
 
         maxdiff = std::max<double>(
             maxdiff,
-            std::abs(diff.xx) + std::abs(diff.yx) +
-            std::abs(diff.xy) + std::abs(diff.yy)
+            thrust::abs(diff.xx) + thrust::abs(diff.yx) +
+            thrust::abs(diff.xy) + thrust::abs(diff.yy)
         );
     }
 
@@ -349,7 +350,7 @@ TEST_CASE("Clean", "[clean]") {
 
     // TODO: These casts are mess. Find a consistent type.
     HostArray<double, 2> dirtyPSF_real {dirtyPSF.shape()};
-    HostArray<std::complex<double>, 2> dirtyPSF_complex {dirtyPSF.shape()};
+    HostArray<thrust::complex<double>, 2> dirtyPSF_complex {dirtyPSF.shape()};
     for (size_t i {}; i < dirtyPSF.size(); ++i) {
         dirtyPSF_real[i] = dirtyPSF[i].real();
         dirtyPSF_complex[i] = dirtyPSF[i].I;
@@ -365,7 +366,7 @@ TEST_CASE("Clean", "[clean]") {
     );
 
     auto fittedPSF = clean::fitpsf(dirtyPSF_real, gridspec)
-        .template draw<std::complex<double>>(gridspec);
+        .template draw<thrust::complex<double>>(gridspec);
 
     clean::convolve(components, fittedPSF);
 
@@ -373,7 +374,7 @@ TEST_CASE("Clean", "[clean]") {
 
     for (size_t i{}; i < expected.size(); ++i) {
         maxdiff = std::max<double>(
-            std::abs(expected[i].I - components[i].I), maxdiff
+            thrust::abs(expected[i].I - components[i].I), maxdiff
         );
     }
     fmt::println("Max diff: {}", maxdiff);

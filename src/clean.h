@@ -2,7 +2,6 @@
 
 #include <array>
 #include <cmath>
-#include <complex>
 #include <tuple>
 #include <type_traits>
 
@@ -12,6 +11,7 @@
 #include "gsl/gsl_multifit_nlinear.h"
 #include <hip/hip_runtime.h>
 #include <hipfft/hipfft.h>
+#include <thrust/complex.h>
 #include <thrust/execution_policy.h>
 #include <thrust/extrema.h>
 
@@ -119,8 +119,8 @@ std::tuple<HostArray<StokesI<S>, 2>, size_t> major(
     while (++iter < config.niter) {
         // Find the device pointer to maximum value
         StokesI<S>* maxptr = thrust::max_element(
-            thrust::device, img_d.begin(), img_d.end(), [](auto lhs, auto rhs) {
-                return std::abs(lhs.I.real()) < std::abs(rhs.I.real());
+            thrust::device, img_d.begin(), img_d.end(), [] __device__ (auto lhs, auto rhs) {
+                return abs(lhs.I.real()) < abs(rhs.I.real());
             }
         );
         size_t idx = maxptr - img_d.begin();
@@ -143,10 +143,10 @@ std::tuple<HostArray<StokesI<S>, 2>, size_t> major(
         );
 
         if (iter % 1000 == 0) fmt::println(
-            "   [{} iteration] {:.2g} Jy peak found", iter, std::abs(maxval.I)
+            "   [{} iteration] {:.2g} Jy peak found", iter, thrust::abs(maxval.I)
         );
 
-        if (std::abs(maxval.I) <= threshold) break;
+        if (thrust::abs(maxval.I) <= threshold) break;
     }
 
     img = img_d;

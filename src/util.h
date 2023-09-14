@@ -1,11 +1,11 @@
 #pragma once
 
-#include <complex>
 #include <limits>
 #include <type_traits>
 
 #include <fmt/format.h>
 #include <hip/hip_runtime.h>
+#include <thrust/complex.h>
 
 #include "gridspec.h"
 #include "memory.h"
@@ -24,32 +24,32 @@ __device__ void sincospi(double, double*, double*);  // Suppress IDE warning abo
 __device__ inline auto cispi(const float& theta) {
     float real, imag;
     sincospif(theta, &imag, &real);
-    return std::complex(real, imag);
+    return thrust::complex(real, imag);
 }
 
 __device__ inline auto cispi(const double& theta) {
     double real, imag;
     sincospi(theta, &imag, &real);
-    return std::complex(real, imag);
+    return thrust::complex(real, imag);
 }
 #endif
 #if !defined(__CUDA_ARCH__)
 template <typename T>
 __host__ inline auto cispi(const T& theta) {
     auto pi = ::pi_v<T>;
-    return std::complex {
+    return thrust::complex {
         std::cos(theta * pi), std::sin(theta * pi)
     };
 }
 #endif
 
 template <typename T>
-struct fmt::formatter<std::complex<T>> {
+struct fmt::formatter<thrust::complex<T>> {
     template <typename ParseContext>
     constexpr auto parse(ParseContext& ctx) { return ctx.begin(); }
 
     template <typename FormatContext>
-    auto format(const std::complex<T>& value, FormatContext& ctx) {
+    auto format(const thrust::complex<T>& value, FormatContext& ctx) {
         return fmt::format_to(
             ctx.out(), "{:.2f} + {:.2f}i", value.real(), value.imag()
         );
@@ -62,7 +62,7 @@ inline bool isfinite(const T& x) requires(std::is_floating_point<T>::value) {
 }
 
 template <typename T>
-inline bool isfinite(const std::complex<T>& x) {
+inline bool isfinite(const thrust::complex<T>& x) {
     return std::isfinite(x.real()) && std::isfinite(x.imag());
 }
 
@@ -74,7 +74,7 @@ inline T conj(const T& x) requires(std::is_floating_point<T>::value) {
 
 template <typename T>
 __host__ __device__
-inline std::complex<T> conj(const std::complex<T>& x) { return std::conj(x); }
+inline thrust::complex<T> conj(const thrust::complex<T>& x) { return thrust::conj(x); }
 
 template <typename T>
 __host__ __device__
