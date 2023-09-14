@@ -1,10 +1,35 @@
 cmake_minimum_required(VERSION 3.10)
 
 find_program(CMAKE_CXX_COMPILER "hipcc" HINTS "/opt/rocm/bin")
+
 set(CMAKE_CXX_STANDARD "20")
-set(CMAKE_CXX_STANDARD_REQUIRED True)
-set(CMAKE_CXX_FLAGS "-Wall -Wextra -Wpedantic -Wundef -Wuninitialized -Winit-self -Wshadow -Waggregate-return -Wcast-qual -Wswitch-default -Wswitch-enum -Wunreachable-code")
+set(CMAKE_CXX_EXTENSIONS OFF)
+
+# Find hipconfig
+find_program(hipconfig hipconfig REQUIRED)
+
+# Determine GPU platform
+execute_process(COMMAND ${hipconfig} -P OUTPUT_VARIABLE platform)
+
+# Get hip compiler flags
+execute_process(COMMAND ${hipconfig} --cpp_config OUTPUT_VARIABLE hipcxxflags)
+
+# Don't use -Wpedantic for CUDA compilation; causes 'style of line' warnings.
 # TODO: add -Wconversion ?
+set(warnings "-Wall -Wextra -Wundef -Wuninitialized -Winit-self -Wcast-qual -Wswitch-default -Wswitch-enum -Wunreachable-code")
+if ({$platform} STREQUAL amd)
+    set(warnings "${warnings} -Wpedantic")
+endif()
+
+# Set (platform dependent) CXX compiler flags
+if(${platform} STREQUAL amd)
+    set(CMAKE_CXX_FLAGS ${warnings})
+elseif(${platform} STREQUAL nvidia)
+    set(CMAKE_CXX_FLAGS "--extended-lambda --expt-relaxed-constexpr -arch=native -Xcompiler \"${warnings}\"")
+    set(hipcxxflags "${hipcxxflags} --x cu")
+endif()
+
+separate_arguments(hipcxxflags UNIX_COMMAND ${hipcxxflags})
 
 project(Pigi)
 
@@ -12,13 +37,6 @@ project(Pigi)
 if(NOT CMAKE_BUILD_TYPE)
     set(CMAKE_BUILD_TYPE "Release")
 endif()
-
-# Find hipconfig
-find_program(hipconfig hipconfig REQUIRED)
-
-# Get hip compiler flags
-execute_process(COMMAND ${hipconfig} --cpp_config OUTPUT_VARIABLE hipcxxflags)
-separate_arguments(hipcxxflags UNIX_COMMAND ${hipcxxflags})
 
 # Add hip installation to search directories
 execute_process(COMMAND ${hipconfig} --path OUTPUT_VARIABLE hippath)
@@ -40,12 +58,16 @@ find_library(Lhipfft NAMES hipfft HINTS ${hippath}/lib REQUIRED)
 find_path(Ihyperbeam NAMES mwa_hyperbeam.h REQUIRED)
 find_library(Lhyperbeam NAMES mwa_hyperbeam REQUIRED)
 
+if(${platform} STREQUAL nvidia)
+    find_library(Lcufft NAMES cufft HINTS /usr/local/cuda/lib64 REQUIRED)
+endif()
+
 add_executable(test src/test.cpp)
 target_compile_options(test PRIVATE ${hipcxxflags})
 target_include_directories(test PRIVATE ${Ifmt} ${Igsl} ${Icfitsio} ${Icasa} ${Ihyperbeam})
-target_link_libraries(test PRIVATE pthread ${Lcasa_casa} ${Lcasa_tables} ${Lgsl} ${Lcfitsio} ${Lfmt} ${Lhipfft} ${Lhyperbeam} Catch2::Catch2WithMain)
+target_link_libraries(test PRIVATE pthread ${Lcasa_casa} ${Lcasa_tables} ${Lgsl} ${Lcfitsio} ${Lfmt} ${Lhipfft} ${Lhyperbeam} ${Lcufft} Catch2::Catch2WithMain)
 
 add_executable(benchmark src/benchmark.cpp)
 target_compile_options(benchmark PRIVATE ${hipcxxflags})
 target_include_directories(benchmark PRIVATE ${Ifmt} ${Igsl} ${Icfitsio} ${Icasa} ${Ihyperbeam})
-target_link_libraries(benchmark PRIVATE pthread ${Lcasa_casa} ${Lcasa_tables} ${Lgsl} ${Lcfitsio} ${Lfmt} ${Lhipfft} ${Lhyperbeam} Catch2::Catch2WithMain)
+target_link_libraries(benchmark PRIVATE pthread ${Lcasa_casa} ${Lcasa_tables} ${Lgsl} ${Lcfitsio} ${Lfmt} ${Lhipfft} ${Lhyperbeam} ${Lcufft} Catch2::Catch2WithMain)
