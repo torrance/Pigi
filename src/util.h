@@ -162,10 +162,7 @@ void _map(size_t N, F f, T x, Ts... xs) {
 auto _mapforward(const auto& x) { return x; }
 
 template <typename T, int N, typename Pointer>
-Span<T, N, Pointer> _mapforward(Array<T, N, Pointer>& x) { return x; }
-
-template <typename T, int N, typename Pointer>
-const Span<T, N, Pointer> _mapforward(const Array<T, N, Pointer>& x) { return x; }
+Span<T, N, Pointer> _mapforward(const Array<T, N, Pointer>& x) { return x; }
 
 template<typename F, typename T, typename... Ts>
 void map(F f, T&& x, Ts&&... xs) {
