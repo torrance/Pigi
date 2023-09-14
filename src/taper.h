@@ -8,7 +8,7 @@
 
 template <typename T>
 long double kbalpha() {
-    static_assert(sizeof(T) == -1);
+    static_assert(static_cast<int>(sizeof(T)) == -1);
     return 0;
 }
 

@@ -248,7 +248,9 @@ PSF fitpsf(const HostSpan<double, 2> dirtypsf, const GridSpec gridspec) {
     fdf.df = NULL; // using default finite-difference Jacobian
     fdf.n = dirtypsf.size();
     fdf.p = params0.size(); // 3 parameters to solve for
-    fdf.params = (void*) &dirtypsf;
+    fdf.params = const_cast<void*>(
+        static_cast<const void*>(&dirtypsf)
+    );
 
     // Initialize the workspace with function and initial params guess
     int status;
