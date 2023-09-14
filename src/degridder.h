@@ -47,7 +47,7 @@ void _gpudft(
     const DegridOp degridop
 ) {
     // Set up the shared mem cache
-    const int cachesize {256};
+    const size_t cachesize {256};
     constexpr int ratio {sizeof(ComplexLinearData<T>) / sizeof(float4)};
 
     __shared__ float4 _cache[cachesize * ratio];
