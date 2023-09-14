@@ -10,8 +10,8 @@
 inline void hipcheck(hipError_t res, const char* file, int line) {
     if (res != hipSuccess) {
         fmt::println(
-            "Fatal hipError: {}, file: {}, line: {}",
-            hipGetErrorString(res), file, line
+            "Fatal hipError: {} (code {}) on line {} of {}",
+            hipGetErrorString(res), static_cast<int>(res), line, file
         );
         abort();
     }
