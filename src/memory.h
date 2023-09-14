@@ -31,6 +31,9 @@ public:
     __host__ __device__ inline auto operator+(auto x) const { return BasePointer {ptr + x}; }
 
     __host__ __device__ inline operator T*() const { return ptr; }
+    __host__ __device__ inline operator void*() const {
+        return reinterpret_cast<void*>(ptr);
+    }
     __host__ __device__ inline operator bool() const { return (bool) ptr; }
 
     friend void swap(BasePointer<T, M>& lhs, BasePointer<T, M>& rhs) noexcept {
@@ -50,7 +53,7 @@ using DevicePointer = BasePointer<T, MemoryStorage::Device>;
 
 template <typename T>
 void malloc(HostPointer<T>& ptr, size_t sz) {
-    HIPCHECK( hipHostMalloc(&ptr, sz) );
+    HIPCHECK( hipHostMalloc(reinterpret_cast<void**>(&ptr), sz) );
 }
 
 template <typename T>
@@ -59,7 +62,7 @@ void malloc(DevicePointer<T>& ptr, size_t sz) {
     HIPCHECK( hipStreamSynchronize(hipStreamPerThread) );
     {
         std::lock_guard lock(memlock);
-        HIPCHECK( hipMallocAsync(&ptr, sz, hipStreamPerThread) );
+        HIPCHECK( hipMallocAsync(reinterpret_cast<void**>(&ptr), sz, hipStreamPerThread) );
         HIPCHECK( hipStreamSynchronize(hipStreamPerThread) );
     }
 }
