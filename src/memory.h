@@ -252,7 +252,7 @@ public:
             // that has been allowing spurious NaNs to appear.
             HIPCHECK( hipStreamSynchronize(hipStreamPerThread) );
             {
-                // std::lock_guard lock(memlock);
+                std::lock_guard lock(memlock);
                 HIPCHECK( hipFreeAsync(this->ptr, hipStreamPerThread) );
                 HIPCHECK( hipStreamSynchronize(hipStreamPerThread) );
             }
