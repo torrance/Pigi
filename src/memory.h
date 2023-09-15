@@ -58,13 +58,21 @@ void malloc(HostPointer<T>& ptr, size_t sz) {
 
 template <typename T>
 void malloc(DevicePointer<T>& ptr, size_t sz) {
-    // To avoid holding the lock for longer than necessary, sync first
+    std::lock_guard l(memlock);
+    HIPCHECK( hipMallocAsync(reinterpret_cast<void**>(&ptr), sz, hipStreamPerThread) );
     HIPCHECK( hipStreamSynchronize(hipStreamPerThread) );
-    {
-        std::lock_guard lock(memlock);
-        HIPCHECK( hipMallocAsync(reinterpret_cast<void**>(&ptr), sz, hipStreamPerThread) );
-        HIPCHECK( hipStreamSynchronize(hipStreamPerThread) );
-    }
+}
+
+template <typename T>
+void free(HostPointer<T>& ptr) {
+    HIPCHECK( hipHostFree(ptr) );
+}
+
+template <typename T>
+void free(DevicePointer<T>& ptr) {
+    std::lock_guard l(memlock);
+    HIPCHECK( hipFreeAsync(ptr, hipStreamPerThread) );
+    HIPCHECK( hipStreamSynchronize(hipStreamPerThread) );
 }
 
 template <typename T>
@@ -246,17 +254,7 @@ public:
 
     // Destructor
     ~Array() {
-        if (this->ptr) {
-            // This shouldn't be necessary, but forcing the stream to finish
-            // before calling hipFreeAsync avoids some kind of race condition
-            // that has been allowing spurious NaNs to appear.
-            HIPCHECK( hipStreamSynchronize(hipStreamPerThread) );
-            {
-                std::lock_guard lock(memlock);
-                HIPCHECK( hipFreeAsync(this->ptr, hipStreamPerThread) );
-                HIPCHECK( hipStreamSynchronize(hipStreamPerThread) );
-            }
-        }
+        if (this->ptr) free(this->ptr);
         this->ptr = 0;
     }
 
