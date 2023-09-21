@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.10)
 
-find_program(CMAKE_CXX_COMPILER "hipcc" HINTS "/opt/rocm/bin")
+find_program(CMAKE_CXX_COMPILER "hipcc" PATHS "/opt/rocm/bin")
 
 set(CMAKE_CXX_STANDARD "20")
 set(CMAKE_CXX_EXTENSIONS OFF)
@@ -27,6 +27,7 @@ if(${platform} STREQUAL amd)
 elseif(${platform} STREQUAL nvidia)
     set(CMAKE_CXX_FLAGS "--extended-lambda --expt-relaxed-constexpr -arch=native -Xcompiler \"${warnings}\"")
     set(hipcxxflags "${hipcxxflags} --x cu")
+    set(CMAKE_SHARED_LIBRARY_RUNTIME_CXX_FLAG "-Xlinker=-rpath,")
 endif()
 
 separate_arguments(hipcxxflags UNIX_COMMAND ${hipcxxflags})
@@ -54,12 +55,12 @@ find_library(Lcfitsio NAMES cfitsio REQUIRED)
 find_path(Icfitsio fitsio.h)
 find_library(Lfmt NAMES fmt REQUIRED)
 find_path(Ifmt fmt/format.h)
-find_library(Lhipfft NAMES hipfft HINTS ${hippath}/lib REQUIRED)
+find_library(Lhipfft NAMES hipfft PATHS ${hippath}/lib REQUIRED)
 find_path(Ihyperbeam NAMES mwa_hyperbeam.h REQUIRED)
 find_library(Lhyperbeam NAMES mwa_hyperbeam REQUIRED)
 
 if(${platform} STREQUAL nvidia)
-    find_library(Lcufft NAMES cufft HINTS /usr/local/cuda/lib64 REQUIRED)
+    find_library(Lcufft NAMES cufft PATHS /usr/local/cuda/lib64 REQUIRED)
 endif()
 
 add_executable(test src/test.cpp)
