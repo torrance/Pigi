@@ -23,7 +23,7 @@ endif()
 
 # Set (platform dependent) CXX compiler flags
 if(${platform} STREQUAL amd)
-    set(CMAKE_CXX_FLAGS ${warnings})
+    set(CMAKE_CXX_FLAGS "${warnings}")
 elseif(${platform} STREQUAL nvidia)
     set(CMAKE_CXX_FLAGS "--extended-lambda --expt-relaxed-constexpr -arch=native -Xcompiler \"${warnings}\"")
     set(hipcxxflags "${hipcxxflags} --x cu")
@@ -58,10 +58,16 @@ find_path(Ifmt fmt/format.h)
 find_library(Lhipfft NAMES hipfft PATHS ${hippath}/lib REQUIRED)
 find_path(Ihyperbeam NAMES mwa_hyperbeam.h REQUIRED)
 find_library(Lhyperbeam NAMES mwa_hyperbeam REQUIRED)
+find_path(Itclap NAMES tclap/CmdLine.h PATHS ${CMAKE_CURRENT_SOURCE_DIR}/external/tclap/include REQUIRED)
 
 if(${platform} STREQUAL nvidia)
     find_library(Lcufft NAMES cufft PATHS /usr/local/cuda/lib64 REQUIRED)
 endif()
+
+add_executable(main src/main.cpp)
+target_compile_options(main PRIVATE ${hipcxxflags})
+target_include_directories(main PRIVATE ${Itclap} ${Ifmt} ${Igsl} ${Icfitsio} ${Icasa} ${Ihyperbeam})
+target_link_libraries(main PRIVATE pthread ${Lcasa_casa} ${Lcasa_tables} ${Lgsl} ${Lcfitsio} ${Lfmt} ${Lhipfft} ${Lhyperbeam} ${Lcufft})
 
 add_executable(test src/test.cpp)
 target_compile_options(test PRIVATE ${hipcxxflags})

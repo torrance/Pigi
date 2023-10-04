@@ -185,6 +185,8 @@ public:
         int chanhigh {-1};
     };
 
+    MeasurementSet() = default;
+
     MeasurementSet(const std::string fname, const Config config) :
         tbl(fname), chanlow(config.chanlow), chanhigh(config.chanhigh) {
 
