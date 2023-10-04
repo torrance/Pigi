@@ -201,10 +201,9 @@ TEMPLATE_TEST_CASE_SIG(
     }
 
     // Cast to float or double
-    std::vector<UVDatum<Q>> uvdata;
-    for (const auto& uvdatum : uvdata64) {
-        uvdata.push_back(static_cast<UVDatum<Q>>(uvdatum));
-    }
+    auto uvdata = lazytransform(uvdata64, [] (const UVDatum<double>& uvdatum) {
+        return static_cast<UVDatum<Q>>(uvdatum);
+    });
 
     auto workunits = partition(
         uvdata, gridspec, subgridspec, padding, wstep, Aterm

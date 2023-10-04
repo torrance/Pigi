@@ -35,7 +35,8 @@
 template <typename T>
 class Weighter {
 public:
-    virtual void operator()(UVDatum<T>&) const {};
+    virtual void operator()(UVDatum<T>&) const {}
+    virtual ~Weighter() = default;
 };
 
 template <typename T, typename R>
@@ -60,7 +61,7 @@ public:
     Natural() = delete;
 
     template <typename R>
-    Natural(const R& uvdata, GridSpec gridspec) {
+    Natural(R& uvdata, GridSpec gridspec) {
         for (const UVDatum<T>& uvdatum : uvdata) {
             // Check if (u, v) lie on the grid and sum
             auto [upx, vpx] = gridspec.UVtoGrid(uvdatum.u, uvdatum.v);
@@ -94,7 +95,7 @@ public:
     Uniform() = delete;
 
     template <typename R>
-    Uniform(const R& uvdata, GridSpec gridspec)
+    Uniform(R& uvdata, GridSpec gridspec)
         : gridspec(gridspec), griddedWeights{gridspec.Nx, gridspec.Ny} {
 
         // Sum weights for each grid cell
@@ -124,7 +125,7 @@ public:
         norm.yx = norm.yx > 0 ? 1 / norm.yx : 0;
         norm.xy = norm.xy > 0 ? 1 / norm.xy : 0;
         norm.yy = norm.yy > 0 ? 1 / norm.yy : 0;
-     }
+    }
 
     inline void operator()(UVDatum<T>& uvdatum) const override {
         auto [upx, vpx] = gridspec.UVtoGrid(uvdatum.u, uvdatum.v);

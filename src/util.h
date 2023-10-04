@@ -219,3 +219,50 @@ __host__ __device__
 inline auto cld(T x, T y) {
     return (x + y - 1) / y;
 }
+
+// TODO: Fix LazyTransform to work over const iterators
+template <typename T, typename F>
+class LazyTransform {
+public:
+    template <typename S>
+    class Iterator {
+    public:
+        Iterator(auto&& iter, auto&& fn) :
+            iter(std::forward<S>(iter)), fn(std::forward<F>(fn)) {}
+
+        auto operator*() { return fn(*iter); }
+        void operator++() { ++iter; }
+        bool operator==(const Iterator<S>& other) {
+            return iter == other.iter && fn == other.fn;
+        }
+        bool operator!=(const Iterator<S>& other) { return !(*this == other); }
+
+    private:
+        S iter;
+        F fn;
+    };
+
+    LazyTransform(T iterable, F fn) :
+        iterable(std::forward<T>(iterable)), fn(std::forward<F>(fn)) {}
+
+    auto begin() {
+        using S = decltype(iterable.begin());
+        return Iterator<S>(iterable.begin(), fn);
+    }
+
+    auto end() {
+        using S = decltype(iterable.end());
+        return Iterator<S>(iterable.end(), fn);
+    }
+
+private:
+    T iterable;
+    F fn;
+};
+
+template <typename T, typename F>
+auto lazytransform(T&& iter, F&& fn) {
+    return LazyTransform<T, F>(
+        std::forward<T>(iter), std::forward<F>(fn)
+    );
+}
