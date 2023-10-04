@@ -92,63 +92,46 @@ template <typename T> requires(std::is_floating_point<T>::value)
 constexpr inline T rad2deg(const T& x) { return x * 180 / ::pi_v<T>; }
 
 template <typename T>
-auto crop(HostSpan<T, 2> img, long long edgex, long long edgey) {
-    HostArray<T, 2> cropped{
-        std::max(img.size(0) - 2 * edgex, 0ll),
-        std::max(img.size(1) - 2 * edgey, 0ll)
-    };
+auto resize(HostSpan<T, 2> src, GridSpec srcGridspec, GridSpec dstGridspec) {
+    HostArray<T, 2> dst {dstGridspec.Nx, dstGridspec.Ny};
 
-    GridSpec gridspecSrc {img.size(0), img.size(1), 0, 0};
-    GridSpec gridspecDst {cropped.size(0), cropped.size(1), 0, 0};
+    long long edgeX {(dstGridspec.Nx - srcGridspec.Nx) / 2};
+    long long edgeY {(dstGridspec.Ny - srcGridspec.Ny) / 2};
 
-    for (long long nx {}; nx < cropped.size(0); ++nx) {
-        for (long long ny {}; ny < cropped.size(1); ++ny) {
-            auto idxSrc = gridspecSrc.gridToLinear(nx + edgex, ny + edgey);
-            auto idxDst = gridspecDst.gridToLinear(nx, ny);
-            cropped[idxDst] = img[idxSrc];
+    for (long long nx {}; nx < src.size(0); ++nx) {
+        for (long long ny {}; ny < src.size(1); ++ny) {
+            if (
+                0 <= nx + edgeX && nx + edgeX < dst.size(0) &&
+                0 <= ny + edgeY && ny + edgeY < dst.size(1)
+            ) {
+                auto idxSrc = srcGridspec.gridToLinear(nx, ny);
+                auto idxDst = dstGridspec.gridToLinear(nx + edgeX, ny + edgeY);
+                dst[idxDst] = src[idxSrc];
+            }
         }
     }
 
-    return cropped;
-}
-
-template <typename T>
-auto crop(HostSpan<T, 2> img, long long edge) {
-    return crop(img, edge, edge);
+    return dst;
 }
 
 template <typename T, typename S>
 HostArray<T, 2> convolve(HostSpan<T, 2> img, const HostSpan<S, 2> kernel) {
     shapecheck(img, kernel);
 
-    // Pad the images
-    long long xpadding {img.size(0) / 2};
-    long long ypadding {img.size(1) / 2};
-    HostArray<T, 2> img_padded {2 * img.size(0), 2 * img.size(1)};
-    HostArray<S, 2> kernel_padded {2 * kernel.size(0), 2 * kernel.size(1)};
-
+    // Pad img and kernel with zeros
     GridSpec gridspec {img.size(0), img.size(1), 0, 0};
-    GridSpec gridspec_padded {img_padded.size(0), img_padded.size(1), 0, 0};
+    GridSpec gridspecPadded {2 * img.size(0), 2 * img.size(1), 0, 0};
 
-    for (long long nx {0}; nx < img.size(0); ++nx) {
-        for (long long ny {0}; ny < img.size(1); ++ny) {
-            size_t idxSrc = gridspec.gridToLinear(nx, ny);
-            size_t idxDst = gridspec_padded.gridToLinear(
-                nx + xpadding, ny + ypadding
-            );
-
-            img_padded[idxDst] = img[idxSrc];
-            kernel_padded[idxDst] = kernel[idxSrc];
-        }
-    }
+    auto imgPadded = resize(img, gridspec, gridspecPadded);
+    auto kernelPadded = resize(kernel, gridspec, gridspecPadded);
 
     // Create fft plans
-    auto planImg = fftPlan<T>(gridspec_padded);
-    auto planKernel = fftPlan<S>(gridspec_padded);
+    auto planImg = fftPlan<T>(gridspecPadded);
+    auto planKernel = fftPlan<S>(gridspecPadded);
 
     // Send to device
-    DeviceArray<T, 2> img_d {img_padded};
-    DeviceArray<S, 2> kernel_d {kernel_padded};
+    DeviceArray<T, 2> img_d {imgPadded};
+    DeviceArray<S, 2> kernel_d {kernelPadded};
 
     // FT forward
     fftExec(planImg, img_d, HIPFFT_FORWARD);
@@ -156,16 +139,17 @@ HostArray<T, 2> convolve(HostSpan<T, 2> img, const HostSpan<S, 2> kernel) {
 
     // Multiply in FT domain and normalize
     map([=] __device__ (auto& img, auto kernel) {
-        img *= (kernel /= gridspec_padded.size());
+        img *= (kernel /= gridspecPadded.size());
     }, img_d, kernel_d);
 
     // FT backward
     fftExec(planImg, img_d, HIPFFT_BACKWARD);
 
     // Copy back from device
-    img_padded = img_d;
+    imgPadded = img_d;
 
-    return crop<T>(img_padded, xpadding, ypadding);
+    // Remove padding and return
+    return resize(imgPadded, gridspecPadded, gridspec);
 }
 
 template <typename T=size_t>
