@@ -117,6 +117,57 @@ auto crop(HostSpan<T, 2> img, long long edge) {
     return crop(img, edge, edge);
 }
 
+template <typename T, typename S>
+HostArray<T, 2> convolve(HostSpan<T, 2> img, const HostSpan<S, 2> kernel) {
+    shapecheck(img, kernel);
+
+    // Pad the images
+    long long xpadding {img.size(0) / 2};
+    long long ypadding {img.size(1) / 2};
+    HostArray<T, 2> img_padded {2 * img.size(0), 2 * img.size(1)};
+    HostArray<S, 2> kernel_padded {2 * kernel.size(0), 2 * kernel.size(1)};
+
+    GridSpec gridspec {img.size(0), img.size(1), 0, 0};
+    GridSpec gridspec_padded {img_padded.size(0), img_padded.size(1), 0, 0};
+
+    for (long long nx {0}; nx < img.size(0); ++nx) {
+        for (long long ny {0}; ny < img.size(1); ++ny) {
+            size_t idxSrc = gridspec.gridToLinear(nx, ny);
+            size_t idxDst = gridspec_padded.gridToLinear(
+                nx + xpadding, ny + ypadding
+            );
+
+            img_padded[idxDst] = img[idxSrc];
+            kernel_padded[idxDst] = kernel[idxSrc];
+        }
+    }
+
+    // Create fft plans
+    auto planImg = fftPlan<T>(gridspec_padded);
+    auto planKernel = fftPlan<S>(gridspec_padded);
+
+    // Send to device
+    DeviceArray<T, 2> img_d {img_padded};
+    DeviceArray<S, 2> kernel_d {kernel_padded};
+
+    // FT forward
+    fftExec(planImg, img_d, HIPFFT_FORWARD);
+    fftExec(planKernel, kernel_d, HIPFFT_FORWARD);
+
+    // Multiply in FT domain and normalize
+    map([=] __device__ (auto& img, auto kernel) {
+        img *= (kernel /= gridspec_padded.size());
+    }, img_d, kernel_d);
+
+    // FT backward
+    fftExec(planImg, img_d, HIPFFT_BACKWARD);
+
+    // Copy back from device
+    img_padded = img_d;
+
+    return crop<T>(img_padded, xpadding, ypadding);
+}
+
 template <typename T=size_t>
 class Iota {
 public:

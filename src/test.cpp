@@ -16,6 +16,7 @@
 #include "invert.h"
 #include "memory.h"
 #include "mset.h"
+#include "psf.h"
 #include "predict.h"
 #include "taper.h"
 #include "util.h"
@@ -344,7 +345,7 @@ TEST_CASE("Clean", "[clean]") {
         expected[randidx(gen)] = StokesI<double> {randflux(gen)};
     }
 
-    clean::PSF expectedPSF {deg2rad(5. / 60), deg2rad(2. / 60), deg2rad(34.5)};
+    PSF expectedPSF {deg2rad(5. / 60), deg2rad(2. / 60), deg2rad(34.5)};
 
     auto dirtyPSF = expectedPSF.template draw<StokesI<double>>(gridspec);
 
@@ -356,25 +357,25 @@ TEST_CASE("Clean", "[clean]") {
         dirtyPSF_complex[i] = dirtyPSF[i].I;
     }
 
-    clean::convolve(expected, dirtyPSF_complex);
-
+    expected = convolve(expected, dirtyPSF_complex);
     HostArray<StokesI<double>, 2> img {expected};
-    auto [components, iter] = clean::major(
+
+    auto [components, maxVal, iter] = clean::major(
         img, gridspec,
         dirtyPSF, gridspec,
-        {.mgain = 0.991}
+        {.majorgain = 0.991}
     );
 
-    auto fittedPSF = clean::fitpsf(dirtyPSF_real, gridspec)
+    auto fittedPSF = fitpsf(dirtyPSF_real, gridspec)
         .template draw<thrust::complex<double>>(gridspec);
 
-    clean::convolve(components, fittedPSF);
+    auto restored = convolve(components, fittedPSF);
 
     double maxdiff {};
 
     for (size_t i{}; i < expected.size(); ++i) {
         maxdiff = std::max<double>(
-            thrust::abs(expected[i].I - components[i].I), maxdiff
+            thrust::abs(expected[i].I - restored[i].I), maxdiff
         );
     }
     fmt::println("Max diff: {}", maxdiff);
