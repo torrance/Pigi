@@ -344,19 +344,11 @@ TEST_CASE("Clean", "[clean]") {
         expected[randidx(gen)] = StokesI<double> {randflux(gen)};
     }
 
-    PSF expectedPSF {deg2rad(5. / 60), deg2rad(2. / 60), deg2rad(34.5)};
+    PSF<double> expectedPSF {deg2rad(5. / 60), deg2rad(2. / 60), deg2rad(34.5)};
 
-    auto dirtyPSF = expectedPSF.template draw<StokesI<double>>(gridspec);
+    auto dirtyPSF = expectedPSF.draw(gridspec);
 
-    // TODO: These casts are mess. Find a consistent type.
-    HostArray<double, 2> dirtyPSF_real {dirtyPSF.shape()};
-    HostArray<thrust::complex<double>, 2> dirtyPSF_complex {dirtyPSF.shape()};
-    for (size_t i {}; i < dirtyPSF.size(); ++i) {
-        dirtyPSF_real[i] = dirtyPSF[i].real();
-        dirtyPSF_complex[i] = dirtyPSF[i].I;
-    }
-
-    expected = convolve(expected, dirtyPSF_complex);
+    expected = convolve(expected, dirtyPSF);
     HostArray<StokesI<double>, 2> img {expected};
 
     auto [components, maxVal, iter] = clean::major(
@@ -365,8 +357,7 @@ TEST_CASE("Clean", "[clean]") {
         {.majorgain = 0.991}
     );
 
-    auto fittedPSF = fitpsf(dirtyPSF_real, gridspec)
-        .template draw<thrust::complex<double>>(gridspec);
+    auto fittedPSF = PSF<double>(dirtyPSF, gridspec).draw(gridspec);
 
     auto restored = convolve(components, fittedPSF);
 

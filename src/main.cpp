@@ -90,7 +90,7 @@ void cleanroutine(Config& config) {
 
     save("taper.fits", taper);
 
-    auto psfDirtyPadded = invert<StokesI, P>(
+    auto psfDirtyPadded = invert<thrust::complex, P>(
         workunits, config.gridspecPadded, taper, subtaper, true
     );
     auto psfDirty = resize(psfDirtyPadded, config.gridspecPadded, config.gridspec);
@@ -153,21 +153,9 @@ void cleanroutine(Config& config) {
 
     save("residual.fits", residual);
 
-    // Create real version of psfDirty for fitting psf
-    HostArray<double, 2> psfDirtyReal {psfDirty.shape()};
-    for (size_t i {}; i < psfDirtyReal.size(); ++i) {
-        psfDirtyReal[i] = static_cast<double>(psfDirty[i].real());
-    }
-    auto psf = fitpsf(psfDirtyReal, config.gridspec);
+    PSF<P> psf(psfDirty, config.gridspec);
 
-    fmt::println(
-        "PSF fit: {}' x {}' (PA: {})",
-        rad2deg(psf.major) * 60.,
-        rad2deg(psf.minor) * 60.,
-        rad2deg(psf.pa)
-    );
-
-    auto psfGaussian = psf.template draw<thrust::complex<P>>(config.gridspec);
+    auto psfGaussian = psf.draw(config.gridspec);
     auto imgClean = convolve(components, psfGaussian);
     imgClean += residual;
     save("image.fits", imgClean);

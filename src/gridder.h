@@ -71,7 +71,7 @@ void _gpudift(
                 );
 
                 if constexpr(makePSF) {
-                    uvdatum.data = {1, 0, 0, 1};
+                    uvdatum.data = {1, 1, 1, 1};
                 }
 
                 uvdatum.data *= uvdatum.weights;
@@ -81,21 +81,27 @@ void _gpudift(
             __syncthreads();
         }
 
-        // Grab A terms and apply beam corrections and normalization
-        const auto Al = Aleft[idx].inv();
-        const auto Ar = Aright[idx].inv().adjoint();
+        T output;
+        if constexpr(makePSF) {
+            // No beam correction for PSF
+            output = static_cast<T>(cell);
+        } else {
+            // Grab A terms and apply beam corrections and normalization
+            const auto Al = Aleft[idx].inv();
+            const auto Ar = Aright[idx].inv().adjoint();
 
-        // Apply beam to cell: inv(Aleft) * cell * inv(Aright)^H
-        // Implicit conversion from LinearData to output T
-        T output = matmul(matmul(Al, cell), Ar);
+            // Apply beam to cell: inv(Aleft) * cell * inv(Aright)^H
+            // Then conversion from LinearData to output T
+            output = static_cast<T>(matmul(matmul(Al, cell), Ar));
 
-        // Calculate norm
-        T norm = matmul(
-            matmul(Al, ComplexLinearData<S>{{1, 1}, {1, 1}, {1, 1}, {1, 1}}), Ar
-        );
+            // Calculate norm
+            T norm = static_cast<T>(matmul(
+                matmul(Al, ComplexLinearData<S>{{1, 1}, {1, 1}, {1, 1}, {1, 1}}), Ar
+            ));
 
-        // Finally, apply norm
-        output /= norm.abs();
+            // Finally, apply norm
+            output /= ::abs(norm);
+        }
 
         if (idx < subgridspec.size()) {
             subgrid[idx] = output;

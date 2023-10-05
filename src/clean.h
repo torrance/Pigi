@@ -22,7 +22,7 @@ namespace clean {
 template <typename T, typename S>
 __global__ void _subtractpsf(
     DeviceSpan<T, 2> img, const GridSpec imgGridspec,
-    const DeviceSpan<T, 2> psf, const GridSpec psfGridspec,
+    const DeviceSpan<thrust::complex<S>, 2> psf, const GridSpec psfGridspec,
     long long xpeak, long long ypeak, S f
 ) {
     for (
@@ -60,7 +60,7 @@ __global__ void _subtractpsf(
 template <typename T, typename S>
 void subtractpsf(
     DeviceArray<T, 2>& img, const GridSpec imgGridspec,
-    const DeviceArray<T, 2>& psf, const GridSpec psfGridspec,
+    const DeviceArray<thrust::complex<S>, 2>& psf, const GridSpec psfGridspec,
     long long xpeak, long long ypeak, S f
 ) {
     auto fn = _subtractpsf<T, S>;
@@ -70,7 +70,7 @@ void subtractpsf(
     hipLaunchKernelGGL(
         fn, nblocks, nthreads, 0, hipStreamPerThread,
         static_cast<DeviceSpan<T, 2>>(img), imgGridspec,
-        static_cast<DeviceSpan<T, 2>>(psf), psfGridspec,
+        static_cast<DeviceSpan<thrust::complex<S>, 2>>(psf), psfGridspec,
         xpeak, ypeak, f
     );
 }
@@ -86,7 +86,7 @@ template <typename S>
 std::tuple<HostArray<StokesI<S>, 2>, S, size_t> major(
     HostSpan<StokesI<S>, 2> img,
     const GridSpec imgGridspec,
-    const HostSpan<StokesI<S>, 2> psf,
+    const HostSpan<thrust::complex<S>, 2> psf,
     const GridSpec psfGridspec,
     const Config config
 ) {
@@ -98,7 +98,7 @@ std::tuple<HostArray<StokesI<S>, 2>, S, size_t> major(
     // (whichever is greater).
     S maxInit {};
     for (auto& val : img) {
-        maxInit = std::max(maxInit, std::abs(val.real()));
+        maxInit = std::max(maxInit, std::abs(val.I.real()));
     }
 
     auto threshold = std::max((1 - config.majorgain) * maxInit, config.threshold);
@@ -108,7 +108,7 @@ std::tuple<HostArray<StokesI<S>, 2>, S, size_t> major(
 
     // Transfer img and psf to device
     DeviceArray<StokesI<S>, 2> img_d {img};
-    DeviceArray<StokesI<S>, 2> psf_d {psf};
+    DeviceArray<thrust::complex<S>, 2> psf_d {psf};
 
     size_t iter {};
     while (++iter < config.niter) {
@@ -131,7 +131,7 @@ std::tuple<HostArray<StokesI<S>, 2>, S, size_t> major(
         HIPCHECK( hipStreamSynchronize(hipStreamPerThread) );
 
         // Apply gain
-        auto val = maxval.real() * static_cast<S>(config.minorgain);
+        auto val = maxval.I.real() * static_cast<S>(config.minorgain);
         auto [xpx, ypx] = imgGridspec.linearToGrid(idx);
 
         // Save component and subtract contribution from image
@@ -144,14 +144,14 @@ std::tuple<HostArray<StokesI<S>, 2>, S, size_t> major(
             "   [{} iteration] {:.2g} Jy peak found", iter, thrust::abs(maxval.I)
         );
 
-        if (thrust::abs(maxval.I) <= threshold) break;
+        if (std::abs(maxval.I.real()) <= threshold) break;
     }
 
     img = img_d;
 
     maxInit = 0;
     for (auto& val : img) {
-        maxInit = std::max(maxInit, std::abs(val.real()));
+        maxInit = std::max(maxInit, std::abs(val.I.real()));
     }
     fmt::println(
         "Clean cycle complete ({} iterations this major cycle). Peak value remaining: {:.2g} Jy",

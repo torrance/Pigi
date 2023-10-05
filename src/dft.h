@@ -34,7 +34,9 @@ __global__ void _idft(
 
         // Retrieve and apply beam correction
         auto j = jones[idx].inv();
-        img[idx] = matmul(matmul(j, cell), j.adjoint());
+        img[idx] = static_cast<T>(
+            matmul(matmul(j, cell), j.adjoint())
+        );
     }
 }
 

@@ -56,6 +56,10 @@ struct fmt::formatter<thrust::complex<T>> {
     }
 };
 
+template <typename P>
+__host__ __device__
+P abs(thrust::complex<P> x) { return thrust::abs(x); }
+
 template <typename T>
 inline bool isfinite(const T& x) requires(std::is_floating_point<T>::value) {
     return std::isfinite(x);

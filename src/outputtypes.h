@@ -19,6 +19,16 @@ struct alignas(16) LinearData {
         };
     }
 
+    // Conversion to thrust::complex: only used for PSF construction
+    __host__ __device__
+    explicit operator thrust::complex<float>() requires(std::is_same<T, thrust::complex<float>>::value) {
+        return (xx + yx + xy + yy) / 4;
+    }
+    __host__ __device__
+    explicit operator thrust::complex<double>() requires(std::is_same<T, thrust::complex<double>>::value) {
+        return (xx + yx + xy + yy) / 4;
+    }
+
     bool operator==(const LinearData& other) const {
         return xx == other.xx && yx == other.yx && xy == other.xy && yy == other.yy;
     }
@@ -145,7 +155,7 @@ struct StokesI {
     __host__ __device__ StokesI(const S& I) : I{I} {}
 
     __host__ __device__
-    StokesI(const ComplexLinearData<T>& data) : I((T) 0.5 * (data.xx + data.yy)) {}
+    explicit StokesI(const ComplexLinearData<T>& data) : I((T) 0.5 * (data.xx + data.yy)) {}
 
     __host__ __device__
     operator ComplexLinearData<T>() const {
@@ -190,17 +200,17 @@ struct StokesI {
         return *this;
     }
 
-    __host__ __device__
-    inline T real() { return I.real(); }
-
-    __host__ __device__
-    inline T abs() { return thrust::abs(I); }
-
     static StokesI<T> beamPower(ComplexLinearData<T>& Aleft, ComplexLinearData<T>& Aright) {
-        StokesI<T> norm = matmul(
-            matmul(Aleft.inv(), ComplexLinearData<T> {{1, 1}, {1, 1}, {1, 1}, {1, 1}}),
-            Aright.inv().adjoint()
+        StokesI<T> norm = static_cast<StokesI<T>>(
+            matmul(
+                matmul(Aleft.inv(), ComplexLinearData<T> {{1, 1}, {1, 1}, {1, 1}, {1, 1}}),
+                Aright.inv().adjoint()
+            )
         );
-        return 1 / norm.abs();
+        return 1 / thrust::abs(norm.I);
     }
 };
+
+template <typename P>
+__host__ __device__
+P abs(StokesI<P> x) { return thrust::abs(x.I); }
