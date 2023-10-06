@@ -75,21 +75,17 @@ void subtractpsf(
     );
 }
 
-struct Config {
-    double minorgain {0.1};
-    double majorgain {0.8};
-    double threshold {0};
-    double autothreshold {0};
-    size_t niter {std::numeric_limits<size_t>::max()};
-};
-
 template <typename S>
 std::tuple<HostArray<StokesI<S>, 2>, S, size_t> major(
     HostSpan<StokesI<S>, 2> img,
     const GridSpec imgGridspec,
     const HostSpan<thrust::complex<S>, 2> psf,
     const GridSpec psfGridspec,
-    const Config config
+    const double minorgain,
+    const double majorgain,
+    const double cleanThreshold,
+    const double autoThreshold,
+    const size_t niter
 ) {
     HostArray<StokesI<S>, 2> components {img.shape()};
 
@@ -121,10 +117,10 @@ std::tuple<HostArray<StokesI<S>, 2>, S, size_t> major(
     }
 
     auto threshold = std::max({
-        (1 - config.majorgain) * maxInit, noise * config.autothreshold, config.threshold
+        (1 - majorgain) * maxInit, noise * autoThreshold, cleanThreshold
     });
 
-    bool finalMajor = (1 - config.majorgain) * maxInit < threshold;
+    bool finalMajor = (1 - majorgain) * maxInit < threshold;
 
     fmt::println(
         "Beginning{}major clean cycle: from {:.2g} Jy to {:.2g} (est. noise {:.2g} Jy)",
@@ -136,7 +132,7 @@ std::tuple<HostArray<StokesI<S>, 2>, S, size_t> major(
     DeviceArray<thrust::complex<S>, 2> psf_d {psf};
 
     size_t iter {};
-    while (++iter < config.niter) {
+    while (++iter < niter) {
         // Find the device pointer to maximum value
         StokesI<S>* maxptr = thrust::max_element(
             thrust::device, img_d.begin(), img_d.end(), [] __device__ (auto lhs, auto rhs) {
@@ -156,7 +152,7 @@ std::tuple<HostArray<StokesI<S>, 2>, S, size_t> major(
         HIPCHECK( hipStreamSynchronize(hipStreamPerThread) );
 
         // Apply gain
-        auto val = maxval.I.real() * static_cast<S>(config.minorgain);
+        auto val = maxval.I.real() * static_cast<S>(minorgain);
         auto [xpx, ypx] = imgGridspec.linearToGrid(idx);
 
         // Save component and subtract contribution from image

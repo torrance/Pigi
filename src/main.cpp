@@ -123,13 +123,8 @@ void cleanroutine(Config& config) {
     ) {
         auto [minorComponents, iters, finalMajor] = clean::major<P>(
             residual, config.gridspec, psfWindowed, gridspecPsf,
-            {
-                .minorgain = config.minorgain,
-                .majorgain = config.majorgain,
-                .threshold = config.cleanThreshold,
-                .autothreshold = config.autoThreshold,
-                .niter = config.nMinor - iminor
-            }
+            config.minorgain, config.majorgain, config.cleanThreshold,
+            config.autoThreshold, config.nMinor - iminor
         );
 
         iminor += iters;

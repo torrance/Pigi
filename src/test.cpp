@@ -354,7 +354,7 @@ TEST_CASE("Clean", "[clean]") {
     auto [components, iter, _] = clean::major(
         img, gridspec,
         dirtyPSF, gridspec,
-        {.majorgain = 0.991}
+        0.1, 0.991, 0, 0, std::numeric_limits<size_t>::max()
     );
 
     auto fittedPSF = PSF<double>(dirtyPSF, gridspec).draw(gridspec);
