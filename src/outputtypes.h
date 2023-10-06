@@ -159,7 +159,7 @@ struct StokesI {
 
     __host__ __device__
     operator ComplexLinearData<T>() const {
-        return ComplexLinearData<T> {I, 0, 0, I};
+        return ComplexLinearData<T> {2 * I, 0, 0, 2 * I};
     }
 
     __host__ __device__
