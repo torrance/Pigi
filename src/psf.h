@@ -172,3 +172,63 @@ private:
         return GSL_SUCCESS;
     }
 };
+
+template <typename P>
+auto cropPsf(HostSpan<thrust::complex<P>, 2> psfDirty, GridSpec gridspec, double threshold) {
+    for (long long edge {}; edge < std::min(psfDirty.size(0), psfDirty.size(1)) / 2; ++edge) {
+        // Prepare windowed gridspec to use for resize()
+        auto gridspecWindowed = GridSpec::fromScaleLM(
+            psfDirty.size(0) - 2 * std::max(edge - 1, 0ll),
+            psfDirty.size(1) - 2 * std::max(edge - 1, 0ll),
+            gridspec.scalelm
+        );
+
+        // Top and bottom
+        for (long long nx {edge}; nx < psfDirty.size(0) - edge; ++nx) {
+            auto idx1 = gridspec.gridToLinear(nx, edge);
+            auto idx2 = gridspec.gridToLinear(nx, psfDirty.size(1) - edge - 1);
+            if (
+                std::abs(psfDirty[idx1].real()) > threshold ||
+                std::abs(psfDirty[idx2].real()) > threshold
+            ) {
+                fmt::println(
+                    "Cropping PSF from {}x{} to {}x{}",
+                    gridspec.Nx, gridspec.Ny,
+                    gridspecWindowed.Nx, gridspecWindowed.Ny)
+                ;
+                return std::make_tuple(
+                    resize(psfDirty, gridspec, gridspecWindowed), gridspecWindowed
+                );
+            }
+        }
+
+        // Left and right
+        for (long long ny {edge}; ny < psfDirty.size(1) - edge; ++ny) {
+            auto idx1 = gridspec.gridToLinear(edge, ny);
+            auto idx2 = gridspec.gridToLinear(psfDirty.size(0) - edge - 1, ny);
+            if (
+                std::abs(psfDirty[idx1].real()) > threshold ||
+                std::abs(psfDirty[idx2].real()) > threshold
+            ) {
+                fmt::println(
+                    "Cropping PSF from {}x{} to {}x{}",
+                    gridspec.Nx, gridspec.Ny,
+                    gridspecWindowed.Nx, gridspecWindowed.Ny)
+                ;
+                return std::make_tuple(
+                    resize(psfDirty, gridspec, gridspecWindowed), gridspecWindowed
+                );
+            }
+        }
+    }
+
+    fmt::println(
+        stderr,
+        "An error occurred attempting to window PSF; using full {}x{} image (slower)",
+        gridspec.Nx, gridspec.Ny
+    );
+    return std::make_tuple(
+        HostArray<thrust::complex<P>, 2>(psfDirty),
+        gridspec
+    );
+};

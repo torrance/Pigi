@@ -94,12 +94,17 @@ void cleanroutine(Config& config) {
         workunits, config.gridspecPadded, taper, subtaper, true
     );
     auto psfDirty = resize(psfDirtyPadded, config.gridspecPadded, config.gridspec);
-    save("psf.fits", psfDirtyPadded);
+    save("psf.fits", psfDirty);
 
-    // TODO:
-    // Further crop psfDirty so that all pixels > (1 - majorgain) are included in cutout
+    // Further crop psfDirty so that all pixels > 0.2 * (1 - majorgain)
+    // are included in cutout. We use this smaller window to speed up PSF fitting and
+    // cleaning
+    auto [psfWindowed, gridspecPsf] = cropPsf(
+        psfDirty, config.gridspec, 0.2 * (1 - config.majorgain)
+    );
 
-    HostArray<StokesI<P>, 2> components {config.gridspec.Nx, config.gridspec.Ny};
+    PSF<P> psf(psfWindowed, gridspecPsf);
+    save("psf-windowed.fits", psfWindowed);
 
     // Initial inversion
     auto residualPadded = invert<StokesI, P>(
@@ -107,6 +112,9 @@ void cleanroutine(Config& config) {
     );
     auto residual = resize(residualPadded, config.gridspecPadded, config.gridspec);
     save("dirty.fits", residual);
+
+    // Create empty array for accumulating clean compoents across all major cycles
+    HostArray<StokesI<P>, 2> components {config.gridspec.Nx, config.gridspec.Ny};
 
     for (
         size_t imajor {}, iminor {};
@@ -118,7 +126,7 @@ void cleanroutine(Config& config) {
         auto threshold = config.cleanThreshold;
 
         auto [minorComponents, maxVal, iters] = clean::major<P>(
-            residual, config.gridspec, psfDirty, config.gridspec,
+            residual, config.gridspec, psfWindowed, gridspecPsf,
             {
                 .minorgain = config.minorgain,
                 .majorgain = config.majorgain,
@@ -152,8 +160,7 @@ void cleanroutine(Config& config) {
     }
 
     save("residual.fits", residual);
-
-    PSF<P> psf(psfDirty, config.gridspec);
+    save("components.fits", components);
 
     auto psfGaussian = psf.draw(config.gridspec);
     auto imgClean = convolve(components, psfGaussian);
