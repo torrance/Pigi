@@ -121,16 +121,13 @@ void cleanroutine(Config& config) {
         imajor < config.nMajor && iminor < config.nMinor;
         ++imajor
     ) {
-        // TODO:
-        // Calculate threshold if autoThreshold given
-        auto threshold = config.cleanThreshold;
-
-        auto [minorComponents, maxVal, iters] = clean::major<P>(
+        auto [minorComponents, iters, finalMajor] = clean::major<P>(
             residual, config.gridspec, psfWindowed, gridspecPsf,
             {
                 .minorgain = config.minorgain,
                 .majorgain = config.majorgain,
-                .threshold = threshold,
+                .threshold = config.cleanThreshold,
+                .autothreshold = config.autoThreshold,
                 .niter = config.nMinor - iminor
             }
         );
@@ -156,7 +153,7 @@ void cleanroutine(Config& config) {
         );
         residual = resize(residualPadded, config.gridspecPadded, config.gridspec);
 
-        if (maxVal < threshold) break;
+        if (finalMajor) break;
     }
 
     save("residual.fits", residual);

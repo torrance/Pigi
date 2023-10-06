@@ -79,6 +79,7 @@ struct Config {
     double minorgain {0.1};
     double majorgain {0.8};
     double threshold {0};
+    double autothreshold {0};
     size_t niter {std::numeric_limits<size_t>::max()};
 };
 
@@ -93,18 +94,42 @@ std::tuple<HostArray<StokesI<S>, 2>, S, size_t> major(
     HostArray<StokesI<S>, 2> components {img.shape()};
 
     // Clean down to either:
+    //   1. the autothreshold limit, or
     //   1. the explicit threshold limit, or
     //   2. the current peak value minus the majorgain
     // (whichever is greater).
+
+    S noise {};
+    {
+        S mean {};
+        for (auto val : img) {
+            mean += val.I.real();
+        }
+        mean /= img.size();
+
+        S variance {};
+        for (auto val : img) {
+            variance += std::pow(val.I.real() - mean, 2);
+        }
+        variance /= img.size();
+        noise = std::sqrt(variance);
+    }
+
     S maxInit {};
     for (auto& val : img) {
         maxInit = std::max(maxInit, std::abs(val.I.real()));
     }
 
-    auto threshold = std::max((1 - config.majorgain) * maxInit, config.threshold);
+    auto threshold = std::max({
+        (1 - config.majorgain) * maxInit, noise * config.autothreshold, config.threshold
+    });
+
+    bool finalMajor = (1 - config.majorgain) * maxInit < threshold;
+
     fmt::println(
-        "Beginning major clean cycle: from {:.2g} Jy to {:.2g}", maxInit, threshold)
-    ;
+        "Beginning{}major clean cycle: from {:.2g} Jy to {:.2g} (est. noise {:.2g} Jy)",
+        finalMajor ? " (final) " : " ", maxInit, threshold, noise
+    );
 
     // Transfer img and psf to device
     DeviceArray<StokesI<S>, 2> img_d {img};
@@ -141,7 +166,7 @@ std::tuple<HostArray<StokesI<S>, 2>, S, size_t> major(
         );
 
         if (iter % 1000 == 0) fmt::println(
-            "   [{} iteration] {:.2g} Jy peak found", iter, thrust::abs(maxval.I)
+            "   [{} iteration] {:.2g} Jy peak found", iter, std::abs(maxval.I.real())
         );
 
         if (std::abs(maxval.I.real()) <= threshold) break;
@@ -158,7 +183,7 @@ std::tuple<HostArray<StokesI<S>, 2>, S, size_t> major(
         iter, maxInit
     );
 
-    return std::make_tuple(std::move(components), maxInit, iter);
+    return std::make_tuple(std::move(components), iter, finalMajor);
 }
 
 }

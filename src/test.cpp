@@ -351,7 +351,7 @@ TEST_CASE("Clean", "[clean]") {
     expected = convolve(expected, dirtyPSF);
     HostArray<StokesI<double>, 2> img {expected};
 
-    auto [components, maxVal, iter] = clean::major(
+    auto [components, iter, _] = clean::major(
         img, gridspec,
         dirtyPSF, gridspec,
         {.majorgain = 0.991}
