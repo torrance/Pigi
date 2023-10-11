@@ -94,8 +94,7 @@ TEST_CASE("Measurement Set & Partition", "[mset]") {
     Aterms.fill({1, 0, 0, 1});
 
     MeasurementSet mset(
-        TESTDATA,
-        {.chanlow = 0, .chanhigh = 11}
+        TESTDATA, 0, 11, 0, std::numeric_limits<double>::max()
     );
 
     auto workunits = partition(

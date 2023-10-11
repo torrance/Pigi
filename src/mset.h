@@ -1,6 +1,10 @@
 #pragma once
 
+#include <algorithm>
+#include <map>
+#include <limits>
 #include <string>
+#include <utility>
 
 #include <casacore/tables/Tables.h>
 
@@ -180,32 +184,31 @@ public:
         }
     };
 
-    struct Config {
-        int chanlow {-1};
-        int chanhigh {-1};
-    };
-
     MeasurementSet() = default;
 
-    MeasurementSet(const std::string fname, const Config config) :
-        tbl(fname), chanlow(config.chanlow), chanhigh(config.chanhigh) {
+    MeasurementSet(
+        const std::string fname,
+        const int chanlow,
+        const int chanhigh,
+        const double timelow,
+        const double timehigh
+    ) : tbl(fname), chanlow(chanlow),
+        chanhigh(chanhigh), timelow(timelow), timehigh(timehigh) {
+
+        // Filter table by time low and high
+        tbl = tbl(
+            tbl.col("TIME_CENTROID") >= timelow &&
+            tbl.col("TIME_CENTROID") <= timehigh
+        );
 
         // Get channel / freq information
         auto subtbl = tbl.keywordSet().asTable({"SPECTRAL_WINDOW"});
-        if (chanlow == -1 || chanhigh == -1) {
-            // All channels used
-            freqs = casacore::ArrayColumn<double>(subtbl, "CHAN_FREQ").get(0).tovector();
-            chanhigh = freqs.size() - 1;  // Casacore ranges are inclusive
+        casacore::ArrayColumn<double> freqsCol(subtbl, "CHAN_FREQ");
 
-        } else {
-            casacore::Slicer slice {
-                    casacore::IPosition {chanlow}, casacore::IPosition {chanhigh},
-                    casacore::Slicer::endIsLast
-            };
-            freqs = casacore::ArrayColumn<double>(subtbl, "CHAN_FREQ")
-                .getSlice(0, slice)
-                .tovector();
-        }
+        freqs = freqsCol.getSlice(0, casacore::Slicer{
+            casacore::IPosition {chanlow}, casacore::IPosition {chanhigh},
+            casacore::Slicer::endIsLast
+        }).tovector();
 
         fmt::println("Measurement set {} opened", fname);
         fmt::println(
@@ -217,9 +220,97 @@ public:
     auto begin() { return Iterator(*this); }
     auto end() { return Iterator(*this, -1); }
 
+    double midfreq() const {
+        // TODO: Maybe (?) calculate midfreq using data weights?
+        return std::accumulate(
+            freqs.begin(), freqs.end(), 0.
+        ) / freqs.size();
+    }
+
+    double midchan() const {
+        return (chanhigh - chanlow) / 2;
+    }
+
+    static std::map<double, std::vector<MeasurementSet>> partition(
+        std::vector<std::string> fnames,
+        int chanlow, int chanhigh,
+        int channelsOut = 1,
+        double maxDuration = std::numeric_limits<double>::max()
+    ) {
+        std::map<double, std::vector<MeasurementSet>> msets;
+
+        // ASSUME: All spectral indices match the first table
+        // TODO: Pass in chanlo and chanhi
+        auto spectralWindowTbl = casacore::Table(fnames[0])
+            .keywordSet().asTable("SPECTRAL_WINDOW");
+
+        auto freqs = casacore::ArrayColumn<double>(spectralWindowTbl, "CHAN_FREQ")
+            .get(0).tovector();
+
+        // Ensure chanlow >= 0
+        chanlow = std::max(0, chanlow);
+
+        // If chan is set > than the number of channels, assume we want up to max channels
+        chanhigh = std::min<int>(chanhigh, freqs.size()) - 1;
+
+        // channelBounds contains pairs of low and high channels (inclusive)
+        std::vector<std::pair<int, int>> channelBounds {0};
+        for (
+            int chanBoundLow {};
+            chanBoundLow < chanhigh;
+            chanBoundLow += chanhigh / channelsOut
+        ) {
+            int chanBoundHigh = std::min<int>(
+                chanBoundLow + chanhigh / channelsOut, chanhigh
+            ) - 1;
+            channelBounds.push_back({chanBoundLow, chanBoundHigh});
+        }
+
+        for (auto fname : fnames) {
+            // ASSUME: One observation per mset
+            // TODO: Fix this
+            auto observationTbl = casacore::Table(fname).keywordSet().asTable("OBSERVATION");
+            auto timeRange = casacore::ArrayColumn<double>(observationTbl, "TIME_RANGE")
+                .get(0).tovector();
+
+            double duration = (timeRange[1] - timeRange[0]);
+            int timesOut = std::ceil(duration / maxDuration);
+
+            // timelow <= x < timehigh
+            for (int tn {}; tn < timesOut; ++tn) {
+                double timelow = tn * (duration / timesOut) + timeRange[0];
+                double timehigh = (tn + 1) * (duration / timesOut) + timeRange[0];
+
+                // With the exception of the last interval, we don't want the upper bound
+                // to be inclusive.
+                timehigh = std::nexttoward(timehigh, 0.);
+
+                // Avoid floating point errors, since we are testing using equality
+                if (tn == timesOut - 1) timehigh = timeRange[1];
+
+                for (auto [chanBoundLow, chanBoundHigh] : channelBounds) {
+
+                    msets[(chanBoundHigh - chanBoundLow) / 2.].emplace_back(
+                        fname, chanBoundLow, chanBoundHigh, timelow, timehigh
+                    );
+
+                    fmt::println(
+                        "Opened mset {} channels {} - {}, time {} - {}",
+                        fname, chanBoundLow, chanBoundHigh, timelow, timehigh
+                    );
+                }
+
+            }
+        }
+
+        return msets;
+    }
+
 private:
     casacore::Table tbl;
     std::vector<double> freqs;
     int chanlow;
     int chanhigh;
+    double timelow;
+    double timehigh;
 };
