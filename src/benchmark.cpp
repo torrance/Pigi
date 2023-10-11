@@ -3,6 +3,8 @@
 #include <cmath>
 #include <cstdlib>
 #include <functional>
+#include <generator>
+#include <limits>
 #include <random>
 #include <thread>
 #include <vector>
@@ -71,8 +73,7 @@ TEST_CASE("MSet reading and paritioning", "[io]") {
     Aterms.fill({1, 0, 0, 1});
 
     MeasurementSet mset(
-        TESTDATA,
-        {.chanlow = 0, .chanhigh = 191}
+        TESTDATA, 0, 191, 0, std::numeric_limits<double>::max()
     );
 
     auto uvdata = simple_benchmark("MSet read", 5, [&] {
@@ -101,15 +102,15 @@ TEMPLATE_TEST_CASE("Invert", "[invert]", float, double) {
     Aterms.fill({1, 0, 0, 1});
 
     MeasurementSet mset(
-        TESTDATA,
-        {.chanlow = 0, .chanhigh = 383}
+        TESTDATA, 0, 383, 0, std::numeric_limits<double>::max()
     );
 
     // Convert to TestType precision
-    std::vector<UVDatum<TestType>> uvdata;
-    for (const auto& uvdatum : mset) {
-        uvdata.push_back(static_cast<UVDatum<TestType>>(uvdatum));
-    }
+    auto uvdata = [&] () -> std::generator<UVDatum<TestType>> {
+        for (auto& uvdatum : mset) {
+            co_yield static_cast<UVDatum<TestType>>(uvdatum);
+        }
+    }();
 
     auto workunits = partition(uvdata, gridspec, subgridspec, 18, 25, Aterms);
 
@@ -139,15 +140,15 @@ TEMPLATE_TEST_CASE("Predict", "[predict]", float, double) {
     Aterms.fill({1, 0, 0, 1});
 
     MeasurementSet mset(
-        TESTDATA,
-        {.chanlow = 0, .chanhigh = 383}
+        TESTDATA, 0, 383, 0, std::numeric_limits<double>::max()
     );
 
     // Convert to TestType precision
-    std::vector<UVDatum<TestType>> uvdata;
-    for (const auto& uvdatum : mset) {
-        uvdata.push_back(static_cast<UVDatum<TestType>>(uvdatum));
-    }
+    auto uvdata = [&] () -> std::generator<UVDatum<TestType>> {
+        for (auto& uvdatum : mset) {
+            co_yield static_cast<UVDatum<TestType>>(uvdatum);
+        }
+    }();
 
     auto workunits = partition(uvdata, gridspec, subgridspec, 18, 25, Aterms);
 
