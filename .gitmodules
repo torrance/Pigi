@@ -2,3 +2,6 @@
 	path = external/tclap
 	url = https://github.com/mirror/tclap.git
 	branch = 1.4
+[submodule "external/generator"]
+	path = external/generator
+	url = https://github.com/lewissbaker/generator.git

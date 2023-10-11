@@ -61,7 +61,7 @@ public:
     Natural() = delete;
 
     template <typename R>
-    Natural(R& uvdata, GridSpec gridspec) {
+    Natural(R&& uvdata, GridSpec gridspec) {
         for (const UVDatum<T>& uvdatum : uvdata) {
             // Check if (u, v) lie on the grid and sum
             auto [upx, vpx] = gridspec.UVtoGrid(uvdatum.u, uvdatum.v);
@@ -95,7 +95,7 @@ public:
     Uniform() = delete;
 
     template <typename R>
-    Uniform(R& uvdata, GridSpec gridspec)
+    Uniform(R&& uvdata, GridSpec gridspec)
         : gridspec(gridspec), griddedWeights{gridspec.Nx, gridspec.Ny} {
 
         // Sum weights for each grid cell
@@ -152,7 +152,7 @@ template <typename T>
 class Briggs : public Weighter<T> {
 public:
     template <typename R>
-    Briggs(R& uvdata, GridSpec gridspec, double robust)
+    Briggs(R&& uvdata, GridSpec gridspec, double robust)
         : robust(robust), gridspec(gridspec), griddedWeights{gridspec.Nx, gridspec.Ny} {
 
         // Sum weights for each grid cell

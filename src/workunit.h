@@ -34,7 +34,7 @@ struct WorkUnit {
 
 template <typename T, typename S>
 auto partition(
-    T& uvdata,
+    T&& uvdata,
     GridSpec gridspec,
     GridSpec subgridspec,
     int padding,

@@ -1,5 +1,6 @@
 #include <cmath>
 #include <cstdlib>
+#include <generator>
 #include <random>
 #include <vector>
 
@@ -201,9 +202,11 @@ TEMPLATE_TEST_CASE_SIG(
     }
 
     // Cast to float or double
-    auto uvdata = lazytransform(uvdata64, [] (const UVDatum<double>& uvdatum) {
-        return static_cast<UVDatum<Q>>(uvdatum);
-    });
+    auto uvdata = [&] () -> std::generator<UVDatum<Q>> {
+        for (const auto& uvdatum : uvdata64) {
+            co_yield static_cast<UVDatum<Q>>(uvdatum);
+        }
+    }();
 
     auto workunits = partition(
         uvdata, gridspec, subgridspec, padding, wstep, Aterm
