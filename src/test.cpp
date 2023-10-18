@@ -336,40 +336,82 @@ TEMPLATE_TEST_CASE("Predict", "[predict]", float, double) {
 
 TEST_CASE("Clean", "[clean]") {
     auto gridspec = GridSpec::fromScaleLM(1000, 1000, deg2rad(1. / 60));
-    HostArray<StokesI<double>, 2> expected {1000, 1000};
 
-    std::mt19937 gen(1234);
-    std::uniform_int_distribution<size_t> randidx(0, expected.size());
-    std::uniform_real_distribution<double> randflux(0, 1);
+    // Use 4 channelgroups
+    const int N = 4;
 
-    for (size_t i {}; i < 25; ++i) {
-        expected[randidx(gen)] = StokesI<double> {randflux(gen)};
+    // Create 4 model arrays...
+    std::vector<HostArray<StokesI<double>, 2>> models;
+    for (int n {}; n < N; ++n) {
+        models.push_back(
+           HostArray<StokesI<double>, 2> {1000, 1000}
+        );
     }
 
-    PSF<double> expectedPSF {deg2rad(5. / 60), deg2rad(2. / 60), deg2rad(34.5)};
+    // and then populate with 25 random point sources with linear flux distributions
+    std::mt19937 gen(1234);
+    std::uniform_int_distribution<size_t> randidx(0, gridspec.size());
+    std::uniform_real_distribution<double> randflux(0, 1);
+    std::uniform_real_distribution<double> randgradient(-0.2, 0.2);
 
+    for (size_t i {}; i < 25; ++i) {
+        auto idx = randidx(gen);
+        auto c = randflux(gen);
+        auto m = randgradient(gen);
+
+        for (int n {}; n < N; ++n) {
+            models[n][idx] = c + m * n;
+        }
+    }
+
+    // Create PSF and and psf map
+    PSF<double> expectedPSF {deg2rad(5. / 60), deg2rad(2. / 60), deg2rad(34.5)};
     auto dirtyPSF = expectedPSF.draw(gridspec);
 
-    expected = convolve(expected, dirtyPSF);
-    HostArray<StokesI<double>, 2> img {expected};
+    HostArray<StokesI<double>, 2> expectedSum {gridspec.Nx, gridspec.Ny};
+
+    // Convole the modles, and combine these into ChannelGroup vector
+    std::vector<ChannelGroup<StokesI, double>> channelgroups;
+    for (int n {}; n < N; ++n) {
+        auto expected = convolve(models[n], dirtyPSF);
+        expectedSum += expected;
+
+        channelgroups.push_back(ChannelGroup<StokesI, double>{
+            .channelIndex = n,
+            .midfreq = 1e6 * (n + 1),
+            .psf = HostArray<thrust::complex<double>, 2> {dirtyPSF},
+            .residual = std::move(expected)
+        });
+    }
+    expectedSum /= StokesI<double>(4);
+
+    // Find peak max, which we use as the final test value
+    double maxInit {};
+    for (size_t i {}; i < expectedSum.size(); ++i) {
+        maxInit = std::max(maxInit, expectedSum[i].I.real());
+    };
 
     auto [components, iter, _] = clean::major(
-        img, gridspec,
-        dirtyPSF, gridspec,
+        channelgroups, gridspec, gridspec,
         0.1, 0.991, 0, 0, std::numeric_limits<size_t>::max()
     );
 
     auto fittedPSF = PSF<double>(dirtyPSF, gridspec).draw(gridspec);
 
-    auto restored = convolve(components, fittedPSF);
+    // Combine the convolved, component images to produce a restored image
+    HostArray<StokesI<double>, 2> restoredSum {gridspec.Nx, gridspec.Ny};
+    for (int n {}; n < N; ++n) {
+        restoredSum += convolve(components[n], fittedPSF);
+    }
+    restoredSum /= StokesI<double>(4);
 
+    // Compute the test result
     double maxdiff {};
-
-    for (size_t i{}; i < expected.size(); ++i) {
+    for (size_t i{}; i < expectedSum.size(); ++i) {
         maxdiff = std::max<double>(
-            thrust::abs(expected[i].I - restored[i].I), maxdiff
+            thrust::abs(expectedSum[i].I - restoredSum[i].I), maxdiff
         );
     }
     fmt::println("Max diff: {}", maxdiff);
-    REQUIRE(maxdiff < 0.01);
+    REQUIRE(maxdiff < maxInit * 0.01);
 }

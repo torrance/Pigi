@@ -203,7 +203,7 @@ using DeviceSpan = Span<T, N, DevicePointer<T>>;
 template <typename T, int N, typename Pointer>
 class Array : public Span<T, N, Pointer> {
 public:
-    explicit Array() = default;
+    Array() = default;
 
     explicit Array(const std::array<long long, N>& dims, const bool zero = true) :
         Span<T, N, Pointer>(dims) {
@@ -275,6 +275,18 @@ using HostArray = Array<T, N, HostPointer<T>>;
 
 template <typename T, int N>
 using DeviceArray = Array<T, N, DevicePointer<T>>;
+
+template <typename T, int N>
+auto& operator+=(Span<T, N, HostPointer<T>>& lhs, const T rhs) {
+    for (size_t i {}; i < lhs.size(); ++i) lhs[i] += rhs;
+    return lhs;
+}
+
+template <typename T, int N>
+auto& operator/=(Span<T, N, HostPointer<T>>& lhs, const T rhs) {
+    for (size_t i {}; i < lhs.size(); ++i) lhs[i] /= rhs;
+    return lhs;
+}
 
 template <typename T, typename S, int N>
 auto& operator+=(Span<T, N, HostPointer<T>>& lhs, const Span<S, N, HostPointer<S>>& rhs) {
