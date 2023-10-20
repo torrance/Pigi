@@ -231,13 +231,13 @@ public:
         return (chanhigh - chanlow) / 2;
     }
 
-    static std::map<double, std::vector<MeasurementSet>> partition(
+    static std::map<int, std::vector<MeasurementSet>> partition(
         std::vector<std::string> fnames,
         int chanlow, int chanhigh,
         int channelsOut = 1,
         double maxDuration = std::numeric_limits<double>::max()
     ) {
-        std::map<double, std::vector<MeasurementSet>> msets;
+        std::map<int, std::vector<MeasurementSet>> msets;
 
         // ASSUME: All spectral indices match the first table
         // TODO: Pass in chanlo and chanhi
@@ -251,18 +251,20 @@ public:
         chanlow = std::max(0, chanlow);
 
         // If chan is set > than the number of channels, assume we want up to max channels
-        chanhigh = std::min<int>(chanhigh, freqs.size()) - 1;
+        chanhigh = std::min<int>(chanhigh, freqs.size() - 1);
+
+        auto chanlength = chanhigh - chanlow + 1;  // +1 since chanhigh is inclusive
 
         // channelBounds contains pairs of low and high channels (inclusive)
         std::vector<std::pair<int, int>> channelBounds {0};
         for (
             int chanBoundLow {};
             chanBoundLow < chanhigh;
-            chanBoundLow += chanhigh / channelsOut
+            chanBoundLow += std::ceil(chanlength / channelsOut)
         ) {
             int chanBoundHigh = std::min<int>(
-                chanBoundLow + chanhigh / channelsOut, chanhigh
-            ) - 1;
+                chanBoundLow + std::ceil(chanlength / channelsOut) - 1, chanhigh
+            );
             channelBounds.push_back({chanBoundLow, chanBoundHigh});
         }
 
@@ -278,8 +280,8 @@ public:
 
             // timelow <= x < timehigh
             for (int tn {}; tn < timesOut; ++tn) {
-                double timelow = tn * (duration / timesOut) + timeRange[0];
-                double timehigh = (tn + 1) * (duration / timesOut) + timeRange[0];
+                double timelow = tn * duration / timesOut + timeRange[0];
+                double timehigh = (tn + 1) * duration / timesOut + timeRange[0];
 
                 // With the exception of the last interval, we don't want the upper bound
                 // to be inclusive.
@@ -288,9 +290,8 @@ public:
                 // Avoid floating point errors, since we are testing using equality
                 if (tn == timesOut - 1) timehigh = timeRange[1];
 
-                for (auto [chanBoundLow, chanBoundHigh] : channelBounds) {
-
-                    msets[(chanBoundHigh - chanBoundLow) / 2.].emplace_back(
+                for (int channelIndex {}; auto [chanBoundLow, chanBoundHigh] : channelBounds) {
+                    msets[++channelIndex].emplace_back(
                         fname, chanBoundLow, chanBoundHigh, timelow, timehigh
                     );
 

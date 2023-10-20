@@ -111,13 +111,13 @@ int main(int argc, char** argv) {
         );
 
         LambdaConstraint<double> maxDurationConstraint(
-            "must be > 0", "int", [](auto val) {
+            "must be > 0", "float", [](auto val) {
                 return val > 0;
             }
         );
         TCLAP::ValueArg<double> maxDuration(
             "", "maxduration",
-            "Ensure data of no more than maxduration is imaged at once. This can be used to ensure the primary beam is assumed constant for no longer than this time. (Default: max float) [second]",
+            "Ensure data of no more than maxduration is grouped together. This can be used to ensure the primary beam is assumed constant for no longer than this time. (Default: max float) [second]",
             false, std::numeric_limits<double>::max(), &maxDurationConstraint, cmd
         );
 
@@ -245,7 +245,8 @@ int main(int argc, char** argv) {
                         std::numeric_limits<size_t>::max() : nMajor.getValue();
 
         config.msets = MeasurementSet::partition(
-            fnames.getValue(), chanlow.getValue(), chanhigh.getValue(), 1, 30
+            fnames.getValue(), chanlow.getValue(), chanhigh.getValue(),
+            config.channelsOut, config.maxDuration
         );
 
     } catch (TCLAP::ArgException &e) {

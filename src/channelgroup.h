@@ -10,6 +10,7 @@ template <template <typename> typename T, typename P>
 struct ChannelGroup {
     int channelIndex;
     double midfreq;
+    LinearData<P> weights;
     std::vector<MeasurementSet> msets;
     std::vector<WorkUnit<P>> workunits;
     HostArray<thrust::complex<P>, 2> psf;

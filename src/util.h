@@ -56,6 +56,32 @@ struct fmt::formatter<thrust::complex<T>> {
     }
 };
 
+template <typename T>
+struct fmt::formatter<std::array<T, 1>> {
+    template <typename ParseContext>
+    constexpr auto parse(ParseContext& ctx) { return ctx.begin(); }
+
+    template <typename FormatContext>
+    auto format(const std::array<T, 1>& value, FormatContext& ctx) {
+        return fmt::format_to(
+            ctx.out(), "{}", value[0]
+        );
+    }
+};
+
+template <typename T>
+struct fmt::formatter<std::array<T, 2>> {
+    template <typename ParseContext>
+    constexpr auto parse(ParseContext& ctx) { return ctx.begin(); }
+
+    template <typename FormatContext>
+    auto format(const std::array<T, 2>& value, FormatContext& ctx) {
+        return fmt::format_to(
+            ctx.out(), "{},{}", value[0], value[1]
+        );
+    }
+};
+
 template <typename P>
 __host__ __device__
 P abs(thrust::complex<P> x) { return thrust::abs(x); }
@@ -119,7 +145,7 @@ auto resize(HostSpan<T, 2> src, GridSpec srcGridspec, GridSpec dstGridspec) {
 }
 
 template <typename T, typename S>
-HostArray<T, 2> convolve(HostSpan<T, 2> img, const HostSpan<S, 2> kernel) {
+HostArray<T, 2> convolve(const HostSpan<T, 2> img, const HostSpan<S, 2> kernel) {
     shapecheck(img, kernel);
 
     // Pad img and kernel with zeros

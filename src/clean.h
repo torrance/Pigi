@@ -134,49 +134,44 @@ auto _major(
     //   2. the current peak value minus the majorgain
     // (whichever is greater).
 
-    S threshold {};
-    bool finalMajor {};
-
-    {  // New scope: to deallocate combined
-        // Combine residuals into sum image
-        HostArray<StokesI<S>, 2> combined {imgGridspec.Nx, imgGridspec.Ny};
-        for (auto& channelgroup : channelgroups) {
-            combined += channelgroup.residual;
-        }
-        combined /= StokesI<S>(channelgroups.size());
-
-        // Estimate noise
-        S mean {};
-        for (auto val : combined) {
+    // Estimate noise
+    S mean {};
+    for (auto& channelgroup : channelgroups) {
+        for (auto val : channelgroup.residual) {
             mean += val.I.real();
         }
-        mean /= combined.size();
+    }
+    mean /= (N * imgGridspec.size());
 
-        S variance {};
-        for (auto val : combined) {
+    S variance {};
+    for (auto& channelgroup : channelgroups) {
+        for (auto val : channelgroup.residual) {
             variance += std::pow(val.I.real() - mean, 2);
         }
-        variance /= combined.size();
-        S noise = std::sqrt(variance);
-
-        // Find initial maxVal
-        S maxVal {};
-        for (auto& val : combined) {
-            maxVal = std::max(maxVal, std::abs(val.I.real()));
-        }
-
-        // Set threshold as max of the possible methods
-        threshold = std::max({
-            (1 - majorgain) * maxVal, noise * autoThreshold, cleanThreshold
-        });
-
-        finalMajor = (1 - majorgain) * maxVal < threshold;
-
-        fmt::println(
-            "Beginning{}major clean cycle: from {:.2g} Jy to {:.2g} (est. noise {:.2g} Jy)",
-            finalMajor ? " (final) " : " ", maxVal, threshold, noise
-        );
     }
+    variance /= (N * imgGridspec.size());
+    S noise = std::sqrt(variance);
+
+    // Find initial maxVal
+    S maxVal {};
+    for (size_t idx {}; idx < imgGridspec.size(); ++idx) {
+        S val {};
+        for (auto& channelgroup : channelgroups) {
+            val += channelgroup.residual[idx].I.real();
+        }
+        maxVal = std::max(maxVal, std::abs(val / N));
+    }
+
+    // Set threshold as max of the possible methods
+    S threshold = std::max({
+        (1 - majorgain) * maxVal, noise * autoThreshold, cleanThreshold
+    });
+    bool finalMajor = (1 - majorgain) * maxVal < threshold;
+
+    fmt::println(
+        "Beginning{}major clean cycle: from {:.2g} Jy to {:.2g} (est. noise {:.2g} Jy)",
+        finalMajor ? " (final) " : " ", maxVal, threshold, noise
+    );
 
     // Transfer residuals and psfs to device
     std::array<DeviceArray<StokesI<S>, 2>, N> residuals;
@@ -208,9 +203,9 @@ auto _major(
     );
 
     // Pre-allocate a vector of frequencies and max vals
-    std::array<double, N> freqs {};
+    std::vector<S> freqs(N);
     for (size_t n {}; n < N; ++n) { freqs[n] = channelgroups[n].midfreq; }
-    std::array<S, N> maxVals {};
+    std::vector<S> maxVals(N);
 
     size_t iter {1};
     for (; iter < niter; ++iter) {
@@ -241,7 +236,7 @@ auto _major(
         // Calculate mean val across each channel
         S meanMaxVal = std::accumulate(
             maxVals.begin(), maxVals.end(), S(0)
-        ) / maxVals.size();
+        ) / N;
 
         // Fit polynomial to output
         // TODO: make root configurable
@@ -275,13 +270,23 @@ auto _major(
     }
 
     // Copy device residuals back to host residuals
-    for(size_t n {}; n < N; ++n) {
+    for (size_t n {}; n < N; ++n) {
         channelgroups[n].residual = residuals[n];
+    }
+
+    // Find remaining maxVal
+    maxVal = 0;
+    for (size_t idx {}; idx < imgGridspec.size(); ++idx) {
+        S val {};
+        for (auto& channelgroup : channelgroups) {
+            val += channelgroup.residual[idx].I.real();
+        }
+        maxVal = std::max(maxVal, std::abs(val / N));
     }
 
     fmt::println(
         "Clean cycle complete ({} iterations this major cycle). Peak value remaining: {:.2g} Jy",
-        iter, std::accumulate(maxVals.begin(), maxVals.end(), S(0)) / N
+        iter, maxVal
     );
 
     return std::make_tuple(std::move(components), iter, finalMajor);

@@ -17,9 +17,11 @@ template <typename P>
 class PSF {
 public:
     // All values in radians
-    double major;
-    double minor;
-    double pa;
+    double major {};
+    double minor {};
+    double pa {};
+
+    PSF() = default;
 
     PSF(double major, double minor, double pa) : major(major), minor(minor), pa(pa) {}
 
@@ -196,9 +198,7 @@ auto cropPsf(HostSpan<thrust::complex<P>, 2> psfDirty, GridSpec gridspec, double
                     gridspec.Nx, gridspec.Ny,
                     gridspecWindowed.Nx, gridspecWindowed.Ny)
                 ;
-                return std::make_tuple(
-                    resize(psfDirty, gridspec, gridspecWindowed), gridspecWindowed
-                );
+                return gridspecWindowed;
             }
         }
 
@@ -215,9 +215,7 @@ auto cropPsf(HostSpan<thrust::complex<P>, 2> psfDirty, GridSpec gridspec, double
                     gridspec.Nx, gridspec.Ny,
                     gridspecWindowed.Nx, gridspecWindowed.Ny)
                 ;
-                return std::make_tuple(
-                    resize(psfDirty, gridspec, gridspecWindowed), gridspecWindowed
-                );
+                return gridspecWindowed;
             }
         }
     }
@@ -227,8 +225,5 @@ auto cropPsf(HostSpan<thrust::complex<P>, 2> psfDirty, GridSpec gridspec, double
         "An error occurred attempting to window PSF; using full {}x{} image (slower)",
         gridspec.Nx, gridspec.Ny
     );
-    return std::make_tuple(
-        HostArray<thrust::complex<P>, 2>(psfDirty),
-        gridspec
-    );
+    return gridspec;
 };

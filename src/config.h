@@ -16,7 +16,7 @@ struct Config {
     double maxDuration;
     int wstep;
     int kernelpadding;
-    std::map<double, std::vector<MeasurementSet>> msets;
+    std::map<int, std::vector<MeasurementSet>> msets;
     std::string weight;
     float robust;
     float padding;

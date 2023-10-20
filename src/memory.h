@@ -189,7 +189,10 @@ protected:
 template <typename T, typename S, typename R, typename Q, int N>
 void shapecheck(const Span<T, N, S>& lhs, const Span<R, N, Q>& rhs) {
     if (lhs.shape() != rhs.shape()) {
-        fmt::println("Incompatible array shapes");
+        fmt::println(
+            "Incompatible array shapes (lhs {} rhs {})",
+            lhs.shape(), rhs.shape()
+        );
         abort();
     }
 }

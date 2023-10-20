@@ -35,24 +35,42 @@
 template <typename T>
 class Weighter {
 public:
-    virtual void operator()(UVDatum<T>&) const {}
+    virtual const LinearData<T>& operator()(UVDatum<T>&) const;
     virtual ~Weighter() = default;
 };
 
 template <typename T, typename R>
-void applyWeights(const Weighter<T>& weighter, R& uvdata) {
+LinearData<T> applyWeights(const Weighter<T>& weighter, R& uvdata) {
+    LinearData<T> totalWeight {};
+
     for (UVDatum<T>& uvdatum : uvdata) {
-        weighter(uvdatum);
+        totalWeight += weighter(uvdatum);
     }
+
+    for (UVDatum<T>& uvdatum : uvdata) {
+        uvdatum.weights /= totalWeight;
+    }
+
+    return totalWeight;
 }
 
 template <typename T>
-void applyWeights(const Weighter<T>& weighter, std::vector<WorkUnit<T>>& workunits) {
+LinearData<T> applyWeights(const Weighter<T>& weighter, std::vector<WorkUnit<T>>& workunits) {
+    LinearData<T> totalWeight {};
+
     for (WorkUnit<T>& workunit : workunits) {
         for (UVDatum<T>& uvdatum : workunit.data) {
-            weighter(uvdatum);
+            totalWeight += weighter(uvdatum);
         }
     }
+
+    for (WorkUnit<T>& workunit : workunits) {
+        for (UVDatum<T>& uvdatum : workunit.data) {
+            uvdatum.weights /= totalWeight;
+        }
+    }
+
+    return totalWeight;
 }
 
 template <typename T>
@@ -61,32 +79,11 @@ public:
     Natural() = delete;
 
     template <typename R>
-    Natural(R&& uvdata, GridSpec gridspec) {
-        for (const UVDatum<T>& uvdatum : uvdata) {
-            // Check if (u, v) lie on the grid and sum
-            auto [upx, vpx] = gridspec.UVtoGrid(uvdatum.u, uvdatum.v);
-            long long upx_ll { std::llround(upx) }, vpx_ll { std::llround(vpx) };
-            if (
-                0 <= upx_ll && upx_ll < gridspec.Nx &&
-                0 <= vpx_ll && vpx_ll < gridspec.Ny
-            ) {
-                norm += uvdatum.weights;
-            }
-        }
+    Natural(R&& uvdata, GridSpec gridspec) {}
 
-        // Invert the norm with special handling for 0 weights
-        norm.xx = norm.xx > 0 ? 1 / norm.xx : 0;
-        norm.yx = norm.yx > 0 ? 1 / norm.yx : 0;
-        norm.xy = norm.xy > 0 ? 1 / norm.xy : 0;
-        norm.yy = norm.yy > 0 ? 1 / norm.yy : 0;
+    inline const LinearData<T>& operator()(UVDatum<T>& uvdatum) const override {
+        return uvdatum.weights;
     }
-
-    inline void operator()(UVDatum<T>& uvdatum) const override {
-        uvdatum.data *= norm;
-    }
-
-private:
-    LinearData<T> norm {};
 };
 
 template <typename T>
@@ -112,39 +109,31 @@ public:
         }
 
         // Invert weights with special handling for 0 division
-        // and calculate norm as sum of all non-zero grid cells
         for (auto& weight : griddedWeights) {
             for (size_t i {}; i < 4; ++i) {
                 weight[i] = weight[i] > 0 ? 1 / weight[i] : 0;
-                norm[i] += weight[i] == 0 ? 0 : 1;
             }
         }
-
-        // Finally, invert the norm with special handling for 0 division
-        norm.xx = norm.xx > 0 ? 1 / norm.xx : 0;
-        norm.yx = norm.yx > 0 ? 1 / norm.yx : 0;
-        norm.xy = norm.xy > 0 ? 1 / norm.xy : 0;
-        norm.yy = norm.yy > 0 ? 1 / norm.yy : 0;
     }
 
-    inline void operator()(UVDatum<T>& uvdatum) const override {
+    inline const LinearData<T>& operator()(UVDatum<T>& uvdatum) const override {
         auto [upx, vpx] = gridspec.UVtoGrid(uvdatum.u, uvdatum.v);
         long long upx_ll { std::llround(upx) }, vpx_ll { std::llround(vpx) };
         if (
             0 <= upx_ll && upx_ll < gridspec.Nx &&
             0 <= vpx_ll && vpx_ll < gridspec.Ny
         ) {
-            uvdatum.weights *= norm;
             uvdatum.weights *=
                 griddedWeights[gridspec.gridToLinear(upx_ll, vpx_ll)];
         } else {
             uvdatum.weights *= 0;
         }
+
+        return uvdatum.weights;
     }
 
 private:
     GridSpec gridspec;
-    LinearData<T> norm;
     HostArray<LinearData<T>, 2> griddedWeights;
 };
 
@@ -185,37 +174,30 @@ public:
         for (auto& weight: griddedWeights) {
             for (size_t i {}; i < 4; ++i) {
                 T briggsWeight { 1 / (1 + weight[i] * f2[i]) };
-                norm[i] += briggsWeight * weight[i];
                 weight[i] = briggsWeight;
             }
         }
-
-        // Finally, invert the norm with special handling for 0 division
-        norm.xx = norm.xx > 0 ? 1 / norm.xx : 0;
-        norm.yx = norm.yx > 0 ? 1 / norm.yx : 0;
-        norm.xy = norm.xy > 0 ? 1 / norm.xy : 0;
-        norm.yy = norm.yy > 0 ? 1 / norm.yy : 0;
     }
 
-    inline void operator()(UVDatum<T>& uvdatum) const override {
+    inline const LinearData<T>& operator()(UVDatum<T>& uvdatum) const override {
         auto [upx, vpx] = gridspec.UVtoGrid(uvdatum.u, uvdatum.v);
         long long upx_ll { std::llround(upx) }, vpx_ll { std::llround(vpx) };
         if (
             0 <= upx_ll && upx_ll < gridspec.Nx &&
             0 <= vpx_ll && vpx_ll < gridspec.Ny
         ) {
-            uvdatum.weights *= norm;
             uvdatum.weights *=
                 griddedWeights[gridspec.gridToLinear(upx_ll, vpx_ll)];
         } else {
             uvdatum.weights *= 0;
         }
+
+        return uvdatum.weights;
     }
 
 
 private:
     double robust {};
     GridSpec gridspec;
-    LinearData<T> norm {};
     HostArray<LinearData<T>, 2> griddedWeights;
 };
