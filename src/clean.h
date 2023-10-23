@@ -2,8 +2,10 @@
 
 #include <array>
 #include <cmath>
+#include <chrono>
 #include <tuple>
 #include <type_traits>
+#include <unordered_map>
 #include <vector>
 
 #include <fmt/format.h>
@@ -109,6 +111,59 @@ auto make_tuple_from_array(const std::array<T, N>& arr) {
     );
 }
 
+template <template<typename> typename T, typename P, int N>
+auto findMaximum(const std::array<DeviceArray<T<P>, 2>, N>& imgs) {
+    // Create the iterators as thrust::tuple
+    const auto imgsBegin = thrust::make_zip_iterator(
+        make_tuple_from_array(
+            std::apply([] (auto&... imgs) {
+                return std::array<const T<P>*, N> {
+                    imgs.begin()...
+                };
+            }, imgs)
+        )
+    );
+    const auto imgsEnd = thrust::make_zip_iterator(
+        make_tuple_from_array(
+            std::apply([] (auto&... imgs) {
+                return std::array<const T<P>*, N> {
+                    imgs.end()...
+                };
+            }, imgs)
+        )
+    );
+
+    // Find the pointer to the maximum value
+    auto maxIdxPtr = thrust::max_element(
+        thrust::device, imgsBegin, imgsEnd, [=] __device__ (auto lhs, auto rhs) {
+            auto fn = [] (auto... xs) {
+                return (xs.I.real() + ... + 0);
+            };
+            auto lhsSum = apply(fn, lhs);
+            auto rhsSum = apply(fn, rhs);
+            return std::abs(lhsSum) < std::abs(rhsSum);
+        }
+    );
+    long maxIdx {maxIdxPtr - imgsBegin};
+
+    // Copy max values host -> device
+    std::array<P, N> maxVals;
+    for (size_t n {}; n < N; ++n) {
+        HIPCHECK(
+            hipMemcpyAsync(
+                static_cast<void*>(&maxVals[n]), const_cast<void *>(static_cast<const void*>(imgs[n].data() + maxIdx)),
+                sizeof(T<P>), hipMemcpyDeviceToHost, hipStreamPerThread
+            )
+        );
+    }
+    HIPCHECK( hipStreamSynchronize(hipStreamPerThread) );
+
+    return std::make_tuple(maxIdx, maxVals);
+}
+
+template <typename T>
+using ComponentMap = std::unordered_map<size_t, T>;
+
 template <typename S, int N>
 auto _major(
     std::vector<ChannelGroup<StokesI, S>>& channelgroups,
@@ -120,13 +175,12 @@ auto _major(
     const double autoThreshold,
     const size_t niter
 ) {
-    // Create components arrays to return
-    std::vector<HostArray<StokesI<S>, 2>> components;
-    for (size_t i {}; i < channelgroups.size(); ++i) {
-        components.push_back(
-            HostArray<StokesI<S>, 2> {imgGridspec.Nx, imgGridspec.Ny}
-        );
-    }
+    std::chrono::microseconds maxFindingDuration {};
+    std::chrono::microseconds psfSubtractionDuration {};
+
+    // Create components maps to return
+    // We use maps here since component maps are usually sparse
+    std::vector<ComponentMap<StokesI<S>>> components(N);
 
     // Clean down to either:
     //   1. the autothreshold limit, or
@@ -182,56 +236,19 @@ auto _major(
         psfs[n] = DeviceArray<thrust::complex<S>, 2> {channelgroups[n].psf};
     }
 
-    // Create the iterators as thrust::tuple
-    const auto residualsBegin = thrust::make_zip_iterator(
-        make_tuple_from_array(
-            std::apply([] (auto&... residuals) {
-                return std::array<StokesI<S>*, N> {
-                    residuals.begin()...
-                };
-            }, residuals)
-        )
-    );
-    const auto residualsEnd = thrust::make_zip_iterator(
-        make_tuple_from_array(
-            std::apply([] (auto&... residuals) {
-                return std::array<StokesI<S>*, N> {
-                    residuals.end()...
-                };
-            }, residuals)
-        )
-    );
-
     // Pre-allocate a vector of frequencies and max vals
-    std::vector<S> freqs(N);
+    std::array<S, N> freqs {};
     for (size_t n {}; n < N; ++n) { freqs[n] = channelgroups[n].midfreq; }
-    std::vector<S> maxVals(N);
 
     size_t iter {1};
     for (; iter < niter; ++iter) {
-        // Find the pointer to the maximum value
-        auto maxIdxPtr = thrust::max_element(
-            thrust::device, residualsBegin, residualsEnd, [=] __device__ (auto lhs, auto rhs) {
-                auto fn = [] (auto... xs) {
-                    return (xs.I.real() + ... + 0);
-                };
-                auto lhsSum = apply(fn, lhs);
-                auto rhsSum = apply(fn, rhs);
-                return std::abs(lhsSum) < std::abs(rhsSum);
-            }
-        );
-        long maxIdx {maxIdxPtr - residualsBegin};
+        auto start = std::chrono::steady_clock::now();
 
-        // Copy max values host -> device
-        for (size_t n {}; n < N; ++n) {
-            HIPCHECK(
-                hipMemcpyAsync(
-                    static_cast<void*>(&maxVals[n]), static_cast<void*>(residuals[n].data() + maxIdx),
-                    sizeof(StokesI<S>), hipMemcpyDeviceToHost, hipStreamPerThread
-                )
-            );
-        }
-        HIPCHECK( hipStreamSynchronize(hipStreamPerThread) );
+        auto [maxIdx, maxVals] = findMaximum<StokesI, S, N>(residuals);
+
+        maxFindingDuration += std::chrono::duration_cast<std::chrono::microseconds>(
+            std::chrono::steady_clock::now() - start
+        );
 
         // Calculate mean val across each channel
         S meanMaxVal = std::accumulate(
@@ -253,6 +270,8 @@ auto _major(
         // Find grid locations for max index
         auto [xpx, ypx] = imgGridspec.linearToGrid(maxIdx);
 
+        start = std::chrono::steady_clock::now();
+
         // Save component and subtract contribution from image
         for (size_t n {}; n < N; ++n) {
             components[n][maxIdx] += maxVals[n];
@@ -261,6 +280,11 @@ auto _major(
                 residuals[n], imgGridspec, psfs[n], psfGridspec, xpx, ypx, maxVals[n]
             );
         }
+
+        HIPCHECK( hipStreamSynchronize(hipStreamPerThread) );
+        psfSubtractionDuration += std::chrono::duration_cast<std::chrono::microseconds>(
+            std::chrono::steady_clock::now() - start
+        );
 
         if (iter % 1000 == 0) fmt::println(
             "   [{} iteration] {:.2g} Jy peak found", iter, meanMaxVal
@@ -285,8 +309,8 @@ auto _major(
     }
 
     fmt::println(
-        "Clean cycle complete ({} iterations this major cycle). Peak value remaining: {:.2g} Jy",
-        iter, maxVal
+        "Clean cycle complete ({} iterations this major cycle; {:.2f} s peak finding; {:.2f} s PSF subtraction). Peak value remaining: {:.2g} Jy",
+        iter, maxFindingDuration.count() / 1e6, psfSubtractionDuration.count() / 1e6, maxVal
     );
 
     return std::make_tuple(std::move(components), iter, finalMajor);

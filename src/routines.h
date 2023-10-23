@@ -181,14 +181,19 @@ void clean(Config& config) {
         for (size_t n = {}; n < channelgroups.size(); ++n) {
             auto& channelgroup = channelgroups[n];
 
-            // Append components from this major interation
-            channelgroup.components += minorComponents[n];
+            // Create minorComponentsMap and append
+            // components from this major interation
+            HostArray<StokesI<P>, 2> minorComponentsMap {config.gridspec.Nx, config.gridspec.Ny};
+            for (auto& [idx, val] : minorComponents[n]) {
+                minorComponentsMap[idx] += val;
+                channelgroup.components[idx] += val;
+            }
 
             fmt::println(
                 "Channel group {}: Removing clean components from uvdata...", n + 1
             );
             auto minorComponentsPadded = resize(
-                minorComponents[n], config.gridspec, config.gridspecPadded
+                minorComponentsMap, config.gridspec, config.gridspecPadded
             );
             predict<StokesI<P>, P>(
                 channelgroup.workunits,

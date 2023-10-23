@@ -400,8 +400,12 @@ TEST_CASE("Clean", "[clean]") {
 
     // Combine the convolved, component images to produce a restored image
     HostArray<StokesI<double>, 2> restoredSum {gridspec.Nx, gridspec.Ny};
-    for (int n {}; n < N; ++n) {
-        restoredSum += convolve(components[n], fittedPSF);
+    for (auto& component : components) {
+        HostArray<StokesI<double>, 2> componentMap {gridspec.Nx, gridspec.Ny};
+        for (auto& [idx, val] : component) {
+            componentMap[idx] += val;
+        }
+        restoredSum += convolve(componentMap, fittedPSF);
     }
     restoredSum /= StokesI<double>(4);
 
