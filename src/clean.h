@@ -111,7 +111,7 @@ auto make_tuple_from_array(const std::array<T, N>& arr) {
 
 template <typename S, int N>
 auto _major(
-    std::vector<ChannelGroup<StokesI, S>> channelgroups,
+    std::vector<ChannelGroup<StokesI, S>>& channelgroups,
     const GridSpec imgGridspec,
     const GridSpec psfGridspec,
     const double minorgain,
@@ -294,7 +294,7 @@ auto _major(
 
 template <typename S>
 auto major(
-    std::vector<ChannelGroup<StokesI, S>> channelgroups,
+    std::vector<ChannelGroup<StokesI, S>>& channelgroups,
     const GridSpec imgGridspec,
     const GridSpec psfGridspec,
     const double minorgain,
