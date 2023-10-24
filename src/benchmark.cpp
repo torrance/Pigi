@@ -9,10 +9,12 @@
 #include <thread>
 #include <vector>
 
+#include <catch2/benchmark/catch_benchmark.hpp>
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/catch_template_test_macros.hpp>
 #include <fmt/format.h>
 
+#include "clean.h"
 #include "degridder.h"
 #include "gridspec.h"
 #include "gridder.h"
@@ -274,4 +276,39 @@ TEMPLATE_TEST_CASE("gpudft kernel", "[gpudft]", float, double) {
         HIPCHECK( hipStreamSynchronize(hipStreamPerThread) );
         return true;
     });
+}
+
+TEST_CASE("max finding", "[maxfinding]") {
+    HostArray<StokesI<float>, 2> residual {8000, 8000};
+
+    HostArray<std::array<StokesI<float>, 4>, 2> residuals_h {8000, 8000};
+
+    std::array<DeviceArray<StokesI<float>, 2>, 4> residuals_d {
+        DeviceArray<StokesI<float>, 2> {residual},
+        DeviceArray<StokesI<float>, 2> {residual},
+        DeviceArray<StokesI<float>, 2> {residual},
+        DeviceArray<StokesI<float>, 2> {residual}
+    };
+
+    BENCHMARK("maxfinding [cpu]") {
+        double maxVal {};
+        size_t maxIdx {};
+
+        for (size_t i = 0; i < 8000 * 8000; ++i) {
+            double val = std::apply([] (auto&... vals) {
+                return (vals.I.real() + ...);
+            }, residuals_h[i]);
+
+            if (val > maxVal) {
+                maxVal = val;
+                maxIdx = i;
+            }
+        }
+
+        return std::make_tuple(maxIdx, maxVal);
+    };
+
+    BENCHMARK("maxfinding [thrust]") {
+        auto [maxIdx, maxVals] = clean::findMaximum<StokesI, float, 4>(residuals_d);
+    };
 }
