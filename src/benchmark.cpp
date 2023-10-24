@@ -279,17 +279,7 @@ TEMPLATE_TEST_CASE("gpudft kernel", "[gpudft]", float, double) {
 }
 
 TEST_CASE("max finding", "[maxfinding]") {
-    HostArray<StokesI<float>, 2> residual {8000, 8000};
-
     HostArray<std::array<StokesI<float>, 4>, 2> residuals_h {8000, 8000};
-
-    std::array<DeviceArray<StokesI<float>, 2>, 4> residuals_d {
-        DeviceArray<StokesI<float>, 2> {residual},
-        DeviceArray<StokesI<float>, 2> {residual},
-        DeviceArray<StokesI<float>, 2> {residual},
-        DeviceArray<StokesI<float>, 2> {residual}
-    };
-
     BENCHMARK("maxfinding [cpu]") {
         double maxVal {};
         size_t maxIdx {};
@@ -308,7 +298,14 @@ TEST_CASE("max finding", "[maxfinding]") {
         return std::make_tuple(maxIdx, maxVal);
     };
 
-    BENCHMARK("maxfinding [thrust]") {
-        auto [maxIdx, maxVals] = clean::findMaximum<StokesI, float, 4>(residuals_d);
+    HostArray<StokesI<float>, 2> residual {8000, 8000};
+    std::array<DeviceArray<StokesI<float>, 2>, 4> residuals_d {
+        DeviceArray<StokesI<float>, 2> {residual},
+        DeviceArray<StokesI<float>, 2> {residual},
+        DeviceArray<StokesI<float>, 2> {residual},
+        DeviceArray<StokesI<float>, 2> {residual}
+    };
+    BENCHMARK("maxfinding [kernel]") {
+        clean::findmax<StokesI, float, 4>(residuals_d);
     };
 }

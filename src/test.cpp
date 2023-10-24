@@ -419,3 +419,26 @@ TEST_CASE("Clean", "[clean]") {
     fmt::println("Max diff: {}", maxdiff);
     REQUIRE(maxdiff < maxInit * 0.01);
 }
+
+TEST_CASE("Max finding", "[maxfinding]") {
+    HostArray<StokesI<float>, 2> img {8000, 8000};
+
+    std::mt19937 gen(1234);
+    std::uniform_real_distribution<double> rand(0, 1);
+    for (auto& val : img) {
+        val = StokesI<float>(rand(gen));
+    };
+    img[5000] = StokesI<float>(5);
+
+    std::array<DeviceArray<StokesI<float>, 2>, 4> imgs_d {
+        DeviceArray<StokesI<float>, 2> {img},
+        DeviceArray<StokesI<float>, 2> {img},
+        DeviceArray<StokesI<float>, 2> {img},
+        DeviceArray<StokesI<float>, 2> {img}
+    };
+
+    auto [maxIdx, maxVals] = clean::findmax<StokesI, float, 4>(imgs_d);
+
+    REQUIRE(maxIdx == 5000);
+    REQUIRE(maxVals[0] == 5);
+}

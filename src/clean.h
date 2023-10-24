@@ -26,6 +26,111 @@
 
 namespace clean {
 
+template <typename P>
+using maxPair_t = std::pair<size_t, P>;
+
+template <template<typename> typename T, typename P, int N>
+__global__ void _findmax(
+    DeviceSpan<maxPair_t<P>, 1> results,
+    std::array<DeviceSpan<T<P>, 2>, N> imgs
+) {
+    auto comp = [] __device__ (maxPair_t<P>& lhs, maxPair_t<P>& rhs) -> maxPair_t<P>& {
+        if (std::get<1>(lhs) > std::get<1>(rhs)) {
+            return lhs;
+        } else {
+            return rhs;
+        }
+    };
+
+    __shared__ char _cache[1024 * sizeof(maxPair_t<P>)];
+    auto cache = reinterpret_cast<maxPair_t<P>*>(_cache);
+
+    {
+        maxPair_t<P> maxPair {};
+        const size_t imgSize {imgs[0].size()};
+
+        for (
+            size_t idx = blockIdx.x * blockDim.x + threadIdx.x;
+            idx < imgSize;
+            idx += blockDim.x * gridDim.x
+        ) {
+            maxPair_t<P> val {
+                idx,
+                std::apply([&] (auto&... imgs) {
+                    return abs((imgs[idx].I.real() + ...));
+                }, imgs)
+            };
+            maxPair = comp(val, maxPair);
+        }
+        cache[threadIdx.x] = maxPair;
+    }
+    __syncthreads();
+
+    // Perform block reduction
+    for (unsigned s = blockDim.x / 2; s > 0; s >>= 1) {
+        if (threadIdx.x < s) {
+            cache[threadIdx.x] = comp(cache[threadIdx.x], cache[threadIdx.x + s]);
+        }
+        __syncthreads();
+    }
+
+    if (threadIdx.x == 0) {
+        results[blockIdx.x] = cache[0];
+    }
+}
+
+template <template<typename> typename T, typename P, int N>
+auto findmax(std::array<DeviceArray<T<P>, 2>, N>& imgs) {
+    auto fn = _findmax<T, P, N>;
+    auto [nblocks, nthreads] = getKernelConfig(
+        fn, imgs[0].size()
+    );
+
+    // Cache size is hardcoded to 1024; we can't handle more threads than this
+    nthreads = std::min(nthreads, 1024);
+
+    // Allocate results array on both host and device
+    static HostArray<maxPair_t<P>, 1> results_h {nblocks};
+    static DeviceArray<maxPair_t<P>, 1> results_d {nblocks};
+
+    // Cast array of DeviceArray -> DeviceSpan
+    auto spans = std::apply([] (auto&... imgs) {
+        return std::array<DeviceSpan<T<P>, 2>, N> {
+            static_cast<DeviceSpan<T<P>, 2>>(imgs)...
+        };
+    }, imgs);
+
+    // Launch kernel
+    hipLaunchKernelGGL(
+        fn, nblocks, nthreads, 0, hipStreamPerThread,
+        static_cast<DeviceSpan<maxPair_t<P>, 1>>(results_d), spans
+    );
+
+    // Transfer results back to host and  final reduction over each block result
+    results_h = results_d;
+    auto maxIdx = std::get<0>(*std::max_element(
+        results_h.begin(), results_h.end(), [] (auto lhs, auto rhs) {
+            return std::get<1>(lhs) < std::get<1>(rhs);
+        }
+    ));
+
+    // Fetch values corresponding to maxIdx
+    std::array<T<P>, N> maxVals;
+    for (size_t i {}; i < N; ++i) {
+        HIPCHECK( hipMemcpyAsync(
+            &maxVals[i], imgs[i].data() + maxIdx, sizeof(T<P>),
+            hipMemcpyDeviceToHost, hipStreamPerThread
+        ) );
+    }
+    HIPCHECK( hipStreamSynchronize(hipStreamPerThread) );
+
+    return std::make_tuple(
+        maxIdx, std::apply([] (auto... vals) -> std::array<P, N> {
+            return {vals.I.real()...};
+        }, maxVals)
+    );
+}
+
 template <typename T, typename S>
 __global__ void _subtractpsf(
     DeviceSpan<T, 2> img, const GridSpec imgGridspec,
@@ -80,85 +185,6 @@ void subtractpsf(
         static_cast<DeviceSpan<thrust::complex<S>, 2>>(psf), psfGridspec,
         xpeak, ypeak, f
     );
-}
-
-
-template <typename F, typename T, size_t... I>
-__host__ __device__
-auto _apply(F f, T tuple, std::index_sequence<I...>) {
-    return f(thrust::get<I>(tuple)...);
-}
-
-template <typename F, typename... Ts>
-__host__ __device__
-auto apply(F f, thrust::tuple<Ts...> tuple) {
-    return _apply(
-        f, tuple, std::make_index_sequence<thrust::tuple_size<thrust::tuple<Ts...>>::value>{}
-    );
-}
-
-template <typename T, size_t N, size_t... I>
-__host__
-auto _make_tuple_from_array(const std::array<T, N>& arr, std::index_sequence<I...>) {
-    return thrust::make_tuple(arr[I]...);
-}
-
-template <typename T, size_t N>
-__host__
-auto make_tuple_from_array(const std::array<T, N>& arr) {
-    return _make_tuple_from_array(
-        arr, std::make_index_sequence<N>{}
-    );
-}
-
-template <template<typename> typename T, typename P, int N>
-auto findMaximum(const std::array<DeviceArray<T<P>, 2>, N>& imgs) {
-    // Create the iterators as thrust::tuple
-    const auto imgsBegin = thrust::make_zip_iterator(
-        make_tuple_from_array(
-            std::apply([] (auto&... imgs) {
-                return std::array<const T<P>*, N> {
-                    imgs.begin()...
-                };
-            }, imgs)
-        )
-    );
-    const auto imgsEnd = thrust::make_zip_iterator(
-        make_tuple_from_array(
-            std::apply([] (auto&... imgs) {
-                return std::array<const T<P>*, N> {
-                    imgs.end()...
-                };
-            }, imgs)
-        )
-    );
-
-    // Find the pointer to the maximum value
-    auto maxIdxPtr = thrust::max_element(
-        thrust::device, imgsBegin, imgsEnd, [=] __device__ (auto lhs, auto rhs) {
-            auto fn = [] (auto... xs) {
-                return (xs.I.real() + ... + 0);
-            };
-            auto lhsSum = apply(fn, lhs);
-            auto rhsSum = apply(fn, rhs);
-            return std::abs(lhsSum) < std::abs(rhsSum);
-        }
-    );
-    long maxIdx {maxIdxPtr - imgsBegin};
-
-    // Copy max values host -> device
-    std::array<P, N> maxVals;
-    for (size_t n {}; n < N; ++n) {
-        HIPCHECK(
-            hipMemcpyAsync(
-                static_cast<void*>(&maxVals[n]), const_cast<void *>(static_cast<const void*>(imgs[n].data() + maxIdx)),
-                sizeof(T<P>), hipMemcpyDeviceToHost, hipStreamPerThread
-            )
-        );
-    }
-    HIPCHECK( hipStreamSynchronize(hipStreamPerThread) );
-
-    return std::make_tuple(maxIdx, maxVals);
 }
 
 template <typename T>
@@ -217,10 +243,13 @@ auto _major(
     }
 
     // Set threshold as max of the possible methods
-    S threshold = std::max({
-        (1 - majorgain) * maxVal, noise * autoThreshold, cleanThreshold
-    });
-    bool finalMajor = (1 - majorgain) * maxVal < threshold;
+    S threshold = (1 - majorgain) * maxVal;
+    bool finalMajor {false};
+
+    if (threshold < noise * autoThreshold || threshold < cleanThreshold) {
+        threshold = std::max(noise * autoThreshold, cleanThreshold);
+        finalMajor = true;
+    }
 
     fmt::println(
         "Beginning{}major clean cycle: from {:.2g} Jy to {:.2g} (est. noise {:.2g} Jy)",
@@ -244,7 +273,7 @@ auto _major(
     for (; iter < niter; ++iter) {
         auto start = std::chrono::steady_clock::now();
 
-        auto [maxIdx, maxVals] = findMaximum<StokesI, S, N>(residuals);
+        auto [maxIdx, maxVals] = findmax<StokesI, S, N>(residuals);
 
         maxFindingDuration += std::chrono::duration_cast<std::chrono::microseconds>(
             std::chrono::steady_clock::now() - start
