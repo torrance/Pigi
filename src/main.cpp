@@ -192,12 +192,12 @@ int main(int argc, char** argv) {
             }
         );
         TCLAP::ValueArg<int> nMinor(
-            "", "Nminor",
+            "", "nminor",
             "Maximum total number of minor cycles allowed, summed over all major clean cycles. -1 implies no limit. (Default: 0)",
             false, -1, &cleanIterConstraint, cmd
         );
         TCLAP::ValueArg<int> nMajor(
-            "", "Nmajor",
+            "", "nmajor",
             "Maximum total number of major cycles allowed. -1 implies no limit. (Default: -1)",
             false, -1, &cleanIterConstraint, cmd
         );
