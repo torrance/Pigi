@@ -175,6 +175,9 @@ HostArray<T, 2> convolve(const HostSpan<T, 2> img, const HostSpan<S, 2> kernel) 
     // FT backward
     fftExec(planImg, img_d, HIPFFT_BACKWARD);
 
+    HIPFFTCHECK( hipfftDestroy(planImg) );
+    HIPFFTCHECK( hipfftDestroy(planKernel) );
+
     // Copy back from device
     imgPadded = img_d;
 
