@@ -5,26 +5,11 @@
 
 #include <mwa_hyperbeam.h>
 
+#include "coordinates.h"
 #include "gridspec.h"
 #include "memory.h"
 #include "outputtypes.h"
 #include "util.h"
-
-struct AzEl {
-    double az;  // Azimuth, measured North through to East (radians)
-    double el;  // Elevation angle, from horizon (radians)
-};
-
-AzEl lmToAzEl(const double l, const double m, const AzEl origin) {
-    // Don't use ndash here, as we _want_ below horizon values to be invalid
-    // and for NaN to propagate
-    auto n = std::sqrt(1 - l * l - m * m);
-
-    auto az = origin.az + std::atan2(l, n * std::cos(origin.el) - m * std::sin(origin.el));
-    auto el = std::asin(m * std::cos(origin.el) + n * std::sin(origin.el));
-
-    return {az, el};
-}
 
 namespace Beam {
 

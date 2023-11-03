@@ -201,6 +201,14 @@ public:
             tbl.col("TIME_CENTROID") <= timehigh
         );
 
+        // Set actual timelow and timehigh
+        casacore::Vector<double> timeCol(
+            (casacore::ScalarColumn<double> {tbl, "TIME_CENTROID"}).getColumn()
+        );
+        auto minmax = std::minmax_element(timeCol.begin(), timeCol.end());
+        this->timelow = *std::get<0>(minmax);
+        this->timehigh = *std::get<1>(minmax);
+
         // Get channel / freq information
         auto subtbl = tbl.keywordSet().asTable({"SPECTRAL_WINDOW"});
         casacore::ArrayColumn<double> freqsCol(subtbl, "CHAN_FREQ");
@@ -212,8 +220,9 @@ public:
 
         fmt::println("Measurement set {} opened", fname);
         fmt::println(
-            "    Channels {} - {} ({:.1f} - {:.1f} MHz) selected",
-            chanlow, chanhigh, freqs.front() / 1e6, freqs.back() / 1e6
+            "    Channels {} - {} ({:.1f} - {:.1f} MHz) Times {:.0f} - {:.0f} selected",
+            chanlow, chanhigh, freqs.front() / 1e6, freqs.back() / 1e6,
+            this->timelow, this->timehigh
         );
     }
 
@@ -228,7 +237,19 @@ public:
     }
 
     double midchan() const {
-        return (chanhigh - chanlow) / 2;
+        return (chanhigh + chanlow) / 2.;
+    }
+
+    double midtime() const {
+        return (timehigh + timelow) / 2.;
+    }
+
+    RaDec phaseCenter() {
+        auto sourceTbl = tbl.keywordSet().asTable("FIELD");
+        auto direction = casacore::ArrayColumn<double>(sourceTbl, "PHASE_DIR").get(0);
+        return {
+            direction(casacore::IPosition {0, 0}), direction(casacore::IPosition {1, 0})
+        };
     }
 
     static std::map<int, std::vector<MeasurementSet>> partition(

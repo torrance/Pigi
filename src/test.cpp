@@ -107,6 +107,20 @@ TEST_CASE("Measurement Set & Partition", "[mset]") {
     }
 
     REQUIRE( n == 2790000 );
+
+    SECTION("Phase center coordinate conversion") {
+        auto radec = mset.phaseCenter();
+
+        double time = mset.midtime();
+
+        auto azel = radecToAzel(radec, time / 86400., Beam::MWA<double>::origin);
+
+        // Test results generated from Astropy
+        AzEl expected {.az = deg2rad(188.78902259), .el = deg2rad(70.73802277)};
+
+        REQUIRE( std::abs(std::remainder(azel.az - expected.az, 2 * ::pi_v<double>)) < 1e-3 );
+        REQUIRE( std::abs(std::remainder(azel.el - expected.el, 2 * ::pi_v<double>)) < 1e-3 );
+    }
 }
 
 // Catch2 doesn't seem to support namespace separators
