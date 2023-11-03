@@ -140,17 +140,23 @@ TEMPLATE_TEST_CASE_SIG(
     (double, (MWABeam<double>), 8, -6)
 ) {
     // Config
-    auto gridspec = GridSpec::fromScaleLM(1500, 1500, std::sin(deg2rad(2.2 / 60)));
+    auto gridspec = GridSpec::fromScaleLM(1500, 1500, std::sin(deg2rad(2. / 60)));
     auto subgridspec = GridSpec::fromScaleUV(96, 96, gridspec.scaleuv);
     int padding = 18;
     int wstep = 25;
     double freq = 150e6;
-    AzEl gridorigin {0, pi_v<double> / 2};
+
+    // This is not a random coordinate: it is directly overhead
+    // the MWA at mjd = 5038236804 / 86400
+    RaDec gridorigin(deg2rad(21.5453427), deg2rad(-26.80060483));
 
     // Create Aterms
     BEAM beam;
     if constexpr(std::is_same<Beam::Gaussian<Q>, BEAM>::value) {
         beam = BEAM(gridorigin, deg2rad(25.));
+    }
+    if constexpr(std::is_same<Beam::MWA<Q>, BEAM>::value) {
+        beam = BEAM(5038236804. / 86400.);
     }
     auto Aterm = beam.gridResponse(subgridspec, gridorigin, freq);
 
@@ -171,7 +177,7 @@ TEMPLATE_TEST_CASE_SIG(
             double m { std::sin( deg2rad((rand(gen) - 0.5) * 50) ) };
 
             auto jones = static_cast<ComplexLinearData<double>>(
-                beam.pointResponse(lmToAzEl(l, m, gridorigin), freq)
+                beam.pointResponse(lmToRaDec(l, m, gridorigin), freq)
             );
             sources.emplace_back(l, m, jones);
         }
