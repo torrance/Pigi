@@ -241,7 +241,8 @@ public:
     }
 
     double midtime() const {
-        return (timehigh + timelow) / 2.;
+        // Return mjd value (converted from seconds -> days)
+        return (timehigh + timelow) / (2. * 86400.);
     }
 
     RaDec phaseCenter() {
@@ -333,6 +334,6 @@ private:
     std::vector<double> freqs;
     int chanlow;
     int chanhigh;
-    double timelow;
-    double timehigh;
+    double timelow;  // stored as native mset value; i.e. mjd in _seconds_
+    double timehigh; // stored as native mset value; i.e. mjd in _seconds_
 };

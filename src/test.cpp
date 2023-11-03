@@ -113,7 +113,7 @@ TEST_CASE("Measurement Set & Partition", "[mset]") {
 
         double time = mset.midtime();
 
-        auto azel = radecToAzel(radec, time / 86400., Beam::MWA<double>::origin);
+        auto azel = radecToAzel(radec, time, Beam::MWA<double>::origin);
 
         // Test results generated from Astropy
         AzEl expected {.az = deg2rad(188.78902259), .el = deg2rad(70.73802277)};
