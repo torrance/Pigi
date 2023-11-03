@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <memory>
 #include <numeric>
 #include <unordered_map>
 #include <vector>
@@ -27,8 +28,8 @@ struct WorkUnit {
     S v0;
     S w0;
     GridSpec subgridspec;
-    HostSpan< ComplexLinearData<S>, 2 > Aleft;
-    HostSpan< ComplexLinearData<S>, 2 > Aright;
+    std::shared_ptr<HostArray< ComplexLinearData<S>, 2 >> Aleft;
+    std::shared_ptr<HostArray< ComplexLinearData<S>, 2 >> Aright;
     T data;
 };
 
@@ -41,9 +42,13 @@ auto partition(
     int wstep,
     HostArray<ComplexLinearData<S>, 2>& Aterms
 ) {
-    // Temporarily store workunits in a map to reduce search space duirng partitioning
+    // Create copy of Aterms managed as a shared_ptr
+    // TODO: avoid this copy, and create shared pointer earlier in the call-chain?
+    auto Aterms_ptr = std::make_shared<HostArray<ComplexLinearData<S>, 2>>(Aterms);
+
+    // Temporarily store workunits in a map to reduce search space during partitioning
     std::unordered_map<
-    S, std::vector<WorkUnit< S, std::vector<UVDatum<S>> >>
+        S, std::vector<WorkUnit< S, std::vector<UVDatum<S>> >>
     > wlayers;
     long long radius {static_cast<long long>(subgridspec.Nx) / 2 - padding};
 
@@ -87,7 +92,7 @@ auto partition(
         // TODO: use emplace_back() when we can upgrade Clang
         wworkunits.push_back({
             u0px, v0px, u0, v0, w0, subgridspec,
-            Aterms, Aterms, std::vector<UVDatum<S>> {uvdatum}
+            Aterms_ptr, Aterms_ptr, std::vector<UVDatum<S>> {uvdatum}
         });
     }
 

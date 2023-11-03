@@ -9,6 +9,7 @@
 #include <casacore/tables/Tables.h>
 
 #include "channel.h"
+#include "coordinates.h"
 #include "constants.h"
 #include "outputtypes.h"
 #include "uvdatum.h"
@@ -245,7 +246,29 @@ public:
         return (timehigh + timelow) / (2. * 86400.);
     }
 
-    RaDec phaseCenter() {
+    std::string telescopeName() const {
+        auto observationTbl = tbl.keywordSet().asTable("OBSERVATION");
+        return casacore::ScalarColumn<casacore::String>(
+            observationTbl, "TELESCOPE_NAME"
+        ).get(0);
+    }
+
+    std::array<uint32_t, 16> mwaDelays() const {
+        auto mwaTilePointingTbl = tbl.keywordSet().asTable("MWA_TILE_POINTING");
+        auto delays = casacore::ArrayColumn<int>(
+            mwaTilePointingTbl, "DELAYS"
+        ).get(0);
+
+        // Copy casacore array to
+        std::array<uint32_t, 16> delays_uint32;
+        std::copy(
+            delays.begin(), delays.end(), delays_uint32.begin()
+        );
+
+        return delays_uint32;
+    }
+
+    RaDec phaseCenter() const {
         auto sourceTbl = tbl.keywordSet().asTable("FIELD");
         auto direction = casacore::ArrayColumn<double>(sourceTbl, "PHASE_DIR").get(0);
         return {

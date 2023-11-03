@@ -188,13 +188,14 @@ void degridder(
     const DeviceSpan<S, 2> subtaper,
     const DegridOp degridop
 ) {
-    // Transfer Aterms to GPU, since these are often shared
+    // Transfer _unique_ Aterms to GPU
     std::unordered_map<
-        const ComplexLinearData<S>*, const DeviceArray<ComplexLinearData<S>, 2>
+        std::shared_ptr<HostArray<ComplexLinearData<S>, 2>>,
+        const DeviceArray<ComplexLinearData<S>, 2>
     > Aterms;
     for (const auto workunit : workunits) {
-        Aterms.try_emplace(workunit->Aleft.data(), workunit->Aleft);
-        Aterms.try_emplace(workunit->Aright.data(), workunit->Aright);
+        Aterms.try_emplace(workunit->Aleft, *workunit->Aleft);
+        Aterms.try_emplace(workunit->Aright, *workunit->Aright);
     }
 
     // Create and enqueue the work units
@@ -218,8 +219,8 @@ void degridder(
 
                 // Transfer data to device and retrieve A terms
                 DeviceArray<UVDatum<S>, 1> uvdata {workunit->data};
-                const auto& Aleft = Aterms.at(workunit->Aleft.data());
-                const auto& Aright = Aterms.at(workunit->Aright.data());
+                const auto& Aleft = Aterms.at(workunit->Aleft);
+                const auto& Aright = Aterms.at(workunit->Aright);
 
                 // Allocate subgrid and extract from grid
                 auto subgrid = extractSubgrid(grid, *workunit);

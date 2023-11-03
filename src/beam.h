@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cmath>
+#include <memory>
 #include <stdexcept>
 
 #include <mwa_hyperbeam.h>
@@ -8,6 +9,7 @@
 #include "coordinates.h"
 #include "gridspec.h"
 #include "memory.h"
+#include "mset.h"
 #include "outputtypes.h"
 #include "util.h"
 
@@ -159,7 +161,6 @@ public:
         const GridSpec& gridspec, const RaDec& gridorigin, const double freq
     ) override {
         AzEl gridoriginAzEl = radecToAzel(gridorigin, mjd, origin);
-        fmt::println("Grid centre is Az={} El={}", rad2deg(gridoriginAzEl.az), rad2deg(gridoriginAzEl.el));
 
         // Create vectors of az and za to pass to hyperbeam
         std::vector<double> azs, zas;
@@ -211,5 +212,20 @@ private:
     std::array<double, 16> amps {};
     FEEBeam* feebeam {};
 };
+
+template <typename P>
+std::unique_ptr<Beam<P>> getBeam(const MeasurementSet& mset) {
+    auto telescopeName = mset.telescopeName();
+
+    // For ease of initial implementation, we hardcode the possible beam types
+    if (telescopeName == "MWA") {
+        return std::make_unique<MWA<P>>(mset.midtime(), mset.mwaDelays());
+    } else {
+        fmt::println(
+            stderr, "Unknown telescope beam ({}); defaulting to uniform beam", telescopeName
+        );
+        return std::make_unique<Uniform<P>>();
+    }
+}
 
 }

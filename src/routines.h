@@ -2,6 +2,7 @@
 #include <generator>
 #include <iterator>
 #include <memory>
+#include <optional>
 
 #include "beam.h"
 #include "clean.h"
@@ -52,8 +53,8 @@ void clean(Config& config) {
     auto taper = kaiserbessel<P>(config.gridspecPadded);
     auto subtaper = kaiserbessel<P>(config.subgridspec);
 
-    // TODO: Calculate Beam for each mset
-    auto Aterms = Beam::Uniform<P>().gridResponse(config.subgridspec, {0, 0}, 0);
+    // Initialize pointing; set based on mset
+    std::optional<RaDec> phaseCenter;
 
     // Partition all msets and combine their workunits by channel
     std::vector<ChannelGroup<StokesI, P>> channelgroups;
@@ -67,6 +68,21 @@ void clean(Config& config) {
 
         std::vector<WorkUnit<P>> workunitsChannelgroup;
         for (auto& mset : msetsChannelGroup) {
+            // Set pointing based on first mset
+            if (!phaseCenter) {
+                phaseCenter = mset.phaseCenter();
+                fmt::println(
+                    "Phase center set to RA={:.2f} Dec={:.2f}",
+                    rad2deg(phaseCenter->ra), rad2deg(phaseCenter->dec)
+                );
+            }
+
+            // TODO: Apply phase correction for any mset where pointing is offset
+
+            // Construct A terms matrix for beam
+            auto beam = Beam::getBeam<P>(mset);
+            auto Aterms = beam->gridResponse(config.subgridspec, *phaseCenter, mset.midfreq());
+
             auto uvdata = [&] () -> std::generator<UVDatum<P>> {
                 for (auto& uvdatum : mset) {
                     co_yield static_cast<UVDatum<P>>(uvdatum);

@@ -199,13 +199,14 @@ void gridder(
 ) {
     const auto subgridspec = workunits.front()->subgridspec;
 
-    // Transfer Aterms to GPU, since these are often shared
+    // Transfer _unique_ Aterms to GPU
     std::unordered_map<
-        const ComplexLinearData<S>*, DeviceArray<ComplexLinearData<S>, 2>
+        std::shared_ptr<HostArray<ComplexLinearData<S>, 2>>,
+        DeviceArray<ComplexLinearData<S>, 2>
     > Aterms;
     for (const auto& workunit : workunits) {
-        Aterms.try_emplace(workunit->Aleft.data(), workunit->Aleft);
-        Aterms.try_emplace(workunit->Aright.data(), workunit->Aright);
+        Aterms.try_emplace(workunit->Aleft, *workunit->Aleft);
+        Aterms.try_emplace(workunit->Aright, *workunit->Aright);
     }
 
     using Pair = std::tuple<DeviceArray<T, 2>, const WorkUnit<S>*>;
@@ -234,8 +235,8 @@ void gridder(
 
                 // Transfer data to device and retrieve A terms
                 const DeviceArray<UVDatum<S>, 1> uvdata {workunit->data};
-                const auto& Aleft = Aterms.at(workunit->Aleft.data());
-                const auto& Aright = Aterms.at(workunit->Aright.data());
+                const auto& Aleft = Aterms.at(workunit->Aleft);
+                const auto& Aright = Aterms.at(workunit->Aright);
 
                 // Allocate subgrid
                 DeviceArray<T, 2> subgrid {subgridspec.Nx, subgridspec.Ny};
