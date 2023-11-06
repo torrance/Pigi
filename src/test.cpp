@@ -84,6 +84,27 @@ TEST_CASE("Matrix tests", "[matrix]") {
     ));
 }
 
+TEST_CASE("Utility functions", "[utility]") {
+    auto smallGridspec = GridSpec::fromScaleUV(128, 128, 1);
+    auto largeGridspec = GridSpec::fromScaleUV(1000, 1000, 1);
+
+    PSF<double> psf(deg2rad(25.), deg2rad(20.), deg2rad(31.));
+    auto smallGaussian = psf.draw(smallGridspec);
+    auto largeGaussian = resample(smallGaussian, smallGridspec, largeGridspec);
+
+    auto expectedGaussian = psf.draw(largeGridspec);
+
+    double maxdiff {-1};
+    for (size_t i {}; i < largeGridspec.size(); ++i) {
+        maxdiff = std::max(maxdiff, thrust::abs(largeGaussian[i] - expectedGaussian[i]));
+    }
+
+    fmt::println("Maxdiff = {}", maxdiff);
+
+    REQUIRE(maxdiff != -1);
+    REQUIRE(maxdiff < 2e-2);
+}
+
 TEST_CASE("Measurement Set & Partition", "[mset]") {
     if (!TESTDATA) { SKIP("TESTDATA path not provided"); }
 
