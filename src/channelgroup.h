@@ -13,6 +13,7 @@ struct ChannelGroup {
     LinearData<P> weights;
     std::vector<MeasurementSet> msets;
     std::vector<WorkUnit<P>> workunits;
+    HostArray<T<P>, 2> avgBeam;
     HostArray<thrust::complex<P>, 2> psf;
     HostArray<T<P>, 2> residual;
     HostArray<T<P>, 2> components;

@@ -66,7 +66,11 @@ void clean(Config& config) {
             channelIndex, config.msets.size()
         );
 
+        // Prepare accumulation variables
+        LinearData<P> totalWeight {};
+        HostArray<StokesI<P>, 2> avgBeam {config.subgridspec.Nx, config.subgridspec.Ny};
         std::vector<WorkUnit<P>> workunitsChannelgroup;
+
         for (auto& mset : msetsChannelGroup) {
             // Set pointing based on first mset
             if (!phaseCenter) {
@@ -94,16 +98,30 @@ void clean(Config& config) {
                 config.padding, config.wstep, Aterms
             );
 
+            // Apply weights
+            auto weight = applyWeights(*weighter, workunits);
+            totalWeight += weight;
+
             // Append workunits to workunitsChannelGroup using move semantics
             workunitsChannelgroup.reserve(workunitsChannelgroup.size() + workunits.size());
             std::move(
                 workunits.begin(), workunits.end(),
                 std::back_inserter(workunitsChannelgroup)
             );
+
+            // Construct Aterm power, apply weight, and add to avgBeam
+            // TODO: This assumes Aterms are 2D. Handle case for non-identical beams
+            for (size_t i {}; i < config.subgridspec.size(); ++i) {
+                avgBeam[i] += (
+                    StokesI<P>::beamPower(Aterms[i], Aterms[i]) *= static_cast<StokesI<P>>(weight)
+                );
+            }
         }
 
-        // Apply weights
-        auto totalWeight = applyWeights(*weighter, workunitsChannelgroup);
+        // Rescale avgBeam
+        avgBeam = rescale(avgBeam, config.subgridspec, config.gridspecPadded);
+        avgBeam = resize(avgBeam, config.gridspecPadded, config.gridspec);
+        avgBeam /= StokesI<P>(totalWeight);
 
         // Create psf
         fmt::println(
@@ -126,7 +144,8 @@ void clean(Config& config) {
         auto residual = resize(residualPadded, config.gridspecPadded, config.gridspec);
 
         // Write out sub channel images
-        if (channelgroups.size() > 1) {
+        if (config.msets.size() > 1) {
+            save(fmt::format("beam-{:02d}.fits", channelIndex), avgBeam);
             save(fmt::format("psf-{:02d}.fits", channelIndex), psfDirty);
             save(fmt::format("dirty-{:02d}.fits", channelIndex), residual);
         }
@@ -140,6 +159,7 @@ void clean(Config& config) {
             .weights = totalWeight,
             .msets = std::move(msetsChannelGroup),
             .workunits = std::move(workunitsChannelgroup),
+            .avgBeam = std::move(avgBeam),
             .psf = std::move(psfDirty),
             .residual = std::move(residual),
             .components = std::move(components)
@@ -155,16 +175,20 @@ void clean(Config& config) {
         HostArray<thrust::complex<P>, 2> psfCombined {
             config.gridspec.Nx, config.gridspec.Ny
         };
+        HostArray<StokesI<P>, 2> beamCombined {config.gridspec.Nx, config.gridspec.Ny};
 
         for (auto& channelgroup : channelgroups) {
             residualCombined += channelgroup.residual;
             psfCombined += channelgroup.psf;
+            beamCombined += channelgroup.avgBeam;
         }
         residualCombined /= StokesI<P>(channelgroups.size());
         psfCombined /= thrust::complex<P>(channelgroups.size());
+        beamCombined /= StokesI<P>(channelgroups.size());
 
         save("dirty.fits", residualCombined);
         save("psf.fits", psfCombined);
+        save("beam.fits", beamCombined);
 
         // Further crop psfs so that all pixels > 0.2 * (1 - majorgain)
         // are included in cutout. We use this smaller window to speed up PSF fitting and
@@ -200,9 +224,9 @@ void clean(Config& config) {
             // Create minorComponentsMap and append
             // components from this major interation
             HostArray<StokesI<P>, 2> minorComponentsMap {config.gridspec.Nx, config.gridspec.Ny};
-            for (auto& [idx, val] : minorComponents[n]) {
-                minorComponentsMap[idx] += val;
+            for (auto [idx, val] : minorComponents[n]) {
                 channelgroup.components[idx] += val;
+                minorComponentsMap[idx] += (val /= channelgroup.avgBeam[idx]);
             }
 
             fmt::println(
@@ -227,6 +251,12 @@ void clean(Config& config) {
                 channelgroup.workunits, config.gridspecPadded, taper, subtaper
             );
             channelgroup.residual = resize(residualPadded, config.gridspecPadded, config.gridspec);
+
+            // Save intermediate progress for debugging
+            if (channelgroups.size() > 1) {
+                save(fmt::format("residual-{:02d}.fits", n + 1), channelgroup.residual);
+                save(fmt::format("components-{:02d}.fits", n + 1), channelgroup.components);
+            }
         }
 
         if (finalMajor) break;
@@ -249,7 +279,7 @@ void clean(Config& config) {
             image += channelgroup.residual;
 
             save(fmt::format("residual-{:02d}.fits", n + 1), channelgroup.residual);
-            save(fmt::format("components-{:02d}.fits", n + 1), channelgroup.residual);
+            save(fmt::format("components-{:02d}.fits", n + 1), channelgroup.components);
             save(fmt::format("image-{:02d}.fits", n + 1), image);
         }
     }
