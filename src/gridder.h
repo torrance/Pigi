@@ -100,7 +100,7 @@ void _gpudift(
             ));
 
             // Finally, apply norm
-            output /= ::abs(norm);
+            output *= sqrt(2) / ::abs(norm);
         }
 
         if (idx < subgridspec.size()) {

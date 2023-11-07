@@ -159,7 +159,7 @@ struct StokesI {
 
     __host__ __device__
     operator ComplexLinearData<T>() const {
-        return ComplexLinearData<T> {2 * I, 0, 0, 2 * I};
+        return ComplexLinearData<T> {I, 0, 0, I};
     }
 
     __host__ __device__
@@ -207,7 +207,7 @@ struct StokesI {
                 Aright.inv().adjoint()
             )
         );
-        return 1 / thrust::abs(norm.I);
+        return std::sqrt(2) / thrust::abs(norm.I);
     }
 };
 
