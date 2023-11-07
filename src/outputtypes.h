@@ -154,8 +154,9 @@ struct StokesI {
     template <typename S>
     __host__ __device__ StokesI(const S& I) : I{I} {}
 
+    template <typename S>
     __host__ __device__
-    explicit StokesI(const ComplexLinearData<T>& data) : I((T) 0.5 * (data.xx + data.yy)) {}
+    explicit StokesI(const LinearData<S>& data) : I(T(0.5) * (data.xx + data.yy)) {}
 
     __host__ __device__
     operator ComplexLinearData<T>() const {
