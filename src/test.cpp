@@ -90,7 +90,7 @@ TEST_CASE("Utility functions", "[utility]") {
 
     PSF<double> psf(deg2rad(25.), deg2rad(20.), deg2rad(31.));
     auto smallGaussian = psf.draw(smallGridspec);
-    auto largeGaussian = resample(smallGaussian, smallGridspec, largeGridspec);
+    auto largeGaussian = rescale(smallGaussian, smallGridspec, largeGridspec);
 
     auto expectedGaussian = psf.draw(largeGridspec);
 

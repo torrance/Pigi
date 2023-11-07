@@ -186,7 +186,7 @@ HostArray<T, 2> convolve(const HostSpan<T, 2> img, const HostSpan<S, 2> kernel) 
 }
 
 template <typename T>
-HostArray<T, 2> resample(
+HostArray<T, 2> rescale(
     const HostSpan<T, 2> img, const GridSpec from, const GridSpec to
 ) {
     if (from.scaleuv != to.scaleuv) {
