@@ -252,7 +252,7 @@ auto _major(
     }
 
     fmt::println(
-        "Beginning{}major clean cycle: from {:.2g} Jy to {:.2g} (est. noise {:.2g} Jy)",
+        "Beginning{}major clean cycle: from {:.2g} Jy to {:.2g} Jy (est. noise {:.2g} Jy)",
         finalMajor ? " (final) " : " ", maxVal, threshold, noise
     );
 
@@ -334,7 +334,11 @@ auto _major(
         for (auto& channelgroup : channelgroups) {
             val += channelgroup.residual[idx].I.real();
         }
-        maxVal = std::max(maxVal, std::abs(val / N));
+        val /= N;
+
+        if (std::abs(val) > std::abs(maxVal)) {
+            maxVal = val;
+        }
     }
 
     fmt::println(
