@@ -46,8 +46,10 @@ void predict(
         wlayers[workunit.w0].push_back(&workunit);
     }
 
+    int nwlayer {};
     for (auto& [w0, wworkunits] : wlayers) {
-        fmt::println("Processing w={} layer...", w0);
+        fmt::print("\rProcessing {}/{} w-layer...", ++nwlayer, wlayers.size());
+        fflush(stdout);
 
         // Apply w-decorrection and copy to wlayer
         map([w0=w0, gridspec=gridspec] __device__ (auto idx, auto img, auto& wlayer) {
@@ -59,4 +61,6 @@ void predict(
         fftExec(plan, wlayer, HIPFFT_FORWARD);
         degridder<T, S>(wworkunits, wlayer, subtaperd, degridop);
     }
+
+    fmt::println(" Done.");
 }

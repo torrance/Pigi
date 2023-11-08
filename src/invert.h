@@ -37,8 +37,10 @@ HostArray<T<S>, 2> invert(
         wlayers[workunit.w0].push_back(&workunit);
     }
 
+    int nwlayer {};
     for (const auto& [w0, wworkunits] : wlayers) {
-        fmt::println("Processing w={} layer...", w0);
+        fmt::print("\rProcessing {}/{} w-layer...", ++nwlayer, wlayers.size());
+        fflush(stdout);
 
         wlayerd.zero();
         gridder<T<S>, S>(wlayerd, wworkunits, subtaperd, makePSF);
@@ -53,6 +55,8 @@ HostArray<T<S>, 2> invert(
             imgd += wlayerd;
         }, Iota(), imgd, wlayerd);
     }
+
+    fmt::println(" Done.");
 
     // Copy img to host
     HostArray<T<S>, 2> img {imgd};
