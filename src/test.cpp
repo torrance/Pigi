@@ -278,57 +278,102 @@ TEMPLATE_TEST_CASE_SIG(
     REQUIRE( maxdiff < THRESHOLDF * std::pow(10, THRESHOLDP));
 }
 
-TEMPLATE_TEST_CASE("Predict", "[predict]", float, double) {
-    auto gridspec = GridSpec::fromScaleUV(2000, 2000, 1);
+TEMPLATE_TEST_CASE_SIG(
+    "Predict", "[predict]",
+    ((typename Q, typename BEAM, int THRESHOLDF, int THRESHOLDP), Q, BEAM, THRESHOLDF, THRESHOLDP),
+    (float, (UniformBeam<float>), 2, -5),
+    (double, (UniformBeam<double>), 1, -12),
+    (float, (GaussianBeam<float>), 2, -5),
+    (double, (GaussianBeam<double>), 1, -12),
+    (float, (MWABeam<float>), 3, -5),
+    (double, (MWABeam<double>), 2, -5)
+) {
+    auto gridspec = GridSpec::fromScaleUV(4000, 4000, 20);
+    const double freq {150e6};
+
+    // This is not a random coordinate: it is directly overhead
+    // the MWA at mjd = 5038236804 / 86400
+    const RaDec phaseCenter(deg2rad(21.5453427), deg2rad(-26.80060483));
+
+    BEAM beam;
+    if constexpr(std::is_same_v<BEAM, GaussianBeam<Q>>) {
+        beam = BEAM(phaseCenter, deg2rad(25.));
+    }
+    if constexpr(std::is_same_v<BEAM, MWABeam<Q>>) {
+        beam = BEAM(5038236804. / 86400.);
+    }
 
     // Create skymap
-    HostArray<StokesI<TestType>, 2> skymap {gridspec.Nx, gridspec.Ny};
+    HostArray<StokesI<Q>, 2> skymap {gridspec.Nx, gridspec.Ny};
 
     std::mt19937 gen(1234);
-    std::uniform_int_distribution<int> randints(700, 1300);
+    std::uniform_int_distribution<int> randints(1000, 3000);
 
     for (size_t i {}; i < 1000; ++i) {
         int x {randints(gen)}, y {randints(gen)};
-        skymap[gridspec.gridToLinear(x, y)] = StokesI<TestType> {TestType(1)};
+        skymap[gridspec.gridToLinear(x, y)] = StokesI<Q> {Q(1)};
     }
 
-    std::uniform_real_distribution<TestType> randfloats(0, 1);
+    std::uniform_real_distribution<Q> randfloats(-1, 1);
 
     // Create empty UVDatum
-    std::vector<UVDatum<TestType>> uvdata;
+    std::vector<UVDatum<Q>> uvdata;
     for (size_t i {}; i < 5000; ++i) {
-        TestType u {randfloats(gen)}, v {randfloats(gen)}, w {randfloats(gen)};
-        u = (u - 0.5) * 250;
-        v = (v - 0.5) * 250;
-        w = (w - 0.5) * 100;
+        Q u {randfloats(gen)}, v {randfloats(gen)}, w {randfloats(gen)};
+        u = u * 1000;
+        v = v * 1000;
+        w = w * 500;
 
         // TODO: use emplace_back() when we can upgrade Clang
         uvdata.push_back({
             i, 0, u, v, w,
-            LinearData<TestType> {1, 1, 1, 1},
-            ComplexLinearData<TestType> {0, 0, 0, 0}
+            LinearData<Q> {1, 1, 1, 1},
+            ComplexLinearData<Q> {0, 0, 0, 0}
         });
     }
+
+    // Weight naturally
+    Natural<Q> weighter(uvdata, gridspec);
+    applyWeights(weighter, uvdata);
 
     // Calculate expected at double precision
     std::vector<UVDatum<double>> expected;
     {
         // Find non-empty pixels
+        // TODO: replace with copy_if and std::back_inserter
         std::vector<size_t> idxs;
         for (size_t i {}; i < skymap.size(); ++i) {
             if (thrust::abs(skymap[i].I) != 0) idxs.push_back(i);
+        }
+
+        // Calculate and cache beam point responses
+        std::unordered_map<size_t, ComplexLinearData<double>> Aterms;
+        for (auto idx : idxs) {
+            auto [l, m] = gridspec.linearToSky<double>(idx);
+            auto radec = lmToRaDec(l, m, phaseCenter);
+            Aterms[idx] = static_cast<ComplexLinearData<double>>(
+                beam.pointResponse(radec, freq)
+            );
         }
 
         // For each UVDatum, sum over non-empty pixels
         for (const auto& uvdatum : uvdata) {
             UVDatum<double> uvdatum64 = static_cast<UVDatum<double>>(uvdatum);
             for (auto idx : idxs) {
-                StokesI<double> cell {skymap[idx].I};
+                // Convert StokesI<Q> -> StokesI<double> -> ComplexLinearData<double>
+                ComplexLinearData<double> cell = StokesI<double>(skymap[idx].I);
+
+                // Apply beam attenuation
+                auto Aterm = Aterms[idx];
+                cell = matmul(matmul(Aterm, cell), Aterm.adjoint());
+
+                // Apply phase
                 auto [l, m] = gridspec.linearToSky<double>(idx);
                 cell *= cispi(
                     -2 * (uvdatum64.u * l + uvdatum64.v * m + uvdatum64.w * ndash(l, m))
                 );
-                uvdatum64.data += (ComplexLinearData<double>) cell;
+
+                uvdatum64.data += cell;
             }
             expected.push_back(uvdatum64);
         }
@@ -336,43 +381,55 @@ TEMPLATE_TEST_CASE("Predict", "[predict]", float, double) {
 
     // Predict using IDG
     auto subgridspec = GridSpec::fromScaleUV(96, 96, gridspec.scaleuv);
-    auto taper = kaiserbessel<TestType>(gridspec);
-    auto subtaper = kaiserbessel<TestType>(subgridspec);
+    auto taper = kaiserbessel<Q>(gridspec);
+    auto subtaper = kaiserbessel<Q>(subgridspec);
     int padding {17};
     int wstep {25};
-    HostArray<ComplexLinearData<TestType>, 2> Aterms {subgridspec.Nx, subgridspec.Ny};
-    Aterms.fill({1, 0, 0, 1});
+
+    auto Aterms = beam.gridResponse(subgridspec, phaseCenter, freq);
 
     auto workunits = partition(
         uvdata, gridspec, subgridspec, padding, wstep, Aterms
     );
 
-    predict<StokesI<TestType>, TestType>(
+    predict<StokesI<Q>, Q>(
         workunits, skymap, gridspec, taper, subtaper, DegridOp::Replace
     );
 
     // Flatten workunits back into uvdata and sort back to original order
+    // using the row attribute
     for (const auto& workunit : workunits) {
         for (const auto& uvdatum : workunit.data) {
             uvdata[uvdatum.row] = uvdatum;
         }
     }
 
+    // Create images to compare diff
+    auto windowedGridspec = GridSpec::fromScaleLM(2000, 2000, gridspec.scalelm);
+    auto fullAterms = beam.gridResponse(windowedGridspec, phaseCenter, freq);
+
+    HostArray<StokesI<Q>, 2> imgMap {windowedGridspec.Nx, windowedGridspec.Ny};
+    idft<StokesI<Q>, Q>(imgMap, fullAterms, uvdata, windowedGridspec);
+
+    HostArray<StokesI<double>, 2> expectedMap {windowedGridspec.Nx, windowedGridspec.Ny};
+    idft<StokesI<double>, double>(
+        expectedMap, static_cast<HostArray<ComplexLinearData<double>, 2>>(fullAterms),
+        expected, windowedGridspec
+    );
+
     double maxdiff {-1};
-    for (size_t i {}; i < uvdata.size(); ++i) {
-        auto diff = uvdata[i].data;
-        diff -= expected[i].data;
+    for (size_t i {}; i < windowedGridspec.size(); ++i) {
+        auto diff = expectedMap[i].I - imgMap[i].I;
 
         maxdiff = std::max<double>(
-            maxdiff,
-            thrust::abs(diff.xx) + thrust::abs(diff.yx) +
-            thrust::abs(diff.xy) + thrust::abs(diff.yy)
+            maxdiff, thrust::abs(diff)
         );
     }
 
     fmt::println("Prediction max diff: {}", maxdiff);
+
     REQUIRE( maxdiff != -1 );
-    REQUIRE( maxdiff < (std::is_same<float, TestType>::value ? 1e-3 : 3e-9) );
+    REQUIRE( maxdiff < THRESHOLDF * std::pow(10, THRESHOLDP));
 }
 
 TEST_CASE("Clean", "[clean]") {
