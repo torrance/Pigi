@@ -173,13 +173,10 @@ void _addsubgrid(
 
 template <typename T>
 void addsubgrid(
-    DeviceSpan<T, 2> grid,
-    const DeviceSpan<T, 2> subgrid, const GridSpec subgridspec,
+    DeviceSpan<T, 2> grid, const DeviceSpan<T, 2> subgrid,
+    const GridSpec gridspec, const GridSpec subgridspec,
     const long long u0px, const long long v0px
 ) {
-    // Create dummy gridspec to have access to gridToLinear() method
-    GridSpec gridspec {grid.size(0), grid.size(1), 0, 0};
-
     auto fn = _addsubgrid<T>;
     auto [nblocks, nthreads] = getKernelConfig(
         fn, subgridspec.size()
@@ -195,9 +192,11 @@ void gridder(
     DeviceSpan<T, 2> grid,
     const std::vector<const WorkUnit<S>*> workunits,
     const DeviceSpan<S, 2> subtaper,
+    const GridConfig gridconf,
     const bool makePSF
 ) {
-    const auto subgridspec = workunits.front()->subgridspec;
+    const GridSpec gridspec = gridconf.padded();
+    const GridSpec subgridspec = gridconf.subgrid();
 
     // Transfer _unique_ Aterms to GPU
     std::unordered_map<
@@ -267,7 +266,7 @@ void gridder(
     // Meanwhile, process subgrids and add back to the main grid as the become available
     for (size_t i {}; i < workunits.size(); ++i) {
         const auto [subgrid, workunit] = subgridsChannel.pop().value();
-        addsubgrid<T>(grid, subgrid, subgridspec, workunit->u0px, workunit->v0px);
+        addsubgrid<T>(grid, subgrid, gridspec, subgridspec, workunit->u0px, workunit->v0px);
     }
 
     for (auto& t : threads) { t.join(); }

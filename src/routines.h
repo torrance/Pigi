@@ -24,34 +24,32 @@ namespace routines {
 template <typename P>
 void clean(Config& config) {
     fmt::println("Calculating visibility weights...");
+    std::shared_ptr<Weighter<P>> weighter {};
 
-    // Weighting is performed over all dat
-    // So let's flatten the msets into a single uvdatum iterator
-    auto uvdataAll = [&] () -> std::generator<UVDatum<P>> {
-        for (auto& [_, msetsChan] : config.msets) {
-            for (auto& mset : msetsChan) {
-                for (auto& uvdatum : mset) {
-                    co_yield static_cast<UVDatum<P>>(uvdatum);
+    {
+        // Weighting is performed over all data
+        // So let's flatten the msets into a single uvdatum iterator
+        auto uvdataAll = [&] () -> std::generator<UVDatum<P>> {
+            for (auto& [_, msetsChan] : config.msets) {
+                for (auto& mset : msetsChan) {
+                    for (auto& uvdatum : mset) {
+                        co_yield static_cast<UVDatum<P>>(uvdatum);
+                    }
                 }
             }
+        };
+
+        if (config.weight == "uniform") {
+            weighter = std::make_shared<Uniform<P>>(uvdataAll(), config.gridconf.padded());
+        } else if (config.weight == "natural") {
+            weighter = std::make_shared<Natural<P>>(uvdataAll(), config.gridconf.padded());
+        } else if (config.weight == "briggs") {
+            weighter = std::make_shared<Briggs<P>>(uvdataAll(), config.gridconf.padded(), config.robust);
+        } else {
+            fmt::println("Unknown weight: {}", config.weight);
+            abort();
         }
-    }();
-
-    std::shared_ptr<Weighter<P>> weighter {};
-    if (config.weight == "uniform") {
-        weighter = std::make_shared<Uniform<P>>(uvdataAll, config.gridspecPadded);
-    } else if (config.weight == "natural") {
-        weighter = std::make_shared<Natural<P>>(uvdataAll, config.gridspecPadded);
-    } else if (config.weight == "briggs") {
-        weighter = std::make_shared<Briggs<P>>(uvdataAll, config.gridspecPadded, config.robust);
-    } else {
-        fmt::println("Unknown weight: {}", config.weight);
-        abort();
     }
-
-    // Create grid tapers
-    auto taper = kaiserbessel<P>(config.gridspecPadded);
-    auto subtaper = kaiserbessel<P>(config.subgridspec);
 
     // Initialize pointing; set based on mset
     std::optional<RaDec> phaseCenter;
@@ -68,7 +66,7 @@ void clean(Config& config) {
 
         // Prepare accumulation variables
         LinearData<P> totalWeight {};
-        HostArray<StokesI<P>, 2> avgBeam {config.subgridspec.Nx, config.subgridspec.Ny};
+        HostArray<StokesI<P>, 2> avgBeam {config.gridconf.subgrid().shape()};
         std::vector<WorkUnit<P>> workunitsChannelgroup;
 
         for (auto& mset : msetsChannelGroup) {
@@ -85,7 +83,9 @@ void clean(Config& config) {
 
             // Construct A terms matrix for beam
             auto beam = Beam::getBeam<P>(mset);
-            auto Aterms = beam->gridResponse(config.subgridspec, *phaseCenter, mset.midfreq());
+            auto Aterms = beam->gridResponse(
+                config.gridconf.subgrid(), *phaseCenter, mset.midfreq()
+            );
 
             auto uvdata = [&] () -> std::generator<UVDatum<P>> {
                 for (auto& uvdatum : mset) {
@@ -93,10 +93,7 @@ void clean(Config& config) {
                 }
             }();
 
-            auto workunits = partition(
-                uvdata, config.gridspecPadded, config.subgridspec,
-                config.padding, config.wstep, Aterms
-            );
+            auto workunits = partition(uvdata, config.gridconf, Aterms);
 
             // Apply weights
             auto weight = applyWeights(*weighter, workunits);
@@ -111,7 +108,8 @@ void clean(Config& config) {
 
             // Construct Aterm power, apply weight, and add to avgBeam
             // TODO: This assumes Aterms are 2D. Handle case for non-identical beams
-            for (size_t i {}; i < config.subgridspec.size(); ++i) {
+
+            for (size_t i {}, I = config.gridconf.subgrid().size(); i < I; ++i) {
                 avgBeam[i] += (
                     StokesI<P>::beamPower(Aterms[i], Aterms[i]) *= static_cast<StokesI<P>>(weight)
                 );
@@ -119,8 +117,8 @@ void clean(Config& config) {
         }
 
         // Rescale avgBeam
-        avgBeam = rescale(avgBeam, config.subgridspec, config.gridspecPadded);
-        avgBeam = resize(avgBeam, config.gridspecPadded, config.gridspec);
+        avgBeam = rescale(avgBeam, config.gridconf.subgrid(), config.gridconf.padded());
+        avgBeam = resize(avgBeam, config.gridconf.padded(), config.gridconf.grid());
         avgBeam /= StokesI<P>(totalWeight);
 
         // Create psf
@@ -128,20 +126,16 @@ void clean(Config& config) {
             "Channel group [{}/{}]: Constructing PSF...",
             channelIndex, config.msets.size()
         );
-        auto psfDirtyPadded = invert<thrust::complex, P>(
-            workunitsChannelgroup, config.gridspecPadded, taper, subtaper, true
+        auto psfDirty = invert<thrust::complex, P>(
+            workunitsChannelgroup, config.gridconf, true
         );
-        auto psfDirty = resize(psfDirtyPadded, config.gridspecPadded, config.gridspec);
 
         // Initial inversion
         fmt::println(
             "Channel group [{}/{}]: Constructing dirty image...",
             channelIndex, config.msets.size()
         );
-        auto residualPadded = invert<StokesI, P>(
-            workunitsChannelgroup, config.gridspecPadded, taper, subtaper
-        );
-        auto residual = resize(residualPadded, config.gridspecPadded, config.gridspec);
+        auto residual = invert<StokesI, P>(workunitsChannelgroup, config.gridconf);
 
         // Write out sub channel images
         if (config.msets.size() > 1) {
@@ -151,7 +145,7 @@ void clean(Config& config) {
         }
 
         // Create empty array for accumulating clean compoents across all major cycles
-        HostArray<StokesI<P>, 2> components {config.gridspec.Nx, config.gridspec.Ny};
+        HostArray<StokesI<P>, 2> components {config.gridconf.grid().shape()};
 
         ChannelGroup<StokesI, P> channelgroup {
             .channelIndex = channelIndex,
@@ -171,11 +165,9 @@ void clean(Config& config) {
     PSF<P> psf {};
     GridSpec gridspecPsf {};
     {
-        HostArray<StokesI<P>, 2> residualCombined {config.gridspec.Nx, config.gridspec.Ny};
-        HostArray<thrust::complex<P>, 2> psfCombined {
-            config.gridspec.Nx, config.gridspec.Ny
-        };
-        HostArray<StokesI<P>, 2> beamCombined {config.gridspec.Nx, config.gridspec.Ny};
+        HostArray<StokesI<P>, 2> residualCombined {config.gridconf.grid().shape()};
+        HostArray<thrust::complex<P>, 2> psfCombined {config.gridconf.grid().shape()};
+        HostArray<StokesI<P>, 2> beamCombined {config.gridconf.grid().shape()};
 
         for (auto& channelgroup : channelgroups) {
             residualCombined += channelgroup.residual;
@@ -194,15 +186,17 @@ void clean(Config& config) {
         // are included in cutout. We use this smaller window to speed up PSF fitting and
         // cleaning.
         gridspecPsf = cropPsf(
-            psfCombined, config.gridspec, 0.2 * (1 - config.majorgain)
+            psfCombined, config.gridconf.grid(), 0.2 * (1 - config.majorgain)
         );
 
         for (auto& channelgroup : channelgroups) {
-            channelgroup.psf = resize(channelgroup.psf, config.gridspec, gridspecPsf);
+            channelgroup.psf = resize(
+                channelgroup.psf, config.gridconf.grid(), gridspecPsf
+            );
         }
 
         // Fit combined psf
-        psfCombined = resize(psfCombined, config.gridspec, gridspecPsf);
+        psfCombined = resize(psfCombined, config.gridconf.grid(), gridspecPsf);
         psf = PSF(psfCombined, gridspecPsf);
     }
 
@@ -212,7 +206,7 @@ void clean(Config& config) {
         ++imajor
     ) {
         auto [minorComponents, iters, finalMajor] = clean::major<P>(
-            channelgroups, config.gridspec, gridspecPsf,
+            channelgroups, config.gridconf.grid(), gridspecPsf,
             config.minorgain, config.majorgain, config.cleanThreshold,
             config.autoThreshold, config.nMinor - iminor
         );
@@ -223,7 +217,7 @@ void clean(Config& config) {
 
             // Create minorComponentsMap and append
             // components from this major interation
-            HostArray<StokesI<P>, 2> minorComponentsMap {config.gridspec.Nx, config.gridspec.Ny};
+            HostArray<StokesI<P>, 2> minorComponentsMap {config.gridconf.grid().shape()};
             for (auto [idx, val] : minorComponents[n]) {
                 channelgroup.components[idx] += val;
                 minorComponentsMap[idx] += (val /= channelgroup.avgBeam[idx]);
@@ -232,38 +226,33 @@ void clean(Config& config) {
             fmt::println(
                 "Channel group {}: Removing clean components from uvdata...", n + 1
             );
-            auto minorComponentsPadded = resize(
-                minorComponentsMap, config.gridspec, config.gridspecPadded
-            );
             predict<StokesI<P>, P>(
-                channelgroup.workunits,
-                minorComponentsPadded,
-                config.gridspecPadded,
-                taper,
-                subtaper,
-                DegridOp::Subtract
+                channelgroup.workunits, minorComponentsMap,
+                config.gridconf, DegridOp::Subtract
             );
 
             fmt::println(
                 "Channel group {}: Constructing residual image...", n + 1
             );
-            auto residualPadded = invert<StokesI, P>(
-                channelgroup.workunits, config.gridspecPadded, taper, subtaper
+            channelgroup.residual = invert<StokesI, P>(
+                channelgroup.workunits, config.gridconf
             );
-            channelgroup.residual = resize(residualPadded, config.gridspecPadded, config.gridspec);
 
             // Save intermediate progress for debugging
             if (channelgroups.size() > 1) {
                 save(fmt::format("residual-{:02d}.fits", n + 1), channelgroup.residual);
                 save(fmt::format("components-{:02d}.fits", n + 1), channelgroup.components);
+            } else {
+                save("residual.fits", channelgroup.residual);
+                save("components.fits", channelgroup.components);
             }
         }
 
         if (finalMajor) break;
     }
 
-    HostArray<StokesI<P>, 2> residualCombined {config.gridspec.Nx, config.gridspec.Ny};
-    HostArray<StokesI<P>, 2> componentsCombined {config.gridspec.Nx, config.gridspec.Ny};
+    HostArray<StokesI<P>, 2> residualCombined {config.gridconf.grid().shape()};
+    HostArray<StokesI<P>, 2> componentsCombined {config.gridconf.grid().shape()};
 
     for (size_t n {}; n < channelgroups.size(); ++n) {
         auto& channelgroup = channelgroups[n];
@@ -275,7 +264,7 @@ void clean(Config& config) {
             fmt::println("Channel group {}: Fitting psf...", n + 1);
             auto psf = PSF<P>(channelgroup.psf, gridspecPsf);
 
-            auto image = convolve(channelgroup.components, psf.draw(config.gridspec));
+            auto image = convolve(channelgroup.components, psf.draw(config.gridconf.grid()));
             image += channelgroup.residual;
 
             save(fmt::format("residual-{:02d}.fits", n + 1), channelgroup.residual);
@@ -287,7 +276,7 @@ void clean(Config& config) {
     residualCombined /= StokesI<P>(channelgroups.size());
     componentsCombined /= StokesI<P>(channelgroups.size());
 
-    auto imageCombined = convolve(componentsCombined, psf.draw(config.gridspec));
+    auto imageCombined = convolve(componentsCombined, psf.draw(config.gridconf.grid()));
     imageCombined += residualCombined;
 
     save("residual.fits", residualCombined);

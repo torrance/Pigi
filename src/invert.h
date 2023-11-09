@@ -13,6 +13,7 @@
 #include "hip.h"
 #include "memory.h"
 #include "outputtypes.h"
+#include "taper.h"
 #include "util.h"
 #include "uvdatum.h"
 #include "workunit.h"
@@ -20,14 +21,17 @@
 template <template<typename> typename T, typename S>
 HostArray<T<S>, 2> invert(
     const HostSpan<WorkUnit<S>, 1> workunits,
-    const GridSpec gridspec,
-    const HostSpan<S, 2> taper,
-    const HostSpan<S, 2> subtaper,
+    const GridConfig gridconf,
     const bool makePSF = false
 ) {
-    DeviceArray<T<S>, 2> imgd {gridspec.Nx, gridspec.Ny};
-    DeviceArray<T<S>, 2> wlayerd {gridspec.Nx, gridspec.Ny};
-    DeviceArray<S, 2> subtaperd {subtaper};
+    // Pad the main gridspec, and create the subgridspec
+    const auto gridspec = gridconf.padded();
+    const auto subgridspec = gridconf.subgrid();
+
+    // Create device matrices
+    DeviceArray<T<S>, 2> imgd {gridspec.shape()};
+    DeviceArray<T<S>, 2> wlayerd {gridspec.shape()};
+    DeviceArray<S, 2> subtaperd {kaiserbessel<S>(subgridspec)};
 
     auto plan = fftPlan<T<S>>(gridspec);
 
@@ -43,7 +47,7 @@ HostArray<T<S>, 2> invert(
         fflush(stdout);
 
         wlayerd.zero();
-        gridder<T<S>, S>(wlayerd, wworkunits, subtaperd, makePSF);
+        gridder<T<S>, S>(wlayerd, wworkunits, subtaperd, gridconf, makePSF);
 
         // FFT the full wlayer
         fftExec(plan, wlayerd, HIPFFT_BACKWARD);
@@ -62,9 +66,9 @@ HostArray<T<S>, 2> invert(
     HostArray<T<S>, 2> img {imgd};
 
     // The final image still has a taper applied. It's time to remove it.
-    img /= taper;
+    img /= kaiserbessel<S>(gridspec);
 
     hipfftDestroy(plan);
 
-    return img;
+    return resize(img, gridconf.padded(), gridconf.grid());
 }

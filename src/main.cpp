@@ -56,8 +56,8 @@ int main(int argc, char** argv) {
         );
 
         LambdaConstraint<int> kernelsizeConstraint(
-            "must be > 0", "int", [](auto val) {
-                return val > 0;
+            "must be even integer > 0", "int", [](auto val) {
+                return val % 2 == 0 && val > 0;
             }
         );
         TCLAP::ValueArg<int> kernelsize(
@@ -77,12 +77,12 @@ int main(int argc, char** argv) {
             false, 18, &kernelpaddingConstraint, cmd
         );
 
-        LambdaConstraint<int> wstepConstraint(
-            "must be > 0", "int", [](auto val) {
+        LambdaConstraint<double> wstepConstraint(
+            "must be > 0", "float", [](auto val) {
                 return val > 0;
             }
         );
-        TCLAP::ValueArg<int> wstep(
+        TCLAP::ValueArg<double> wstep(
             "", "wstep",
             "The separation between w-layers (Default: 25) [lambda]",
             false, 25, &wstepConstraint, cmd
@@ -150,7 +150,7 @@ int main(int argc, char** argv) {
         );
         TCLAP::ValueArg<float> padding(
             "", "padding",
-            "Padding applied to images during inversion and predicition. (Default: 1.5)",
+            "Padding applied to images during inversion and prediction. (Default: 1.5)",
             false, 1.5, &paddingConstraint, cmd
         );
 
@@ -210,31 +210,20 @@ int main(int argc, char** argv) {
 
         cmd.parse(argc, argv);
 
-        int sizePadded = size.getValue() * padding.getValue();
-
-        auto gridspec = GridSpec::fromScaleLM(
-            size.getValue(), size.getValue(), deg2rad(scale.getValue() / 3600)
-        );
-        auto gridspecPadded = GridSpec::fromScaleLM(
-            sizePadded, sizePadded, deg2rad(scale.getValue() / 3600)
-        );
-        auto subgridspec = GridSpec::fromScaleUV(
-            kernelsize.getValue(), kernelsize.getValue(), gridspecPadded.scaleuv
-        );
-
         config.precision = precision.getValue();
-        config.gridspec = gridspec;
-        config.gridspecPadded = gridspecPadded;
-        config.subgridspec = subgridspec;
-        config.wstep = wstep.getValue();
         config.chanlow = chanlow.getValue();
         config.chanhigh = chanhigh.getValue();
         config.channelsOut = channelsOut.getValue();
         config.maxDuration = maxDuration.getValue();
-        config.kernelpadding = kernelpadding.getValue();
+        config.gridconf = {
+            .imgNx = size.getValue(), .imgNy = size.getValue(),
+            .imgScalelm = deg2rad(scale.getValue() / 3600),
+            .paddingfactor = padding.getValue(),
+            .kernelsize = kernelsize.getValue(), .kernelpadding = kernelpadding.getValue(),
+            .wstep = wstep.getValue()
+        };
         config.weight = weight.getValue();
         config.robust = robust.getValue();
-        config.padding = padding.getValue();
         config.minorgain = minorgain.getValue();
         config.majorgain = majorgain.getValue();
         config.cleanThreshold = cleanThreshold.getValue();

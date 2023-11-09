@@ -159,15 +159,11 @@ void _extractSubgrid(
 template <typename T, typename S>
 auto extractSubgrid(
     const DeviceSpan<T, 2> grid,
-    const WorkUnit<S>& workunit
+    const WorkUnit<S>& workunit,
+    const GridConfig gridconf
 ) {
     // Allocate subgrid matrix
-    DeviceArray<ComplexLinearData<S>, 2> subgrid {
-        workunit.subgridspec.Nx, workunit.subgridspec.Ny
-    };
-
-    // Create dummy gridspec to have access to gridToLinear() method
-    GridSpec gridspec {grid.size(0), grid.size(1), 0, 0};
+    DeviceArray<ComplexLinearData<S>, 2> subgrid {gridconf.subgrid().shape()};
 
     auto fn = _extractSubgrid<T, S>;
     auto [nblocks, nthreads] = getKernelConfig(
@@ -175,7 +171,7 @@ auto extractSubgrid(
     );
     hipLaunchKernelGGL(
         fn, nblocks, nthreads, 0, hipStreamPerThread,
-        subgrid, workunit.subgridspec, grid, gridspec, workunit.u0px, workunit.v0px
+        subgrid, gridconf.subgrid(), grid, gridconf.padded(), workunit.u0px, workunit.v0px
     );
 
     return subgrid;
@@ -186,6 +182,7 @@ void degridder(
     HostSpan<WorkUnit<S>*, 1> workunits,
     const DeviceSpan<T, 2> grid,
     const DeviceSpan<S, 2> subtaper,
+    const GridConfig gridconf,
     const DegridOp degridop
 ) {
     // Transfer _unique_ Aterms to GPU
@@ -211,7 +208,7 @@ void degridder(
     ) {
         threads.emplace_back([&] {
             // Make fft plan for each thread
-            auto plan = fftPlan<ComplexLinearData<S>>(workunits.front()->subgridspec);
+            auto plan = fftPlan<ComplexLinearData<S>>(gridconf.subgrid());
 
             while (auto maybe = workunitsChannel.pop()) {
                 // maybe is a std::optional; let's get the value
@@ -223,7 +220,7 @@ void degridder(
                 const auto& Aright = Aterms.at(workunit->Aright);
 
                 // Allocate subgrid and extract from grid
-                auto subgrid = extractSubgrid(grid, *workunit);
+                auto subgrid = extractSubgrid(grid, *workunit, gridconf);
 
                 fftExec(plan, subgrid, HIPFFT_BACKWARD);
 
@@ -235,7 +232,7 @@ void degridder(
                 gpudft<S>(
                     uvdata,
                     {workunit->u0, workunit->v0, workunit->w0},
-                    subgrid, workunit->subgridspec, degridop
+                    subgrid, gridconf.subgrid(), degridop
                 );
 
                 // Transfer data back to host

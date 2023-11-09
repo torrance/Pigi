@@ -27,7 +27,6 @@ struct WorkUnit {
     S u0;
     S v0;
     S w0;
-    GridSpec subgridspec;
     std::shared_ptr<HostArray< ComplexLinearData<S>, 2 >> Aleft;
     std::shared_ptr<HostArray< ComplexLinearData<S>, 2 >> Aright;
     T data;
@@ -36,21 +35,21 @@ struct WorkUnit {
 template <typename T, typename S>
 auto partition(
     T&& uvdata,
-    GridSpec gridspec,
-    GridSpec subgridspec,
-    int padding,
-    int wstep,
+    const GridConfig gridconf,
     HostArray<ComplexLinearData<S>, 2>& Aterms
 ) {
+    // We use the padded gridspec during partitioning
+    auto gridspec = gridconf.padded();
+
     // Create copy of Aterms managed as a shared_ptr
     // TODO: avoid this copy, and create shared pointer earlier in the call-chain?
     auto Aterms_ptr = std::make_shared<HostArray<ComplexLinearData<S>, 2>>(Aterms);
 
     // Temporarily store workunits in a map to reduce search space during partitioning
     std::unordered_map<
-        S, std::vector<WorkUnit< S, std::vector<UVDatum<S>> >>
+        double, std::vector<WorkUnit< S, std::vector<UVDatum<S>> >>
     > wlayers;
-    long long radius {static_cast<long long>(subgridspec.Nx) / 2 - padding};
+    long long radius {gridconf.kernelsize / 2 - gridconf.kernelpadding};
 
     for (UVDatum<S> uvdatum : uvdata) {
         // Find equivalent pixel coordinates of (u,v) position
@@ -61,11 +60,14 @@ auto partition(
         // This choice is made because w values are made positive and we want to
         // avoid the first interval including negative values. w0 is the midpoint of each
         // respective interval.
-        const S w0 {wstep * std::floor(uvdatum.w / wstep) + static_cast<S>(0.5) * wstep};
+        const double w0 {
+            gridconf.wstep * std::floor(uvdatum.w / gridconf.wstep)
+            + 0.5 * gridconf.wstep
+        };
 
         // Search through existing workunits to see if our UVDatum is included in an
         // existing workunit.
-        std::vector<WorkUnit< S, std::vector<UVDatum<S>> >>& wworkunits = wlayers[w0];
+        auto& wworkunits = wlayers[w0];
 
         bool found {false};
         for (auto& workunit : wworkunits) {
@@ -91,7 +93,7 @@ auto partition(
 
         // TODO: use emplace_back() when we can upgrade Clang
         wworkunits.push_back({
-            u0px, v0px, u0, v0, w0, subgridspec,
+            u0px, v0px, u0, v0, static_cast<S>(w0),
             Aterms_ptr, Aterms_ptr, std::vector<UVDatum<S>> {uvdatum}
         });
     }
@@ -108,7 +110,7 @@ auto partition(
             workunits.push_back({
                 workunit.u0px, workunit.v0px,
                 workunit.u0, workunit.v0, workunit.w0,
-                workunit.subgridspec, workunit.Aleft, workunit.Aright,
+                workunit.Aleft, workunit.Aright,
                 HostArray<UVDatum<S>, 1>{workunit.data}
             });
             wworkunits.pop_back();

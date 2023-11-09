@@ -7,19 +7,19 @@
 
 struct Config {
     int precision;
-    GridSpec gridspec;
-    GridSpec gridspecPadded;
-    GridSpec subgridspec;
+
+    // Measurement set selection
     int chanlow;
     int chanhigh;
     int channelsOut;
     double maxDuration;
-    int wstep;
-    int kernelpadding;
     std::map<int, std::vector<MeasurementSet>> msets;
+
+    // Data weigting
     std::string weight;
     float robust;
-    float padding;
+
+    GridConfig gridconf;
 
     // Clean parameters
     float majorgain;

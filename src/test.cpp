@@ -108,18 +108,20 @@ TEST_CASE("Utility functions", "[utility]") {
 TEST_CASE("Measurement Set & Partition", "[mset]") {
     if (!TESTDATA) { SKIP("TESTDATA path not provided"); }
 
-    auto gridspec = GridSpec::fromScaleLM(1000, 1000, std::sin(deg2rad(15. / 3600)));
-    auto subgridspec = GridSpec::fromScaleUV(96, 96, gridspec.scaleuv);
+    GridConfig gridconf {
+        .imgNx=1000, .imgNy=1000, .imgScalelm=std::sin(deg2rad(15. / 3600)),
+        .paddingfactor=1.0, .kernelsize=96, .kernelpadding=18, .wstep=25
+    };
 
-    HostArray<ComplexLinearData<double>, 2> Aterms {96, 96};
-    Aterms.fill({1, 0, 0, 1});
+    Beam::Uniform<double> beam;
+    auto Aterms = beam.gridResponse(gridconf.subgrid(), {0, 0}, 0);
 
     MeasurementSet mset(
         TESTDATA, 0, 11, 0, std::numeric_limits<double>::max()
     );
 
     auto workunits = partition(
-        mset, gridspec, subgridspec, 18, 25, Aterms
+        mset, gridconf, Aterms
     );
 
     size_t n {};
@@ -161,11 +163,12 @@ TEMPLATE_TEST_CASE_SIG(
     (double, (MWABeam<double>), 8, -6)
 ) {
     // Config
-    auto gridspec = GridSpec::fromScaleLM(1500, 1500, std::sin(deg2rad(2. / 60)));
-    auto subgridspec = GridSpec::fromScaleUV(96, 96, gridspec.scaleuv);
-    int padding = 18;
-    int wstep = 25;
-    double freq = 150e6;
+    const GridConfig gridconf {
+        .imgNx = 1000, .imgNy = 1000, .imgScalelm = std::sin(deg2rad(2. / 60)),
+        .paddingfactor = 1.5, .kernelsize = 96, .kernelpadding = 18, .wstep = 25
+    };
+    const GridSpec gridspec = gridconf.grid();
+    double freq {150e6};
 
     // This is not a random coordinate: it is directly overhead
     // the MWA at mjd = 5038236804 / 86400
@@ -179,11 +182,6 @@ TEMPLATE_TEST_CASE_SIG(
     if constexpr(std::is_same<Beam::MWA<Q>, BEAM>::value) {
         beam = BEAM(5038236804. / 86400.);
     }
-    auto Aterm = beam.gridResponse(subgridspec, gridorigin, freq);
-
-    // Create tapers
-    auto taper = kaiserbessel<Q>(gridspec);
-    auto subtaper = kaiserbessel<Q>(subgridspec);
 
     // Create uvdata
     std::vector<UVDatum<double>> uvdata64;
@@ -229,11 +227,11 @@ TEMPLATE_TEST_CASE_SIG(
     }
 
     // Weight naturally
-    const Natural<double> weighter(uvdata64, gridspec);
+    const Natural<double> weighter(uvdata64, gridconf.padded());
     applyWeights(weighter, uvdata64);
 
     // Calculate expected at double precision
-    HostArray<StokesI<double>, 2> expected {gridspec.Nx, gridspec.Ny};
+    HostArray<StokesI<double>, 2> expected {gridspec.shape()};
     {
         auto jones = static_cast<HostArray<ComplexLinearData<double>, 2>>(
             beam.gridResponse(gridspec, gridorigin, freq)
@@ -246,34 +244,28 @@ TEMPLATE_TEST_CASE_SIG(
         for (const auto& uvdatum : uvdata64) {
             co_yield static_cast<UVDatum<Q>>(uvdatum);
         }
-    }();
+    };
 
-    auto workunits = partition(
-        uvdata, gridspec, subgridspec, padding, wstep, Aterm
-    );
-
-    auto img = invert<StokesI, Q>(
-        workunits, gridspec, taper, subtaper
-    );
+    auto Aterm = beam.gridResponse(gridconf.subgrid(), gridorigin, freq);
+    auto workunits = partition(uvdata(), gridconf, Aterm);
+    auto img = invert<StokesI, Q>(workunits, gridconf);
 
     // Correct for beam
     auto jonesgrid = beam.gridResponse(gridspec, gridorigin, freq);
-    HostArray<StokesI<Q>, 2> power {gridspec.Nx, gridspec.Ny};
+    HostArray<StokesI<Q>, 2> power {gridconf.grid().shape()};
     for (size_t i {}; i < gridspec.size(); ++i) {
         img[i] /= StokesI<Q>::beamPower(jonesgrid[i], jonesgrid[i]);
     }
 
     double maxdiff {-1};
-    for (size_t nx = 250; nx < 1250; ++nx) {
-        for (size_t ny = 250; ny < 1250; ++ny) {
-            auto idx = gridspec.gridToLinear(nx, ny);
-            double diff = thrust::abs(
-                expected[idx].I - thrust::complex<double>(img[idx].I)
-            );
-            maxdiff = std::max(maxdiff, diff);
-        }
+    for (size_t i {}; i < gridspec.size(); ++i) {
+        double diff = thrust::abs(
+            expected[i].I - thrust::complex<double>(img[i].I)
+        );
+        maxdiff = std::max(maxdiff, diff);
     }
     fmt::println("Max diff: {:g}", maxdiff);
+
     REQUIRE( maxdiff != -1 );
     REQUIRE( maxdiff < THRESHOLDF * std::pow(10, THRESHOLDP));
 }
@@ -288,7 +280,11 @@ TEMPLATE_TEST_CASE_SIG(
     (float, (MWABeam<float>), 3, -5),
     (double, (MWABeam<double>), 2, -5)
 ) {
-    auto gridspec = GridSpec::fromScaleUV(4000, 4000, 20);
+    const GridConfig gridconf {
+        .imgNx = 2000, .imgNy = 2000, .imgScalelm = 1. / (4000 * 20), .paddingfactor = 2,
+        .kernelsize = 96, .kernelpadding = 17, .wstep = 25
+    };
+    const GridSpec gridspec = gridconf.grid();
     const double freq {150e6};
 
     // This is not a random coordinate: it is directly overhead
@@ -304,14 +300,13 @@ TEMPLATE_TEST_CASE_SIG(
     }
 
     // Create skymap
-    HostArray<StokesI<Q>, 2> skymap {gridspec.Nx, gridspec.Ny};
+    HostArray<StokesI<Q>, 2> skymap {gridspec.shape()};
 
     std::mt19937 gen(1234);
-    std::uniform_int_distribution<int> randints(1000, 3000);
+    std::uniform_int_distribution<int> randints(0, gridspec.size());
 
     for (size_t i {}; i < 1000; ++i) {
-        int x {randints(gen)}, y {randints(gen)};
-        skymap[gridspec.gridToLinear(x, y)] = StokesI<Q> {Q(1)};
+        skymap[randints(gen)] = StokesI<Q> {Q(1)};
     }
 
     std::uniform_real_distribution<Q> randfloats(-1, 1);
@@ -333,7 +328,7 @@ TEMPLATE_TEST_CASE_SIG(
     }
 
     // Weight naturally
-    Natural<Q> weighter(uvdata, gridspec);
+    Natural<Q> weighter(uvdata, gridconf.padded());
     applyWeights(weighter, uvdata);
 
     // Calculate expected at double precision
@@ -380,20 +375,14 @@ TEMPLATE_TEST_CASE_SIG(
     }
 
     // Predict using IDG
-    auto subgridspec = GridSpec::fromScaleUV(96, 96, gridspec.scaleuv);
-    auto taper = kaiserbessel<Q>(gridspec);
-    auto subtaper = kaiserbessel<Q>(subgridspec);
-    int padding {17};
-    int wstep {25};
-
-    auto Aterms = beam.gridResponse(subgridspec, phaseCenter, freq);
+    auto Aterms = beam.gridResponse(gridconf.subgrid(), phaseCenter, freq);
 
     auto workunits = partition(
-        uvdata, gridspec, subgridspec, padding, wstep, Aterms
+        uvdata, gridconf, Aterms
     );
 
     predict<StokesI<Q>, Q>(
-        workunits, skymap, gridspec, taper, subtaper, DegridOp::Replace
+        workunits, skymap, gridconf, DegridOp::Replace
     );
 
     // Flatten workunits back into uvdata and sort back to original order
@@ -405,20 +394,19 @@ TEMPLATE_TEST_CASE_SIG(
     }
 
     // Create images to compare diff
-    auto windowedGridspec = GridSpec::fromScaleLM(2000, 2000, gridspec.scalelm);
-    auto fullAterms = beam.gridResponse(windowedGridspec, phaseCenter, freq);
+    auto fullAterms = beam.gridResponse(gridspec, phaseCenter, freq);
 
-    HostArray<StokesI<Q>, 2> imgMap {windowedGridspec.Nx, windowedGridspec.Ny};
-    idft<StokesI<Q>, Q>(imgMap, fullAterms, uvdata, windowedGridspec);
+    HostArray<StokesI<Q>, 2> imgMap {gridspec.shape()};
+    idft<StokesI<Q>, Q>(imgMap, fullAterms, uvdata, gridspec);
 
-    HostArray<StokesI<double>, 2> expectedMap {windowedGridspec.Nx, windowedGridspec.Ny};
+    HostArray<StokesI<double>, 2> expectedMap {gridspec.shape()};
     idft<StokesI<double>, double>(
         expectedMap, static_cast<HostArray<ComplexLinearData<double>, 2>>(fullAterms),
-        expected, windowedGridspec
+        expected, gridspec
     );
 
     double maxdiff {-1};
-    for (size_t i {}; i < windowedGridspec.size(); ++i) {
+    for (size_t i {}; i < gridspec.size(); ++i) {
         auto diff = expectedMap[i].I - imgMap[i].I;
 
         maxdiff = std::max<double>(

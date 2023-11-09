@@ -17,15 +17,16 @@ template <typename T, typename S>
 void predict(
     HostSpan<WorkUnit<S>, 1> workunits,
     const HostSpan<T, 2> img,
-    const GridSpec gridspec,
-    const HostSpan<S, 2> taper,
-    const HostSpan<S, 2> subtaper,
+    const GridConfig gridconf,
     const DegridOp degridop
 ) {
-    // Copy img to device apply inverse taper
-    DeviceArray<T, 2> imgd {img};
+    const auto gridspec = gridconf.padded();
+    const auto subgridspec = gridconf.subgrid();
+
+    // Copy img (with padding) to device and apply inverse taper
+    DeviceArray<T, 2> imgd {resize(img, gridconf.grid(), gridspec)};
     {
-        DeviceArray<S, 2> taperd {taper};
+        DeviceArray<S, 2> taperd {kaiserbessel<S>(gridspec)};
         map([] __device__ (auto& img, const auto t) {
             if (t == 0) img = T{};
             else img /= t;
@@ -33,12 +34,12 @@ void predict(
     }
 
     // Copy subtaper to device
-    DeviceArray<S, 2> subtaperd {subtaper};
+    DeviceArray<S, 2> subtaperd {kaiserbessel<S>(subgridspec)};
 
     auto plan = fftPlan<T>(gridspec);
 
     // Create wlayer on device
-    DeviceArray<T, 2> wlayer {img.shape()};
+    DeviceArray<T, 2> wlayer {gridspec.shape()};
 
     // Sort workunits into wlayers
     std::map<S, std::vector<WorkUnit<S>*>> wlayers;
@@ -59,7 +60,7 @@ void predict(
         }, Iota(), imgd, wlayer);
 
         fftExec(plan, wlayer, HIPFFT_FORWARD);
-        degridder<T, S>(wworkunits, wlayer, subtaperd, degridop);
+        degridder<T, S>(wworkunits, wlayer, subtaperd, gridconf, degridop);
     }
 
     fmt::println(" Done.");

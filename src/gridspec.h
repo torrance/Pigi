@@ -1,5 +1,8 @@
 #pragma once
 
+#include <array>
+#include <tuple>
+
 #include <hip/hip_runtime.h>
 
 struct GridSpec {
@@ -8,16 +11,20 @@ struct GridSpec {
     double scalelm;
     double scaleuv;
 
-    static auto fromScaleLM(long long Nx, long long Ny, double scalelm) {
+    static GridSpec fromScaleLM(long long Nx, long long Ny, double scalelm) {
         return GridSpec {Nx, Ny, scalelm, 1 / (Nx * scalelm)};
     }
 
-    static auto fromScaleUV(long long Nx, long long Ny, double scaleuv) {
+    static GridSpec fromScaleUV(long long Nx, long long Ny, double scaleuv) {
         return GridSpec {Nx, Ny, 1 / (Nx * scaleuv), scaleuv};
     }
 
     __host__ __device__ inline auto size() const {
         return static_cast<size_t>(Nx) * static_cast<size_t>(Ny);
+    }
+
+    inline std::array<long long, 2> shape() const {
+        return {Nx, Ny};
     }
 
     __host__ __device__
@@ -70,6 +77,32 @@ struct GridSpec {
         return std::make_tuple(
             static_cast<S>((upx - Nx / 2) * scaleuv),
             static_cast<S>((vpx - Ny / 2) * scaleuv)
+        );
+    }
+};
+
+struct GridConfig {
+    long long imgNx {};
+    long long imgNy {};
+    double imgScalelm {};
+    double paddingfactor {1};
+    long long kernelsize {};
+    long long kernelpadding {};
+    double wstep {1};
+
+    GridSpec grid() const {
+        return GridSpec::fromScaleLM(imgNx, imgNy, imgScalelm);
+    }
+
+    GridSpec padded() const {
+        return GridSpec::fromScaleLM(
+            imgNx * paddingfactor, imgNy * paddingfactor, imgScalelm
+        );
+    }
+
+    GridSpec subgrid() const {
+        return GridSpec::fromScaleUV(
+            kernelsize, kernelsize, padded().scaleuv
         );
     }
 };

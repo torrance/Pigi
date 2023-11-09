@@ -68,10 +68,12 @@ auto simple_benchmark(std::string_view name, const int N, const F f) {
 TEST_CASE("MSet reading and paritioning", "[io]") {
     if (!TESTDATA) { SKIP("TESTDATA path not provided"); }
 
-    auto gridspec = GridSpec::fromScaleLM(8000, 8000, std::sin(deg2rad(15. / 3600)));
-    auto subgridspec = GridSpec::fromScaleUV(96, 96, gridspec.scaleuv);
+    GridConfig gridconf {
+        .imgNx = 8000, .imgNy = 8000, .imgScalelm = std::sin(deg2rad(15. / 3600)),
+        .kernelsize = 96, .kernelpadding = 18, .wstep = 25
+    };
 
-    HostArray<ComplexLinearData<double>, 2> Aterms {96, 96};
+    HostArray<ComplexLinearData<double>, 2> Aterms {gridconf.grid().shape()};
     Aterms.fill({1, 0, 0, 1});
 
     MeasurementSet mset(
@@ -87,20 +89,19 @@ TEST_CASE("MSet reading and paritioning", "[io]") {
     });
 
     auto workunits = simple_benchmark("Partition", 5, [&] {
-        return partition(uvdata, gridspec, subgridspec, 18, 25, Aterms);
+        return partition(uvdata, gridconf, Aterms);
     });
 }
 
 TEMPLATE_TEST_CASE("Invert", "[invert]", float, double) {
     if (!TESTDATA) { SKIP("TESTDATA path not provided"); }
 
-    auto gridspec = GridSpec::fromScaleLM(8000, 8000, std::sin(deg2rad(15. / 3600)));
-    auto subgridspec = GridSpec::fromScaleUV(96, 96, gridspec.scaleuv);
+    GridConfig gridconf {
+        .imgNx = 8000, .imgNy = 8000, .imgScalelm = std::sin(deg2rad(15. / 3600)),
+        .kernelsize = 96, .kernelpadding = 18, .wstep = 25
+    };
 
-    auto taper = kaiserbessel<TestType>(gridspec);
-    auto subtaper = kaiserbessel<TestType>(subgridspec);
-
-    HostArray<ComplexLinearData<TestType>, 2> Aterms {96, 96};
+    HostArray<ComplexLinearData<TestType>, 2> Aterms {gridconf.subgrid().shape()};
     Aterms.fill({1, 0, 0, 1});
 
     MeasurementSet mset(
@@ -114,17 +115,17 @@ TEMPLATE_TEST_CASE("Invert", "[invert]", float, double) {
         }
     }();
 
-    auto workunits = partition(uvdata, gridspec, subgridspec, 18, 25, Aterms);
+    auto workunits = partition(uvdata, gridconf, Aterms);
 
     // Trigger precalculation of kernel configuration
     {
         HostSpan<WorkUnit<TestType>, 1> oneworkunit({1}, &workunits.back());
-        invert<StokesI, TestType>(oneworkunit, gridspec, taper, subtaper);
+        invert<StokesI, TestType>(oneworkunit, gridconf);
     }
 
     simple_benchmark("Invert", 1, [&] {
         return invert<StokesI, TestType>(
-            workunits, gridspec, taper, subtaper
+            workunits, gridconf
         );
     });
 }
@@ -132,13 +133,12 @@ TEMPLATE_TEST_CASE("Invert", "[invert]", float, double) {
 TEMPLATE_TEST_CASE("Predict", "[predict]", float, double) {
     if (!TESTDATA) { SKIP("TESTDATA path not provided"); }
 
-    auto gridspec = GridSpec::fromScaleLM(8000, 8000, std::sin(deg2rad(15. / 3600)));
-    auto subgridspec = GridSpec::fromScaleUV(96, 96, gridspec.scaleuv);
+    GridConfig gridconf {
+        .imgNx = 8000, .imgNy = 8000, .imgScalelm = std::sin(deg2rad(15. / 3600)),
+        .kernelsize = 96, .kernelpadding = 18, .wstep = 25
+    };
 
-    auto taper = kaiserbessel<TestType>(gridspec);
-    auto subtaper = kaiserbessel<TestType>(subgridspec);
-
-    HostArray<ComplexLinearData<TestType>, 2> Aterms {96, 96};
+    HostArray<ComplexLinearData<TestType>, 2> Aterms {gridconf.grid().shape()};
     Aterms.fill({1, 0, 0, 1});
 
     MeasurementSet mset(
@@ -152,22 +152,22 @@ TEMPLATE_TEST_CASE("Predict", "[predict]", float, double) {
         }
     }();
 
-    auto workunits = partition(uvdata, gridspec, subgridspec, 18, 25, Aterms);
+    auto workunits = partition(uvdata, gridconf, Aterms);
 
     // Create skymap
-    HostArray<StokesI<TestType>, 2> skymap {gridspec.Nx, gridspec.Ny};
+    HostArray<StokesI<TestType>, 2> skymap {gridconf.grid().shape()};
 
     // Trigger precalculation of kernel configuration
     {
         HostSpan<WorkUnit<TestType>, 1> oneworkunit({1}, &workunits.back());
         predict<StokesI<TestType>, TestType>(
-            oneworkunit, skymap, gridspec, taper, subtaper, DegridOp::Replace
+            oneworkunit, skymap, gridconf, DegridOp::Replace
         );
     }
 
     simple_benchmark("Predict", 1, [&] {
         predict<StokesI<TestType>, TestType>(
-            workunits, skymap, gridspec, taper, subtaper, DegridOp::Replace
+            workunits, skymap, gridconf, DegridOp::Replace
         );
         return true;
     });
