@@ -8,6 +8,7 @@
 #include "util.h"
 #include "uvdatum.h"
 
+
 template <typename T, typename S>
 __global__ void _idft(
     DeviceSpan<T, 2> img,
@@ -15,6 +16,10 @@ __global__ void _idft(
     DeviceSpan<UVDatum<S>, 1> uvdata,
     GridSpec gridspec
 ) {
+    const size_t cachesize {256};
+    __shared__ char _cache[cachesize * sizeof(UVDatum<S>)];
+    auto cache = reinterpret_cast<UVDatum<S>*>(_cache);
+
     for (
         size_t idx = blockIdx.x * blockDim.x + threadIdx.x;
         idx < gridspec.size();
@@ -24,12 +29,27 @@ __global__ void _idft(
         auto n = ndash(l, m);
 
         ComplexLinearData<S> cell;
-        for (auto uvdatum : uvdata) {
-            uvdatum.data *= uvdatum.weights;
-            uvdatum.data *= cispi(
-                2 * (uvdatum.u * l + uvdatum.v * m + uvdatum.w * n)
-            );
-            cell += uvdatum.data;
+
+        for (size_t i {}; i < uvdata.size(); i += cachesize) {
+            const size_t N = min(cachesize, uvdata.size() - i);
+
+            // Populate cache
+            for (size_t j = threadIdx.x; j < N; j += blockDim.x) {
+                cache[j] = uvdata[i + j];
+            }
+            __syncthreads();
+
+            // Read through cache
+            for (size_t j {}; j < N; ++j) {
+                auto uvdatum = cache[j];
+
+                uvdatum.data *= uvdatum.weights;
+                uvdatum.data *= cispi(
+                    2 * (uvdatum.u * l + uvdatum.v * m + uvdatum.w * n)
+                );
+                cell += uvdatum.data;
+            }
+            __syncthreads();
         }
 
         // Retrieve and apply beam correction
