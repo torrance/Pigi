@@ -22,13 +22,13 @@ template <typename T>
 auto kaiserbessel(const GridSpec gridspec, const long double alpha = kbalpha<T>()) {
     // Create one-dimensional tapers first. The 2D taper is a product of these 1D tapers.
     // All intermediate calculations are performed at long double precision.
-    HostArray<long double, 1> xDim {gridspec.Nx};
-    HostArray<long double, 1> yDim {gridspec.Ny};
+    std::vector<long double> xDim(gridspec.Nx);
+    std::vector<long double> yDim(gridspec.Ny);
 
     long double pi {::pi_v<long double>};
     long double norm = std::cyl_bessel_i(0, pi * alpha);
 
-    for (auto& oneDim : {&xDim, &yDim}) {
+    for (auto oneDim : {&xDim, &yDim}) {
         for (size_t i {}; i < oneDim->size(); ++i) {
             long double x {static_cast<long double>(i) / oneDim->size() - 0.5};
             (*oneDim)[i] = std::cyl_bessel_i(
