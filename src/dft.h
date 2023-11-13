@@ -22,7 +22,7 @@ __global__ void _idft(
 
     for (
         size_t idx = blockIdx.x * blockDim.x + threadIdx.x;
-        idx < gridspec.size();
+        idx < blockDim.x * cld<size_t>(gridspec.size(), blockDim.x);
         idx += blockDim.x * gridDim.x
     ) {
         auto [l, m] = gridspec.linearToSky<S>(idx);
@@ -53,10 +53,12 @@ __global__ void _idft(
         }
 
         // Retrieve and apply beam correction
-        auto j = jones[idx].inv();
-        img[idx] = static_cast<T>(
-            matmul(matmul(j, cell), j.adjoint())
-        );
+        if (idx < gridspec.size()) {
+            auto j = jones[idx].inv();
+            img[idx] = static_cast<T>(
+                matmul(matmul(j, cell), j.adjoint())
+            );
+        }
     }
 }
 
