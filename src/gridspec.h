@@ -95,8 +95,11 @@ struct GridConfig {
     }
 
     GridSpec padded() const {
+        // Upscale to nearest _even_ value
         return GridSpec::fromScaleLM(
-            imgNx * paddingfactor, imgNy * paddingfactor, imgScalelm
+            imgNx * paddingfactor + int(int(imgNx * paddingfactor) % 2 == 1),
+            imgNy * paddingfactor + int(int(imgNy * paddingfactor) % 2 == 1),
+            imgScalelm
         );
     }
 
