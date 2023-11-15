@@ -66,7 +66,7 @@ void clean(Config& config) {
 
         // Prepare accumulation variables
         LinearData<P> totalWeight {};
-        HostArray<StokesI<P>, 2> avgBeam {config.gridconf.subgrid().shape()};
+        HostArray<StokesI<P>, 2> avgBeam {config.gridconf.padded().shape()};
         std::vector<WorkUnit<P>> workunitsChannelgroup;
 
         for (auto& mset : msetsChannelGroup) {
@@ -108,16 +108,19 @@ void clean(Config& config) {
 
             // Construct Aterm power, apply weight, and add to avgBeam
             // TODO: This assumes Aterms are 2D. Handle case for non-identical beams
-
+            HostArray<StokesI<P>, 2> beamPower {config.gridconf.subgrid().shape()};
             for (size_t i {}, I = config.gridconf.subgrid().size(); i < I; ++i) {
-                avgBeam[i] += (
+                beamPower[i] = (
                     StokesI<P>::beamPower(Aterms[i], Aterms[i]) *= static_cast<StokesI<P>>(weight)
                 );
             }
+
+            avgBeam += rescale(
+                beamPower, config.gridconf.subgrid(), config.gridconf.padded()
+            );
         }
 
         // Rescale avgBeam
-        avgBeam = rescale(avgBeam, config.gridconf.subgrid(), config.gridconf.padded());
         avgBeam = resize(avgBeam, config.gridconf.padded(), config.gridconf.grid());
         avgBeam /= StokesI<P>(totalWeight);
 
