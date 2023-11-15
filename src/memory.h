@@ -135,6 +135,17 @@ public:
         return (*this);
     }
 
+    // Move constructor
+    Span(Span&& other) noexcept { *this = std::move(other); }
+
+    // Move assignment
+    Span& operator=(Span&& other) {
+        using std::swap;
+        swap(this->ptr, other.ptr);
+        swap(this->dims, other.dims);
+        return *this;
+    }
+
     __host__ __device__ inline T operator[](size_t i) const { return ptr[i]; }
     __host__ __device__ inline T& operator[](size_t i) { return ptr[i]; }
 
