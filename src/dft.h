@@ -83,4 +83,11 @@ void idft(
     );
 
     img = img_d;
+
+    // Normalize image
+    T weightTotal {};
+    for (auto& uvdatum : uvdata) {
+        weightTotal += T(uvdatum.weights);
+    }
+    img /= weightTotal;
 }

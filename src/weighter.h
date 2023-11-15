@@ -47,10 +47,6 @@ LinearData<T> applyWeights(const Weighter<T>& weighter, R& uvdata) {
         totalWeight += weighter(uvdatum);
     }
 
-    for (UVDatum<T>& uvdatum : uvdata) {
-        uvdatum.weights /= totalWeight;
-    }
-
     return totalWeight;
 }
 
@@ -61,12 +57,6 @@ LinearData<T> applyWeights(const Weighter<T>& weighter, std::vector<WorkUnit<T>>
     for (WorkUnit<T>& workunit : workunits) {
         for (UVDatum<T>& uvdatum : workunit.data) {
             totalWeight += weighter(uvdatum);
-        }
-    }
-
-    for (WorkUnit<T>& workunit : workunits) {
-        for (UVDatum<T>& uvdatum : workunit.data) {
-            uvdatum.weights /= totalWeight;
         }
     }
 
