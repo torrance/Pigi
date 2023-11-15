@@ -160,6 +160,10 @@ struct StokesI {
 
     template <typename S>
     __host__ __device__
+    explicit StokesI(const StokesI<S>& stokesI) : I(static_cast<T>(stokesI.I)) {}
+
+    template <typename S>
+    __host__ __device__
     explicit StokesI(const LinearData<S>& data) : I(T(0.5) * (data.xx + data.yy)) {}
 
     __host__ __device__
