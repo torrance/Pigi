@@ -214,23 +214,25 @@ auto _major(
     //   2. the current peak value minus the majorgain
     // (whichever is greater).
 
-    // Estimate noise
-    S mean {};
-    for (auto& channelgroup : channelgroups) {
-        for (auto val : channelgroup.residual) {
-            mean += val.I.real();
+    // Estimate noise of image combined across all channel groups
+    S noise {};
+    {
+        HostArray<StokesI<S>, 2> imgCombined {imgGridspec.shape()};
+        for (auto& channelgroup : channelgroups) {
+            imgCombined += channelgroup.residual;
         }
-    }
-    mean /= (N * imgGridspec.size());
+        imgCombined /= StokesI<S>(N);
 
-    S variance {};
-    for (auto& channelgroup : channelgroups) {
-        for (auto val : channelgroup.residual) {
-            variance += std::pow(val.I.real() - mean, 2);
-        }
+        S mean {};
+        for (auto& val : imgCombined) { mean += val.I.real(); }
+        mean /= (N * imgCombined.size());
+
+        S variance {};
+        for (auto& val : imgCombined) { variance += std::pow(val.I.real() - mean, 2); }
+        variance /= (N * imgCombined.size());
+
+        noise = std::sqrt(variance);
     }
-    variance /= (N * imgGridspec.size());
-    S noise = std::sqrt(variance);
 
     // Find initial maxVal
     S maxVal {};
