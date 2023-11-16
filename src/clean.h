@@ -40,8 +40,8 @@ auto _major(
     const double autoThreshold,
     const size_t niter
 ) {
-    std::chrono::microseconds maxFindingDuration {};
-    std::chrono::microseconds psfSubtractionDuration {};
+    std::chrono::nanoseconds maxFindingDuration {};
+    std::chrono::nanoseconds psfSubtractionDuration {};
 
     // Create components maps to return
     // We use maps here since component maps are usually sparse
@@ -106,9 +106,11 @@ auto _major(
             vals[n] = channelgroups[n].residual[i].I.real();
         }
 
-        auto meanVal = std::accumulate(vals.begin(), vals.end(), S(0)) / N;
+        auto meanVal = std::apply([] (auto... vals) {
+            return ((vals + ...)) / N;
+        }, vals);
 
-        if (std::abs(meanVal) >= threshold * majorgain) {
+        if (std::abs(meanVal) >= threshold) {
             pixels.push_back({i, vals});
         }
     }
@@ -116,6 +118,15 @@ auto _major(
     // Pre-allocate a vector of frequencies
     std::array<S, N> freqs {};
     for (size_t n {}; n < N; ++n) { freqs[n] = channelgroups[n].midfreq; }
+
+    // Combine PSFs so that N axis is dense
+    HostArray<std::array<S, N>, 2> psfs {psfGridspec.shape()};
+    for (size_t n {}; n < N; ++n) {
+        auto& psf = channelgroups[n].psf;
+        for (size_t i {}; i < psfGridspec.size(); ++i) {
+            psfs[i][n] = psf[i].real();
+        }
+    }
 
     size_t iter {1};
     for (; iter < niter; ++iter) {
@@ -126,9 +137,11 @@ auto _major(
         Pixel maxPixel {};
         for (auto& pixel : pixels) {
             auto& [_, vals] = pixel;
-            auto meanVal = std::accumulate(vals.begin(), vals.end(), S(0)) / N;
+            auto meanVal = std::apply([] (auto... vals) {
+                return std::abs((vals + ...)) / N;
+            }, vals);
 
-            if (std::abs(meanVal) > std::abs(maxVal)) {
+            if (meanVal > maxVal) {
                 maxVal = meanVal;
                 maxPixel = pixel;
             }
@@ -136,7 +149,7 @@ auto _major(
 
         auto& [maxIdx, maxVals] = maxPixel;
 
-        maxFindingDuration += std::chrono::duration_cast<std::chrono::microseconds>(
+        maxFindingDuration += std::chrono::duration_cast<std::chrono::nanoseconds>(
             std::chrono::steady_clock::now() - start
         );
 
@@ -183,13 +196,14 @@ auto _major(
             if (0 <= xpx && xpx < psfGridspec.Nx && 0 <= ypx && ypx < psfGridspec.Ny) {
                 auto idx = psfGridspec.gridToLinear(xpx, ypx);
 
+                auto psf = psfs[idx];
                 for (size_t n {}; n < N; ++n) {
-                    vals[n] -= maxVals[n] * channelgroups[n].psf[idx].real();
+                    vals[n] -= maxVals[n] * psf[n];
                 }
             }
         }
 
-        psfSubtractionDuration += std::chrono::duration_cast<std::chrono::microseconds>(
+        psfSubtractionDuration += std::chrono::duration_cast<std::chrono::nanoseconds>(
             std::chrono::steady_clock::now() - start
         );
 
@@ -197,17 +211,21 @@ auto _major(
             // Filter list for any pixels that have now fallen beneath the threshold
             std::erase_if(pixels, [=] (auto& pixel) {
                 auto& [_, vals] = pixel;
-                auto meanVal = std::accumulate(vals.begin(), vals.end(), S(0)) / N;
-                return std::abs(meanVal) < threshold * majorgain;
+                auto meanVal = std::apply([] (auto... vals) {
+                    return ((vals + ...)) / N;
+                }, vals);
+                return std::abs(meanVal) < threshold;
             });
 
             fmt::println(
-                "   [{} iteration] {:.3g} Jy peak found; search space {} pixels",
-                iter, maxVal, pixels.size()
+                "   [{} iteration] {:.3f} Jy peak found; search space {} pixels",
+                iter,
+                std::apply([] (auto... vals) { return ((vals + ...)) / N; }, maxVals),
+                pixels.size()
             );
         }
 
-        if (std::abs(maxVal) <= threshold) break;
+        if (maxVal <= threshold) break;
     }
 
     S subtractedFlux {};
@@ -220,8 +238,8 @@ auto _major(
 
     fmt::println(
         "Clean cycle complete ({} iterations this major cycle; {:.2f} s peak finding; {:.2f} s PSF subtraction). Subtracted flux: {:.4g} Jy",
-        iter, maxFindingDuration.count() / 1e6,
-        psfSubtractionDuration.count() / 1e6, subtractedFlux
+        iter, maxFindingDuration.count() / 1e9,
+        psfSubtractionDuration.count() / 1e9, subtractedFlux
     );
 
     return std::make_tuple(std::move(components), iter, finalMajor);
