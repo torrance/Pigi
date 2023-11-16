@@ -277,35 +277,3 @@ TEMPLATE_TEST_CASE("gpudft kernel", "[gpudft]", float, double) {
         return true;
     });
 }
-
-TEST_CASE("max finding", "[maxfinding]") {
-    HostArray<std::array<StokesI<float>, 4>, 2> residuals_h {8000, 8000};
-    BENCHMARK("maxfinding [cpu]") {
-        double maxVal {};
-        size_t maxIdx {};
-
-        for (size_t i = 0; i < 8000 * 8000; ++i) {
-            double val = std::apply([] (auto&... vals) {
-                return (vals.I.real() + ...);
-            }, residuals_h[i]);
-
-            if (val > maxVal) {
-                maxVal = val;
-                maxIdx = i;
-            }
-        }
-
-        return std::make_tuple(maxIdx, maxVal);
-    };
-
-    HostArray<StokesI<float>, 2> residual {8000, 8000};
-    std::array<DeviceArray<StokesI<float>, 2>, 4> residuals_d {
-        DeviceArray<StokesI<float>, 2> {residual},
-        DeviceArray<StokesI<float>, 2> {residual},
-        DeviceArray<StokesI<float>, 2> {residual},
-        DeviceArray<StokesI<float>, 2> {residual}
-    };
-    BENCHMARK("maxfinding [kernel]") {
-        clean::findmax<StokesI, float, 4>(residuals_d);
-    };
-}

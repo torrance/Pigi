@@ -26,167 +26,6 @@
 
 namespace clean {
 
-template <typename P>
-using maxPair_t = std::pair<size_t, P>;
-
-template <template<typename> typename T, typename P, int N>
-__global__ void _findmax(
-    DeviceSpan<maxPair_t<P>, 1> results,
-    std::array<DeviceSpan<T<P>, 2>, N> imgs
-) {
-    auto comp = [] __device__ (maxPair_t<P>& lhs, maxPair_t<P>& rhs) -> maxPair_t<P>& {
-        if (std::get<1>(lhs) > std::get<1>(rhs)) {
-            return lhs;
-        } else {
-            return rhs;
-        }
-    };
-
-    __shared__ char _cache[1024 * sizeof(maxPair_t<P>)];
-    auto cache = reinterpret_cast<maxPair_t<P>*>(_cache);
-
-    {
-        maxPair_t<P> maxPair {};
-        const size_t imgSize {imgs[0].size()};
-
-        for (
-            size_t idx = blockIdx.x * blockDim.x + threadIdx.x;
-            idx < imgSize;
-            idx += blockDim.x * gridDim.x
-        ) {
-            maxPair_t<P> val {
-                idx,
-                std::apply([&] (auto&... imgs) {
-                    return abs((imgs[idx].I.real() + ...));
-                }, imgs)
-            };
-            maxPair = comp(val, maxPair);
-        }
-        cache[threadIdx.x] = maxPair;
-    }
-    __syncthreads();
-
-    // Perform block reduction
-    for (unsigned s = blockDim.x / 2; s > 0; s >>= 1) {
-        if (threadIdx.x < s) {
-            cache[threadIdx.x] = comp(cache[threadIdx.x], cache[threadIdx.x + s]);
-        }
-        __syncthreads();
-    }
-
-    if (threadIdx.x == 0) {
-        results[blockIdx.x] = cache[0];
-    }
-}
-
-template <template<typename> typename T, typename P, int N>
-auto findmax(std::array<DeviceArray<T<P>, 2>, N>& imgs) {
-    auto fn = _findmax<T, P, N>;
-    auto [nblocks, nthreads] = getKernelConfig(
-        fn, imgs[0].size()
-    );
-
-    // Cache size is hardcoded to 1024; we can't handle more threads than this
-    nthreads = std::min(nthreads, 1024);
-
-    // Allocate results array on both host and device
-    static HostArray<maxPair_t<P>, 1> results_h {nblocks};
-    static DeviceArray<maxPair_t<P>, 1> results_d {nblocks};
-
-    // Cast array of DeviceArray -> DeviceSpan
-    auto spans = std::apply([] (auto&... imgs) {
-        return std::array<DeviceSpan<T<P>, 2>, N> {
-            static_cast<DeviceSpan<T<P>, 2>>(imgs)...
-        };
-    }, imgs);
-
-    // Launch kernel
-    hipLaunchKernelGGL(
-        fn, nblocks, nthreads, 0, hipStreamPerThread,
-        static_cast<DeviceSpan<maxPair_t<P>, 1>>(results_d), spans
-    );
-
-    // Transfer results back to host and  final reduction over each block result
-    results_h = results_d;
-    auto maxIdx = std::get<0>(*std::max_element(
-        results_h.begin(), results_h.end(), [] (auto lhs, auto rhs) {
-            return std::get<1>(lhs) < std::get<1>(rhs);
-        }
-    ));
-
-    // Fetch values corresponding to maxIdx
-    std::array<T<P>, N> maxVals;
-    for (size_t i {}; i < N; ++i) {
-        HIPCHECK( hipMemcpyAsync(
-            &maxVals[i], imgs[i].data() + maxIdx, sizeof(T<P>),
-            hipMemcpyDeviceToHost, hipStreamPerThread
-        ) );
-    }
-    HIPCHECK( hipStreamSynchronize(hipStreamPerThread) );
-
-    return std::make_tuple(
-        maxIdx, std::apply([] (auto... vals) -> std::array<P, N> {
-            return {vals.I.real()...};
-        }, maxVals)
-    );
-}
-
-template <typename T, typename S>
-__global__ void _subtractpsf(
-    DeviceSpan<T, 2> img, const GridSpec imgGridspec,
-    const DeviceSpan<thrust::complex<S>, 2> psf, const GridSpec psfGridspec,
-    long long xpeak, long long ypeak, S f
-) {
-    for (
-        size_t idx = blockIdx.x * blockDim.x + threadIdx.x;
-        idx < psfGridspec.size();
-        idx += blockDim.x * gridDim.x
-    ) {
-        auto [xpx, ypx] = psfGridspec.linearToGrid(idx);
-
-        // Set origin to center of PSF
-        xpx -= static_cast<long long>(psfGridspec.Nx) / 2;
-        ypx -= static_cast<long long>(psfGridspec.Ny) / 2;
-
-        // Set origin to bottom left corner of img
-        xpx += static_cast<long long>(imgGridspec.Nx) / 2;
-        ypx += static_cast<long long>(imgGridspec.Ny) / 2;
-
-        long long xoffset { xpeak - static_cast<long long>(imgGridspec.Nx) / 2 };
-        long long yoffset { ypeak - static_cast<long long>(imgGridspec.Ny) / 2 };
-
-        // Now shift based on location of peak
-        xpx += xoffset;
-        ypx += yoffset;
-
-        if (
-            0 <= xpx && xpx < static_cast<long long>(imgGridspec.Nx) &&
-            0 <= ypx && ypx < static_cast<long long>(imgGridspec.Ny)
-        ) {
-            auto cell = psf[idx];
-            img[imgGridspec.gridToLinear(xpx, ypx)] -= (cell *= f);
-        }
-    }
-}
-
-template <typename T, typename S>
-void subtractpsf(
-    DeviceArray<T, 2>& img, const GridSpec imgGridspec,
-    const DeviceArray<thrust::complex<S>, 2>& psf, const GridSpec psfGridspec,
-    long long xpeak, long long ypeak, S f
-) {
-    auto fn = _subtractpsf<T, S>;
-    auto [nblocks, nthreads] = getKernelConfig(
-        fn, psfGridspec.size()
-    );
-    hipLaunchKernelGGL(
-        fn, nblocks, nthreads, 0, hipStreamPerThread,
-        static_cast<DeviceSpan<T, 2>>(img), imgGridspec,
-        static_cast<DeviceSpan<thrust::complex<S>, 2>>(psf), psfGridspec,
-        xpeak, ypeak, f
-    );
-}
-
 template <typename T>
 using ComponentMap = std::unordered_map<size_t, T>;
 
@@ -258,16 +97,23 @@ auto _major(
         finalMajor ? " (final) " : " ", maxVal, threshold, noise
     );
 
-    // Transfer residuals and psfs to device
-    std::array<DeviceArray<StokesI<S>, 2>, N> residuals;
-    std::array<DeviceArray<thrust::complex<S>, 2>, N> psfs;
+    // Reduce search space only to existing pixels above the threshold;
+    using Pixel = std::tuple<size_t, std::array<S, N>>;
+    std::vector<Pixel> pixels;
+    for (size_t i {}; i < imgGridspec.size(); ++i) {
+        std::array<S, N> vals;
+        for (size_t n {}; n < N; ++n) {
+            vals[n] = channelgroups[n].residual[i].I.real();
+        }
 
-    for (size_t n {}; n < N; ++n) {
-        residuals[n] = DeviceArray<StokesI<S>, 2> {channelgroups[n].residual};
-        psfs[n] = DeviceArray<thrust::complex<S>, 2> {channelgroups[n].psf};
+        auto meanVal = std::accumulate(vals.begin(), vals.end(), S(0)) / N;
+
+        if (std::abs(meanVal) >= threshold * majorgain) {
+            pixels.push_back({i, vals});
+        }
     }
 
-    // Pre-allocate a vector of frequencies and max vals
+    // Pre-allocate a vector of frequencies
     std::array<S, N> freqs {};
     for (size_t n {}; n < N; ++n) { freqs[n] = channelgroups[n].midfreq; }
 
@@ -275,77 +121,107 @@ auto _major(
     for (; iter < niter; ++iter) {
         auto start = std::chrono::steady_clock::now();
 
-        auto [maxIdx, maxVals] = findmax<StokesI, S, N>(residuals);
+        // Find the maximum value
+        maxVal = 0;
+        Pixel maxPixel {};
+        for (auto& pixel : pixels) {
+            auto& [_, vals] = pixel;
+            auto meanVal = std::accumulate(vals.begin(), vals.end(), S(0)) / N;
+
+            if (std::abs(meanVal) > std::abs(maxVal)) {
+                maxVal = meanVal;
+                maxPixel = pixel;
+            }
+        }
+
+        auto& [maxIdx, maxVals] = maxPixel;
 
         maxFindingDuration += std::chrono::duration_cast<std::chrono::microseconds>(
             std::chrono::steady_clock::now() - start
         );
 
-        // Calculate mean val across each channel
-        S meanMaxVal = std::accumulate(
-            maxVals.begin(), maxVals.end(), S(0)
-        ) / N;
-
         // Fit polynomial to output
         // TODO: make root configurable
         auto coeffs = polyfit<S>(freqs, maxVals, std::min(N, 2));
 
-        // Evalation polynomial model and apply gain
+        // Evalate polynomial model and apply gain
         for (size_t n {}; n < N; ++n) {
             maxVals[n] = 0;
             for (size_t i {}; i < coeffs.size(); ++i) {
-                maxVals[n] += static_cast<S>(minorgain) * coeffs[i] * std::pow(freqs[n], i);
+                maxVals[n] += coeffs[i] * std::pow(freqs[n], i);
             }
+            maxVals[n] *= static_cast<S>(minorgain);
         }
-
-        // Find grid locations for max index
-        auto [xpx, ypx] = imgGridspec.linearToGrid(maxIdx);
 
         start = std::chrono::steady_clock::now();
 
-        // Save component and subtract contribution from image
+        // Save component
         for (size_t n {}; n < N; ++n) {
-            components[n][maxIdx] += maxVals[n];
-
-            subtractpsf<StokesI<S>, S>(
-                residuals[n], imgGridspec, psfs[n], psfGridspec, xpx, ypx, maxVals[n]
-            );
+            components[n][maxIdx] += StokesI<S>(maxVals[n]);
         }
 
-        HIPCHECK( hipStreamSynchronize(hipStreamPerThread) );
+        // Find grid locations for max index
+        auto [xpeak, ypeak] = imgGridspec.linearToGrid(maxIdx);
+
+        // Subtract (component * psf) from pixels
+        for (auto& pixel : pixels) {
+            auto& [i, vals] = pixel;
+
+            // Calculate respective xpx, ypx in psf image
+            // First, get xy coordinates of pixel wrt img
+            auto [xpx, ypx] = imgGridspec.linearToGrid(i);
+
+            // Find offset from peak center
+            xpx -= xpeak;
+            ypx -= ypeak;
+
+            // Convert psf coordinates wrt to bottom left corner
+            xpx += psfGridspec.Nx / 2;
+            ypx += psfGridspec.Ny / 2;
+
+            // Subtract component from pixel values if it maps to a valid psf pixel
+            if (0 <= xpx && xpx < psfGridspec.Nx && 0 <= ypx && ypx < psfGridspec.Ny) {
+                auto idx = psfGridspec.gridToLinear(xpx, ypx);
+
+                for (size_t n {}; n < N; ++n) {
+                    vals[n] -= maxVals[n] * channelgroups[n].psf[idx].real();
+                }
+            }
+        }
+
         psfSubtractionDuration += std::chrono::duration_cast<std::chrono::microseconds>(
             std::chrono::steady_clock::now() - start
         );
 
-        if (iter % 1000 == 0) fmt::println(
-            "   [{} iteration] {:.2g} Jy peak found", iter, meanMaxVal
-        );
+        if (iter % 1000 == 0) {
+            // Filter list for any pixels that have now fallen beneath the threshold
+            std::erase_if(pixels, [=] (auto& pixel) {
+                auto& [_, vals] = pixel;
+                auto meanVal = std::accumulate(vals.begin(), vals.end(), S(0)) / N;
+                return std::abs(meanVal) < threshold * majorgain;
+            });
 
-        if (std::abs(meanMaxVal) <= threshold) break;
-    }
-
-    // Copy device residuals back to host residuals
-    for (size_t n {}; n < N; ++n) {
-        channelgroups[n].residual = residuals[n];
-    }
-
-    // Find remaining maxVal
-    maxVal = 0;
-    for (size_t idx {}; idx < imgGridspec.size(); ++idx) {
-        S val {};
-        for (auto& channelgroup : channelgroups) {
-            val += channelgroup.residual[idx].I.real();
+            fmt::println(
+                "   [{} iteration] {:.3g} Jy peak found; search space {} pixels",
+                iter, maxVal, pixels.size()
+            );
         }
-        val /= N;
 
-        if (std::abs(val) > std::abs(maxVal)) {
-            maxVal = val;
+        if (std::abs(maxVal) <= threshold) break;
+    }
+
+    S subtractedFlux {};
+    for (auto& componentMap : components) {
+        for (auto& [_, val] : componentMap) {
+            subtractedFlux += val.I.real();
         }
     }
+    subtractedFlux /= N;
 
     fmt::println(
-        "Clean cycle complete ({} iterations this major cycle; {:.2f} s peak finding; {:.2f} s PSF subtraction). Peak value remaining: {:.2g} Jy",
-        iter, maxFindingDuration.count() / 1e6, psfSubtractionDuration.count() / 1e6, maxVal
+        "Clean cycle complete ({} iterations this major cycle; {:.2f} s peak finding; {:.2f} s PSF subtraction). Subtracted flux: {:.4g} Jy",
+        iter, maxFindingDuration.count() / 1e6,
+        psfSubtractionDuration.count() / 1e6, subtractedFlux
     );
 
     return std::make_tuple(std::move(components), iter, finalMajor);

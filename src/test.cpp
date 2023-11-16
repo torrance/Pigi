@@ -456,7 +456,7 @@ TEST_CASE("Clean", "[clean]") {
 
     HostArray<StokesI<double>, 2> expectedSum {gridspec.Nx, gridspec.Ny};
 
-    // Convole the modles, and combine these into ChannelGroup vector
+    // Convolve the models, and combine these into ChannelGroup vector
     std::vector<ChannelGroup<StokesI, double>> channelgroups;
     for (int n {}; n < N; ++n) {
         auto expected = convolve(models[n], dirtyPSF);
@@ -469,17 +469,17 @@ TEST_CASE("Clean", "[clean]") {
             .residual = std::move(expected)
         });
     }
-    expectedSum /= StokesI<double>(4);
+    expectedSum /= StokesI<double>(N);
 
     // Find peak max, which we use as the final test value
     double maxInit {};
     for (size_t i {}; i < expectedSum.size(); ++i) {
-        maxInit = std::max(maxInit, expectedSum[i].I.real());
+        maxInit = std::max(maxInit, std::abs(expectedSum[i].I.real()));
     };
 
     auto [components, iter, _] = clean::major(
         channelgroups, gridspec, gridspec,
-        0.1, 0.991, 0, 0, std::numeric_limits<size_t>::max()
+        0.01, 0.991, 0, 0, std::numeric_limits<size_t>::max()
     );
 
     auto fittedPSF = PSF<double>(dirtyPSF, gridspec).draw(gridspec);
@@ -491,9 +491,10 @@ TEST_CASE("Clean", "[clean]") {
         for (auto& [idx, val] : component) {
             componentMap[idx] += val;
         }
+
         restoredSum += convolve(componentMap, fittedPSF);
     }
-    restoredSum /= StokesI<double>(4);
+    restoredSum /= StokesI<double>(N);
 
     // Compute the test result
     double maxdiff {};
@@ -504,27 +505,4 @@ TEST_CASE("Clean", "[clean]") {
     }
     fmt::println("Max diff: {}", maxdiff);
     REQUIRE(maxdiff < maxInit * 0.01);
-}
-
-TEST_CASE("Max finding", "[maxfinding]") {
-    HostArray<StokesI<float>, 2> img {8000, 8000};
-
-    std::mt19937 gen(1234);
-    std::uniform_real_distribution<double> rand(0, 1);
-    for (auto& val : img) {
-        val = StokesI<float>(rand(gen));
-    };
-    img[5000] = StokesI<float>(5);
-
-    std::array<DeviceArray<StokesI<float>, 2>, 4> imgs_d {
-        DeviceArray<StokesI<float>, 2> {img},
-        DeviceArray<StokesI<float>, 2> {img},
-        DeviceArray<StokesI<float>, 2> {img},
-        DeviceArray<StokesI<float>, 2> {img}
-    };
-
-    auto [maxIdx, maxVals] = clean::findmax<StokesI, float, 4>(imgs_d);
-
-    REQUIRE(maxIdx == 5000);
-    REQUIRE(maxVals[0] == 5);
 }
