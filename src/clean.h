@@ -64,11 +64,11 @@ auto _major(
 
         S mean {};
         for (auto& val : imgCombined) { mean += val.I.real(); }
-        mean /= (N * imgCombined.size());
+        mean /= imgCombined.size();
 
         S variance {};
         for (auto& val : imgCombined) { variance += std::pow(val.I.real() - mean, 2); }
-        variance /= (N * imgCombined.size());
+        variance /= imgCombined.size();
 
         noise = std::sqrt(variance);
     }
