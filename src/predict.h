@@ -63,5 +63,7 @@ void predict(
         degridder<T, S>(wworkunits, wlayer, subtaperd, gridconf, degridop);
     }
 
+    hipfftDestroy(plan);
+
     fmt::println(" Done.");
 }
