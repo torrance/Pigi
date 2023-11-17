@@ -149,6 +149,9 @@ auto _major(
 
         auto& [maxIdx, maxVals] = maxPixel;
 
+        // Recalculate mean value with correct sign (for logging)
+        maxVal = std::apply([] (auto... vals) { return ((vals + ...)) / N; }, maxVals);
+
         maxFindingDuration += std::chrono::duration_cast<std::chrono::nanoseconds>(
             std::chrono::steady_clock::now() - start
         );
@@ -219,13 +222,11 @@ auto _major(
 
             fmt::println(
                 "   [{} iteration] {:.3f} Jy peak found; search space {} pixels",
-                iter,
-                std::apply([] (auto... vals) { return ((vals + ...)) / N; }, maxVals),
-                pixels.size()
+                iter, maxVal, pixels.size()
             );
         }
 
-        if (maxVal <= threshold) break;
+        if (std::abs(maxVal) <= threshold) break;
     }
 
     S subtractedFlux {};
