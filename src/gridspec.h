@@ -11,6 +11,13 @@ struct GridSpec {
     double scalelm;
     double scaleuv;
 
+    bool operator==(const GridSpec& other) const {
+        return (
+            Nx == other.Nx && Ny == other.Ny &&
+            scalelm == other.scalelm && scaleuv == other.scaleuv
+        );
+    }
+
     static GridSpec fromScaleLM(long long Nx, long long Ny, double scalelm) {
         return GridSpec {Nx, Ny, scalelm, 1 / (Nx * scalelm)};
     }
@@ -77,6 +84,17 @@ struct GridSpec {
         return std::make_tuple(
             static_cast<S>((upx - Nx / 2) * scaleuv),
             static_cast<S>((vpx - Ny / 2) * scaleuv)
+        );
+    }
+};
+
+template <>
+struct std::hash<GridSpec> {
+    size_t operator()(const GridSpec& key) const {
+        using std::hash;
+        return (
+            hash<long long>()(key.Nx) ^ hash<long long>()(key.Ny) ^
+            hash<double>()(key.scalelm) ^ hash<double>()(key.scaleuv)
         );
     }
 };

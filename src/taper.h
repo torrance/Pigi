@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cmath>
+#include <unordered_map>
 
 #include "gridspec.h"
 #include "memory.h"
@@ -19,7 +20,13 @@ template <>
 long double kbalpha<double>() { return 10; }
 
 template <typename T>
-auto kaiserbessel(const GridSpec gridspec, const long double alpha = kbalpha<T>()) {
+const auto& kaiserbessel(const GridSpec gridspec, const long double alpha = kbalpha<T>()) {
+    // Memoise output
+    static std::unordered_map<GridSpec, const HostArray<T, 2>> cache;
+    if (auto taper = cache.find(gridspec); taper != cache.end()) {
+        return std::get<1>(*taper);
+    }
+
     // Create one-dimensional tapers first. The 2D taper is a product of these 1D tapers.
     // All intermediate calculations are performed at long double precision.
     std::vector<long double> xDim(gridspec.Nx);
@@ -44,5 +51,6 @@ auto kaiserbessel(const GridSpec gridspec, const long double alpha = kbalpha<T>(
         taper[i] = xDim[xpx] * yDim[ypx];
     }
 
-    return taper;
+    cache.insert(std::make_pair(gridspec, std::move(taper)));
+    return cache[gridspec];
 }
