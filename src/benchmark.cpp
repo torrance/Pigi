@@ -138,7 +138,7 @@ TEMPLATE_TEST_CASE("Predict", "[predict]", float, double) {
         .kernelsize = 96, .kernelpadding = 18, .wstep = 25
     };
 
-    HostArray<ComplexLinearData<TestType>, 2> Aterms {gridconf.grid().shape()};
+    HostArray<ComplexLinearData<TestType>, 2> Aterms {gridconf.subgrid().shape()};
     Aterms.fill({1, 0, 0, 1});
 
     MeasurementSet mset(
