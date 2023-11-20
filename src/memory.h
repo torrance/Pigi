@@ -119,7 +119,12 @@ template <typename T, int N, typename Pointer>
 class Span {
 public:
     Span() = default;
-    Span(std::array<long long, N> dims, T* ptr = NULL) : dims(dims), ptr(ptr) {}
+    Span(std::array<long long, N> dims, T* ptr = NULL) : dims(dims), ptr(ptr) {
+        // Compute size
+        sz = std::apply([] (auto... dims) {
+            return (1 * ... * static_cast<size_t>(dims));
+        }, dims);
+    }
 
     Span(std::vector<T>& vec) requires(
         N == 1 && std::is_same<HostPointer<T>, Pointer>::value
@@ -151,6 +156,7 @@ public:
         using std::swap;
         swap(this->ptr, other.ptr);
         swap(this->dims, other.dims);
+        swap(this->sz, other.sz);
         return *this;
     }
 
@@ -172,11 +178,7 @@ public:
     __host__ __device__ inline const T* begin() const { return ptr; }
     __host__ __device__ inline const T* end() const { return ptr + this->size(); }
 
-    __host__ __device__  size_t size() const {
-        size_t sz {1};
-        for (const auto dim : dims) sz *= static_cast<size_t>(dim);
-        return sz;
-    }
+    __host__ __device__  size_t size() const { return sz; }
 
     auto size(int i) const { return dims.at(i); }
 
@@ -200,6 +202,7 @@ public:
 protected:
     std::array<long long, N> dims {};
     Pointer ptr {};
+    size_t sz {};
 };
 
 template <typename T, typename S, typename R, typename Q, int N>
@@ -268,6 +271,7 @@ public:
         using std::swap;
         swap(this->dims, other.dims);
         swap(this->ptr, other.ptr);
+        swap(this->sz, other.sz);
         return (*this);
     }
 
