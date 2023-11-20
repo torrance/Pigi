@@ -102,6 +102,19 @@ void memcpy(DevicePointer<T> dst, DevicePointer<T> src, size_t sz) {
     HIPCHECK( hipStreamSynchronize(hipStreamPerThread) );
 }
 
+template <typename T>
+void memset(HostPointer<T> ptr, int ch, size_t count) {
+    memset(static_cast<void*>(ptr), ch, count);
+}
+
+template <typename T>
+void memset(DevicePointer<T> ptr, int ch, size_t count) {
+    HIPCHECK(
+        hipMemsetAsync(static_cast<void*>(ptr), ch, count, hipStreamPerThread)
+    );
+    HIPCHECK( hipStreamSynchronize(hipStreamPerThread) );
+}
+
 template <typename T, int N, typename Pointer>
 class Span {
 public:
@@ -170,10 +183,7 @@ public:
     auto shape() const { return dims; }
 
     void zero() {
-        HIPCHECK(
-            hipMemsetAsync(this->ptr, 0, this->size() * sizeof(T), hipStreamPerThread)
-        );
-        HIPCHECK( hipStreamSynchronize(hipStreamPerThread) );
+        memset(this->ptr, 0, this->size() * sizeof(T));
     }
 
     void fill(const T& val) requires(std::is_same<HostPointer<T>, Pointer>::value) {
