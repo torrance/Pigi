@@ -11,10 +11,6 @@
 
 #include "hip.h"
 
-// This mutex serializes calls to hipMallocAsync() and hipFreeAsync()
-// to avoid a deadlock bug occurring in hip v5.2.3
-std::mutex memlock;
-
 enum class MemoryStorage { Host, Device };
 
 template <typename T, MemoryStorage M>
@@ -58,7 +54,6 @@ void malloc(HostPointer<T>& ptr, size_t sz) {
 
 template <typename T>
 void malloc(DevicePointer<T>& ptr, size_t sz) {
-    std::lock_guard l(memlock);
     HIPCHECK( hipMallocAsync(reinterpret_cast<void**>(&ptr), sz, hipStreamPerThread) );
     HIPCHECK( hipStreamSynchronize(hipStreamPerThread) );
 }
@@ -70,7 +65,7 @@ void free(HostPointer<T>& ptr) {
 
 template <typename T>
 void free(DevicePointer<T>& ptr) {
-    std::lock_guard l(memlock);
+    HIPCHECK( hipStreamSynchronize(hipStreamPerThread) );
     HIPCHECK( hipFreeAsync(ptr, hipStreamPerThread) );
     HIPCHECK( hipStreamSynchronize(hipStreamPerThread) );
 }
