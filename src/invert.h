@@ -30,7 +30,7 @@ HostArray<T<S>, 2> invert(
 
     // Create device matrices
     DeviceArray<T<S>, 2> imgd {gridspec.shape()};
-    DeviceArray<T<S>, 2> wlayerd {gridspec.shape()};
+    DeviceArray<T<S>, 2> wlayerd {gridspec.shape(), false}; // We zero in main loop
     DeviceArray<S, 2> subtaperd {kaiserbessel<S>(subgridspec)};
 
     auto plan = fftPlan<T<S>>(gridspec);
