@@ -123,22 +123,32 @@ constexpr inline T rad2deg(const T& x) { return x * 180 / ::pi_v<T>; }
 
 template <typename T>
 auto resize(HostSpan<T, 2> src, GridSpec srcGridspec, GridSpec dstGridspec) {
-    HostArray<T, 2> dst {dstGridspec.Nx, dstGridspec.Ny};
+    HostArray<T, 2> dst {{dstGridspec.Nx, dstGridspec.Ny}, false};
 
     long long edgeX {(dstGridspec.Nx - srcGridspec.Nx) / 2};
     long long edgeY {(dstGridspec.Ny - srcGridspec.Ny) / 2};
 
-    for (long long nx {}; nx < src.size(0); ++nx) {
-        for (long long ny {}; ny < src.size(1); ++ny) {
-            if (
-                0 <= nx + edgeX && nx + edgeX < dst.size(0) &&
-                0 <= ny + edgeY && ny + edgeY < dst.size(1)
-            ) {
-                auto idxSrc = srcGridspec.gridToLinear(nx, ny);
-                auto idxDst = dstGridspec.gridToLinear(nx + edgeX, ny + edgeY);
-                dst[idxDst] = src[idxSrc];
-            }
-        }
+    // This is a small optimization: only zero the memory if the dst array is larger
+    // than the source
+    if (edgeX > 0 || edgeY > 0) { dst.zero(); }
+
+    // The row length to copy is simply the minimum of the dst or src row length
+    size_t count = std::min(srcGridspec.Nx, dstGridspec.Nx) * sizeof(T);
+
+    // Determine y-bounds of dst array
+    const long long ymin = std::max(0ll, edgeY);
+    const long long ymax = dst.size(1) - std::max(0ll, edgeY);
+
+    // Copy row by row
+    for (long long nyDst {ymin}; nyDst < ymax; ++nyDst) {
+        long long nySrc = nyDst - edgeX;
+
+        long long nxDst = std::max(0ll, edgeX);
+        long long nxSrc = std::max(0ll, -edgeX);
+
+        void* ptrDst =  dst.data() + dstGridspec.gridToLinear(nxDst, nyDst);
+        void* ptrSrc = src.data() + srcGridspec.gridToLinear(nxSrc, nySrc);
+        memcpy(ptrDst, ptrSrc, count);
     }
 
     return dst;
