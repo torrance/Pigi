@@ -217,7 +217,7 @@ int main(int argc, char** argv) {
         config.maxDuration = maxDuration.getValue();
         config.gridconf = {
             .imgNx = size.getValue(), .imgNy = size.getValue(),
-            .imgScalelm = deg2rad(scale.getValue() / 3600),
+            .imgScalelm = std::asin(deg2rad(scale.getValue() / 3600)),
             .paddingfactor = padding.getValue(),
             .kernelsize = kernelsize.getValue(), .kernelpadding = kernelpadding.getValue(),
             .wstep = wstep.getValue()
