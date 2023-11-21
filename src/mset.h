@@ -123,7 +123,7 @@ public:
 
             for (long nrow {nstart}; nrow <= nend; ++nrow) {
                 double u_m = *uvwIter; ++uvwIter;
-                double v_m = *uvwIter; ++uvwIter;
+                double v_m = -(*uvwIter); ++uvwIter;  // Invert v for MWA observations only (?)
                 double w_m = *uvwIter; ++uvwIter;
 
                 bool flagrow = *flagrowIter; ++flagrowIter;
