@@ -21,15 +21,11 @@ struct alignas(16) LinearData {
 
     // Conversion to thrust::complex: only used for PSF construction
     __host__ __device__
-    explicit operator thrust::complex<float>() const requires(
-        std::is_same<T, float>::value || std::is_same<T, thrust::complex<float>>::value
-    ) {
+    explicit operator thrust::complex<float>() const {
         return (xx + yx + xy + yy) / 4;
     }
     __host__ __device__
-    explicit operator thrust::complex<double>() const requires(
-        std::is_same<T, double>::value || std::is_same<T, thrust::complex<double>>::value
-    ) {
+    explicit operator thrust::complex<double>() const {
         return (xx + yx + xy + yy) / 4;
     }
 
@@ -160,7 +156,7 @@ struct StokesI {
 
     template <typename S>
     __host__ __device__
-    explicit StokesI(const StokesI<S>& stokesI) : I(static_cast<T>(stokesI.I)) {}
+    explicit StokesI(const StokesI<S>& stokesI) : I(stokesI.I) {}
 
     template <typename S>
     __host__ __device__

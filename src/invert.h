@@ -69,13 +69,14 @@ HostArray<T<S>, 2> invert(
     img /= kaiserbessel<S>(gridspec);
 
     // Normalize image based on total weight
-    T<S> weightTotal {};
+    // Accumulation variable requires double precision
+    T<double> weightTotal {};
     for (const auto& workunit : workunits) {
         for (const auto& uvdatum : workunit.data) {
-            weightTotal += T<S>(uvdatum.weights);
+            weightTotal += T<double>(uvdatum.weights);
         }
     }
-    img /= weightTotal;
+    img /= T<S>(weightTotal);
 
     hipfftDestroy(plan);
 

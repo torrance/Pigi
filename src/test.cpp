@@ -240,7 +240,7 @@ TEMPLATE_TEST_CASE_SIG(
         auto jones = static_cast<HostArray<ComplexLinearData<double>, 2>>(
             beam.gridResponse(gridspec, gridorigin, freq)
         );
-        idft<StokesI<double>, double>(expected, jones, uvdata64, gridspec);
+        idft<StokesI, double>(expected, jones, uvdata64, gridspec);
     }
 
     // Cast to float or double
@@ -401,10 +401,10 @@ TEMPLATE_TEST_CASE_SIG(
     auto fullAterms = beam.gridResponse(gridspec, phaseCenter, freq);
 
     HostArray<StokesI<Q>, 2> imgMap {gridspec.shape()};
-    idft<StokesI<Q>, Q>(imgMap, fullAterms, uvdata, gridspec);
+    idft<StokesI, Q>(imgMap, fullAterms, uvdata, gridspec);
 
     HostArray<StokesI<double>, 2> expectedMap {gridspec.shape()};
-    idft<StokesI<double>, double>(
+    idft<StokesI, double>(
         expectedMap, static_cast<HostArray<ComplexLinearData<double>, 2>>(fullAterms),
         expected, gridspec
     );

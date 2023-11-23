@@ -62,18 +62,18 @@ __global__ void _idft(
     }
 }
 
-template <typename T, typename S>
+template <template <typename> typename T, typename S>
 void idft(
-    HostSpan<T, 2> img,
+    HostSpan<T<S>, 2> img,
     HostSpan<ComplexLinearData<S>, 2> jones,
     HostSpan<UVDatum<S>, 1> uvdata,
     GridSpec gridspec
 ) {
-    DeviceArray<T, 2> img_d {img};
+    DeviceArray<T<S>, 2> img_d {img};
     DeviceArray<ComplexLinearData<S>, 2> jones_d {jones};
     DeviceArray<UVDatum<S>, 1> uvdata_d {uvdata};
 
-    auto fn = _idft<T, S>;
+    auto fn = _idft<T<S>, S>;
     auto [nblocks, nthreads] = getKernelConfig(
         fn, gridspec.size()
     );
@@ -84,10 +84,11 @@ void idft(
 
     img = img_d;
 
-    // Normalize image
-    T weightTotal {};
-    for (auto& uvdatum : uvdata) {
-        weightTotal += T(uvdatum.weights);
+    // Normalize image based on total weight
+    // Accumulation variable requires double precision
+    T<double> weightTotal {};
+    for (const auto& uvdatum : uvdata) {
+        weightTotal += T<double>(uvdatum.weights);
     }
-    img /= weightTotal;
+    img /= T<S>(weightTotal);
 }
