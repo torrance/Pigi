@@ -256,7 +256,6 @@ TEMPLATE_TEST_CASE_SIG(
 
     // Correct for beam
     auto jonesgrid = beam.gridResponse(gridspec, gridorigin, freq);
-    HostArray<StokesI<Q>, 2> power {gridconf.grid().shape()};
     for (size_t i {}; i < gridspec.size(); ++i) {
         img[i] /= StokesI<Q>::beamPower(jonesgrid[i], jonesgrid[i]);
     }
