@@ -128,13 +128,6 @@ public:
 
                 bool flagrow = *flagrowIter; ++flagrowIter;
 
-                LinearData<double> weightRow;
-                weightRow.xx = *weightIter; ++weightIter;
-                weightRow.xy = *weightIter; ++weightIter;
-                weightRow.yx = *weightIter; ++weightIter;
-                weightRow.yy = *weightIter; ++weightIter;
-                weightRow *= !flagrow;  // Flagged row has the effect to set all to zero
-
                 for (size_t ncol {}; ncol < lambdas.size(); ++ncol) {
                     double u = u_m / lambdas[ncol];
                     double v = v_m / lambdas[ncol];
@@ -153,7 +146,8 @@ public:
                     flags.yx = !*flagIter; ++flagIter;
                     flags.yy = !*flagIter; ++flagIter;
 
-                    (weights *= weightRow) *= flags;
+                    // Flags have the effect to set weights to 0
+                    (weights *= !flagrow) *= flags;
 
                     ComplexLinearData<double> data;
                     data.xx = *dataIter; ++dataIter;
