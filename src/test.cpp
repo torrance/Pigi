@@ -219,9 +219,13 @@ TEMPLATE_TEST_CASE_SIG(
                 data += matmul(matmul(jones, cell), jones.adjoint());
             }
 
+            LinearData<double> weights {
+                rand(gen), rand(gen), rand(gen), rand(gen)
+            };
+
             // TODO: use emplace_back() when we can upgrade Clang
             uvdata64.push_back(
-                {i, 0, u, v, w, LinearData<double>{1, 1, 1, 1}, data}
+                {i, 0, u, v, w, weights, data}
             );
         }
     }
