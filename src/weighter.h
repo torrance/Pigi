@@ -69,11 +69,18 @@ public:
     Natural() = delete;
 
     template <typename R>
-    Natural(R&& uvdata, GridSpec gridspec) {}
+    Natural(R&&, GridSpec gridspec) : gridspec(gridspec) {}
 
     inline const LinearData<T>& operator()(UVDatum<T>& uvdatum) const override {
+        auto [upx, vpx] = gridspec.UVtoGrid(uvdatum.u, uvdatum.v);
+        if (!(0 <= upx && upx < gridspec.Nx && 0 <= vpx && vpx < gridspec.Ny)) {
+            uvdatum.weights = {0, 0, 0, 0};
+        }
         return uvdatum.weights;
     }
+
+private:
+    GridSpec gridspec;
 };
 
 template <typename T>
