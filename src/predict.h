@@ -39,7 +39,7 @@ void predict(
     auto plan = fftPlan<T>(gridspec);
 
     // Create wlayer on device
-    DeviceArray<T, 2> wlayer {gridspec.shape()};
+    DeviceArray<T, 2> wlayer {gridspec.shape(), false};
 
     // Sort workunits into wlayers
     std::map<S, std::vector<WorkUnit<S>*>> wlayers;
