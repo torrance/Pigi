@@ -38,7 +38,7 @@ TEST_CASE( "Arrays, Spans and H<->D transfers", "[memory]" ) {
     REQUIRE( ha[0] == 0 );
     REQUIRE( ha[8191] == 0 );
 
-    ha = hs;
+    copy(ha, hs);
     REQUIRE( ha[0] == 1 );
     REQUIRE( ha[8191] == 1 );
 
@@ -48,7 +48,7 @@ TEST_CASE( "Arrays, Spans and H<->D transfers", "[memory]" ) {
     REQUIRE( ha[0] == 0 );
     REQUIRE( ha[8191] == 0 );
 
-    ha = da;
+    copy(ha, da);
     REQUIRE( ha[0] == 1 );
     REQUIRE( ha[8191] == 1 );
 }

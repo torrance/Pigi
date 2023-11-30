@@ -82,7 +82,7 @@ void idft(
         img_d, jones_d, uvdata_d, gridspec
     );
 
-    img = img_d;
+    copy(img, img_d);
 
     // Normalize image based on total weight
     // Accumulation variable requires double precision

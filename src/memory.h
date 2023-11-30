@@ -126,45 +126,19 @@ public:
         }, dims);
     }
 
-    Span(std::vector<T>& vec) requires(
+    template <typename Alloc>
+    Span(std::vector<T, Alloc>& vec) requires(
         N == 1 && std::is_same<HostPointer<T>, Pointer>::value
     ) : Span<T, N, Pointer>({static_cast<long long>(vec.size())}, vec.data())  {}
-
-    // Copy constructor
-    Span(const Span& other) = default;
-
-    // Copy assignment
-    Span& operator=(const Span& other) {
-        shapecheck(*this, other);
-        memcpy(this->ptr, other.ptr, this->size() * sizeof(T));
-        return (*this);
-    }
-
-    // Copy assignment from other pointer type
-    template <typename S>
-    Span& operator=(const Span<T, N, S>& other) {
-        shapecheck(*this, other);
-        memcpy(this->ptr, other.ptr, this->size() * sizeof(T));
-        return (*this);
-    }
-
-    // Move constructor
-    Span(Span&& other) noexcept { *this = std::move(other); }
-
-    // Move assignment
-    Span& operator=(Span&& other) {
-        using std::swap;
-        swap(this->ptr, other.ptr);
-        swap(this->dims, other.dims);
-        swap(this->sz, other.sz);
-        return *this;
-    }
 
     __host__ __device__ inline T operator[](size_t i) const { return ptr[i]; }
     __host__ __device__ inline T& operator[](size_t i) { return ptr[i]; }
 
     __host__ __device__  T* data() { return ptr; }
     __host__ __device__  const T* data() const { return ptr; }
+
+    __host__ __device__  Pointer pointer() { return ptr; }
+    __host__ __device__  const Pointer pointer() const { return ptr; }
 
     __host__ __device__ inline const T& front() const { return ptr[0]; }
     __host__ __device__ inline T& front() { return ptr[0]; }
@@ -205,6 +179,12 @@ protected:
     size_t sz {};
 };
 
+template <typename T, int N>
+using HostSpan = Span<T, N, HostPointer<T>>;
+
+template <typename T, int N>
+using DeviceSpan = Span<T, N, DevicePointer<T>>;
+
 template <typename T, typename S, typename R, typename Q, int N>
 void shapecheck(const Span<T, N, S>& lhs, const Span<R, N, Q>& rhs) {
     if (lhs.shape() != rhs.shape()) {
@@ -216,11 +196,27 @@ void shapecheck(const Span<T, N, S>& lhs, const Span<R, N, Q>& rhs) {
     }
 }
 
-template <typename T, int N>
-using HostSpan = Span<T, N, HostPointer<T>>;
+template <typename T, typename PointerDst, typename PointerSrc, int N>
+void copy(Span<T, N, PointerDst>& dst, const Span<T, N, PointerSrc>& src) {
+    shapecheck(dst, src);
+    memcpy(dst.pointer(), src.pointer(), sizeof(T) * dst.size());
+}
 
-template <typename T, int N>
-using DeviceSpan = Span<T, N, DevicePointer<T>>;
+template <typename T, typename Alloc, typename PointerSrc, int N>
+void copy(std::vector<T, Alloc>& dst, const Span<T, N, PointerSrc>& src) {
+    // TOFIX: This const_cast is required since we don't currently
+    // initialize a span from a const pointer correctly.
+    HostSpan<T, 1> span {const_cast<std::vector<T, Alloc>&>(dst)};
+    copy(span, src);
+}
+
+template <typename T, typename Alloc, typename PointerSrc, int N>
+void copy(Span<T, N, PointerSrc>& dst, const std::vector<T, Alloc>& src) {
+    // TOFIX: This const_cast is required since we don't currently
+    // initialize a span from a const pointer correctly.
+    const HostSpan<T, 1> span {const_cast<std::vector<T, Alloc>&>(src)};
+    copy(dst, span);
+}
 
 template <typename T, int N, typename Pointer>
 class Array : public Span<T, N, Pointer> {
@@ -239,29 +235,26 @@ public:
     explicit Array(long long dim0, long long dim1) requires(N == 2):
         Array(std::array{dim0, dim1}) {}
 
-    explicit Array(const std::vector<T>& vec) requires(N == 1) :
+    template <typename Alloc>
+    explicit Array(const std::vector<T, Alloc>& vec) requires(N == 1) :
         Array{{static_cast<long long>(vec.size())}, false} {
 
-        memcpy(this->ptr, HostPointer<T> {vec.data()}, this->size() * sizeof(T));
+        copy(*this, vec);
     }
 
     // Explicit copy constructor
     explicit Array(const Array& other) : Array{other.shape(), false} {
-        Span<T, N, Pointer>::operator=(other);
+        copy(*this, other);
     }
 
     // Explicit copy constructor from other pointer type
     template <typename S>
     explicit Array(const Span<T, N, S>& other) : Array{other.shape(), false} {
-        (*this) = other;
+        copy(*this, other);\
     }
 
-    // Copy assignment from other pointer type
-    template <typename S>
-    Array& operator=(const Span<T, N, S>& other) {
-        Span<T, N, Pointer>::operator=(other);
-        return (*this);
-    }
+    // Delete copy assignment
+    Array operator=(const Array&) = delete;
 
     // Move constructor
     Array(Array<T, N, Pointer>&& other) noexcept { *this = std::move(other); }

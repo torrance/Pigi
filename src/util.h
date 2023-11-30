@@ -189,7 +189,7 @@ HostArray<T, 2> convolve(const HostSpan<T, 2> img, const HostSpan<S, 2> kernel) 
     HIPFFTCHECK( hipfftDestroy(planKernel) );
 
     // Copy back from device
-    imgPadded = img_d;
+    copy(imgPadded, img_d);
 
     // Remove padding and return
     return resize(imgPadded, gridspecPadded, gridspec);

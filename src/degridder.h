@@ -236,7 +236,7 @@ void degridder(
                 );
 
                 // Transfer data back to host
-                workunit->data = uvdata;
+                copy(workunit->data, uvdata);
             }
 
             HIPFFTCHECK( hipfftDestroy(plan) );
