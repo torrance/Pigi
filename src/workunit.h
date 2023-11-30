@@ -8,6 +8,7 @@
 #include <vector>
 
 #include "gridspec.h"
+#include "memmap.h"
 #include "memory.h"
 #include "outputtypes.h"
 #include "uvdatum.h"
@@ -20,7 +21,7 @@ struct UVWOrigin {
     UVWOrigin(T u0, T v0, T w0) : u0(u0), v0(v0), w0(w0) {}
 };
 
-template <typename S, typename T=HostArray<UVDatum<S>, 1>>
+template <typename S, typename T=std::vector<UVDatum<S>, MMapAllocator<UVDatum<S>>>>
 struct WorkUnit {
     long long u0px;
     long long v0px;
@@ -94,40 +95,42 @@ auto partition(
         // TODO: use emplace_back() when we can upgrade Clang
         wworkunits.push_back({
             u0px, v0px, u0, v0, static_cast<S>(w0),
-            Aterms_ptr, Aterms_ptr, std::vector<UVDatum<S>> {uvdatum}
+            Aterms_ptr, Aterms_ptr, {uvdatum}
         });
     }
 
-    // Flatten the workunits into a single vector
-    // Also swap out the data storage from vector to 1D HostArray
-    // since this is a pinned allocation and makes D->H data transfers
-    // in the gridder much faster.
+    // Flatten workunits and write to file-backed mmap memory
     std::vector<WorkUnit<S>> workunits;
     for (auto& [_, wworkunits] : wlayers) {
         while (!wworkunits.empty()) {
             auto& workunit = wworkunits.back();
-            // TODO: use emplace_back() when we can upgrade Clang
+
+            std::vector<UVDatum<S>, MMapAllocator<UVDatum<S>>> data(workunit.data.size());
+            std::copy(workunit.data.begin(), workunit.data.end(), data.begin());
+
             workunits.push_back({
                 workunit.u0px, workunit.v0px,
                 workunit.u0, workunit.v0, workunit.w0,
-                workunit.Aleft, workunit.Aright,
-                HostArray<UVDatum<S>, 1>{workunit.data}
+                workunit.Aleft, workunit.Aright, data
             });
+
             wworkunits.pop_back();
         }
     }
 
-    // Print some stats
-    std::vector<size_t> sizes;
-    for (const auto& workunit : workunits) sizes.push_back(workunit.data.size());
+    // Print some stats about our partitioning
+    {
+        std::vector<size_t> sizes;
+        for (const auto& workunit : workunits) sizes.push_back(workunit.data.size());
 
-    std::sort(sizes.begin(), sizes.end());
-    auto median = sizes[sizes.size() / 2];
-    auto mean = std::accumulate(sizes.begin(), sizes.end(), 0) / sizes.size();
-    fmt::println(
-        "Partitioning complete: {} workunits, size min {} < (mean {} median {}) < max {}",
-        sizes.size(), sizes.front(), mean, median, sizes.back()
-    );
+        std::sort(sizes.begin(), sizes.end());
+        auto median = sizes[sizes.size() / 2];
+        auto mean = std::accumulate(sizes.begin(), sizes.end(), 0) / sizes.size();
+        fmt::println(
+            "Partitioning complete: {} workunits, size min {} < (mean {} median {}) < max {}",
+            sizes.size(), sizes.front(), mean, median, sizes.back()
+        );
+    }
 
     return workunits;
 }
