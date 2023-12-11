@@ -125,7 +125,7 @@ auto _major(
         }
     }
 
-    size_t iter {1};
+    size_t iter {};
     for (; iter < niter; ++iter) {
         auto start = std::chrono::steady_clock::now();
 
@@ -207,7 +207,7 @@ auto _major(
             std::chrono::steady_clock::now() - start
         );
 
-        if (iter % 1000 == 0) {
+        if ((iter + 1) % 1000 == 0) {
             // Filter list for any pixels that have now fallen beneath the threshold
             std::erase_if(pixels, [=] (auto& pixel) {
                 auto& [_, vals] = pixel;
@@ -219,7 +219,7 @@ auto _major(
 
             fmt::println(
                 "   [{} iteration] {:.3f} Jy peak found; search space {} pixels",
-                iter, maxVal, pixels.size()
+                iter + 1, maxVal, pixels.size()
             );
         }
 
