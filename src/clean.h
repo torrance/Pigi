@@ -111,7 +111,7 @@ auto _major(
             return ((vals + ...)) / N;
         }, vals);
 
-        if (std::abs(meanVal) >= threshold) {
+        if (std::abs(meanVal) >= 0.9 * threshold) {
             pixels.push_back({i, vals});
         }
     }
@@ -214,7 +214,7 @@ auto _major(
                 auto meanVal = std::apply([] (auto... vals) {
                     return ((vals + ...)) / N;
                 }, vals);
-                return std::abs(meanVal) < threshold;
+                return std::abs(meanVal) < 0.9 * threshold;
             });
 
             fmt::println(
