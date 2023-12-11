@@ -44,6 +44,7 @@ execute_process(COMMAND ${hipconfig} --path OUTPUT_VARIABLE hippath)
 include_directories(${hippath})
 
 find_package(Catch2 3 REQUIRED)
+find_package(MPI REQUIRED)
 
 # Required libraries
 find_library(Lcasa_casa NAMES casa_casa REQUIRED)
@@ -69,7 +70,7 @@ endif()
 add_executable(main src/main.cpp)
 target_compile_options(main PRIVATE ${hipcxxflags})
 target_include_directories(main PRIVATE ${Igenerator} ${Itclap} ${Ifmt} ${Igsl} ${Icfitsio} ${Icasa} ${Ihyperbeam})
-target_link_libraries(main PRIVATE pthread ${Lcasa_casa} ${Lcasa_tables} ${Lcasa_measures} ${Lgsl} ${Lcfitsio} ${Lfmt} ${Lhipfft} ${Lhyperbeam} ${Lcufft})
+target_link_libraries(main PRIVATE pthread ${Lcasa_casa} ${Lcasa_tables} ${Lcasa_measures} ${Lgsl} ${Lcfitsio} ${Lfmt} ${Lhipfft} ${Lhyperbeam} ${Lcufft} MPI::MPI_CXX)
 
 add_executable(test src/test.cpp)
 target_compile_options(test PRIVATE ${hipcxxflags})

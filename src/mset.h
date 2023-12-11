@@ -187,8 +187,8 @@ public:
         const int chanhigh,
         const double timelow,
         const double timehigh
-    ) : tbl(fname), chanlow(chanlow),
-        chanhigh(chanhigh), timelow(timelow), timehigh(timehigh) {
+    ) : tbl(fname),
+        chanlow(chanlow), chanhigh(chanhigh), timelow(timelow), timehigh(timehigh) {
 
         // Filter table by time low and high
         tbl = tbl(

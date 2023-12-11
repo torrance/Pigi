@@ -459,18 +459,18 @@ TEST_CASE("Clean", "[clean]") {
 
     HostArray<StokesI<double>, 2> expectedSum {gridspec.Nx, gridspec.Ny};
 
-    // Convolve the models, and combine these into ChannelGroup vector
-    std::vector<ChannelGroup<StokesI, double>> channelgroups;
+    std::vector<double> freqs;
+    std::vector<HostArray<StokesI<double>, 2>> residuals;
+    std::vector<HostArray<thrust::complex<double>, 2>> psfs;
+
+    // Convolve the models and populate each of input vectors
     for (int n {}; n < N; ++n) {
         auto expected = convolve(models[n], dirtyPSF);
         expectedSum += expected;
 
-        channelgroups.push_back(ChannelGroup<StokesI, double>{
-            .channelIndex = n,
-            .midfreq = 1e6 * (n + 1),
-            .psf = HostArray<thrust::complex<double>, 2> {dirtyPSF},
-            .residual = std::move(expected)
-        });
+        freqs.push_back(1e6 * (n + 1));
+        psfs.emplace_back(dirtyPSF);
+        residuals.push_back(std::move(expected));
     }
     expectedSum /= StokesI<double>(N);
 
@@ -481,7 +481,7 @@ TEST_CASE("Clean", "[clean]") {
     };
 
     auto [components, iter, _] = clean::major(
-        channelgroups, gridspec, gridspec,
+        freqs, residuals, gridspec, psfs, gridspec,
         0.01, 0.991, 0, 0, std::numeric_limits<size_t>::max()
     );
 

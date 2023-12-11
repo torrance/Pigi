@@ -6,8 +6,10 @@
 
 #include <gsl/gsl_multifit.h>
 
-template <typename P> requires(std::is_floating_point<P>::value)
-std::vector<double> polyfit(std::span<P> xs, std::span<P> ys, int roots) {
+template <typename P1, typename P2> requires(
+    std::is_floating_point_v<P1>, std::is_floating_point_v<P2>
+)
+std::vector<double> polyfit(std::span<P1> xs, std::span<P2> ys, int roots) {
 
     // Create X matrix
     auto X = gsl_matrix_alloc(xs.size(), roots);

@@ -13,7 +13,7 @@ struct Config {
     int chanhigh;
     int channelsOut;
     double maxDuration;
-    std::map<int, std::vector<MeasurementSet>> msets;
+    std::vector<std::string> msets;
 
     // Data weigting
     std::string weight;

@@ -16,7 +16,6 @@
 #include <thrust/extrema.h>
 #include <thrust/iterator/zip_iterator.h>
 
-#include "channelgroup.h"
 #include "fft.h"
 #include "gridspec.h"
 #include "hip.h"
@@ -31,8 +30,10 @@ using ComponentMap = std::unordered_map<size_t, T>;
 
 template <typename S, int N>
 auto _major(
-    std::vector<ChannelGroup<StokesI, S>>& channelgroups,
+    std::vector<double>& freqs,
+    std::vector<HostArray<StokesI<S>, 2>>& residuals,
     const GridSpec imgGridspec,
+    std::vector<HostArray<thrust::complex<S>, 2>>& psfs,
     const GridSpec psfGridspec,
     const double minorgain,
     const double majorgain,
@@ -57,8 +58,8 @@ auto _major(
     S noise {};
     {
         HostArray<StokesI<S>, 2> imgCombined {imgGridspec.shape()};
-        for (auto& channelgroup : channelgroups) {
-            imgCombined += channelgroup.residual;
+        for (auto& residual : residuals) {
+            imgCombined += residual;
         }
         imgCombined /= StokesI<S>(N);
 
@@ -77,8 +78,8 @@ auto _major(
     S maxVal {};
     for (size_t idx {}; idx < imgGridspec.size(); ++idx) {
         S val {};
-        for (auto& channelgroup : channelgroups) {
-            val += channelgroup.residual[idx].I.real();
+        for (auto& residual : residuals) {
+            val += residual[idx].I.real();
         }
         maxVal = std::max(maxVal, std::abs(val / N));
     }
@@ -103,7 +104,7 @@ auto _major(
     for (size_t i {}; i < imgGridspec.size(); ++i) {
         std::array<S, N> vals;
         for (size_t n {}; n < N; ++n) {
-            vals[n] = channelgroups[n].residual[i].I.real();
+            vals[n] = residuals[n][i].I.real();
         }
 
         auto meanVal = std::apply([] (auto... vals) {
@@ -115,16 +116,12 @@ auto _major(
         }
     }
 
-    // Pre-allocate a vector of frequencies
-    std::array<S, N> freqs {};
-    for (size_t n {}; n < N; ++n) { freqs[n] = channelgroups[n].midfreq; }
-
     // Combine PSFs so that N axis is dense
-    HostArray<std::array<S, N>, 2> psfs {psfGridspec.shape()};
+    HostArray<std::array<S, N>, 2> psfsDense {psfGridspec.shape()};
     for (size_t n {}; n < N; ++n) {
-        auto& psf = channelgroups[n].psf;
+        auto& psf = psfs[n];
         for (size_t i {}; i < psfGridspec.size(); ++i) {
-            psfs[i][n] = psf[i].real();
+            psfsDense[i][n] = psf[i].real();
         }
     }
 
@@ -158,7 +155,7 @@ auto _major(
 
         // Fit polynomial to output
         // TODO: make root configurable
-        auto coeffs = polyfit<S>(freqs, maxVals, std::min(N, 2));
+        auto coeffs = polyfit<double, S>(freqs, maxVals, std::min(N, 2));
 
         // Evalate polynomial model and apply gain
         for (size_t n {}; n < N; ++n) {
@@ -199,7 +196,7 @@ auto _major(
             if (0 <= xpx && xpx < psfGridspec.Nx && 0 <= ypx && ypx < psfGridspec.Ny) {
                 auto idx = psfGridspec.gridToLinear(xpx, ypx);
 
-                auto psf = psfs[idx];
+                auto psf = psfsDense[idx];
                 for (size_t n {}; n < N; ++n) {
                     vals[n] -= maxVals[n] * psf[n];
                 }
@@ -248,8 +245,10 @@ auto _major(
 
 template <typename S>
 auto major(
-    std::vector<ChannelGroup<StokesI, S>>& channelgroups,
+    std::vector<double>& freqs,
+    std::vector<HostArray<StokesI<S>, 2>>& residuals,
     const GridSpec imgGridspec,
+    std::vector<HostArray<thrust::complex<S>, 2>>& psfs,
     const GridSpec psfGridspec,
     const double minorgain,
     const double majorgain,
@@ -257,64 +256,64 @@ auto major(
     const double autoThreshold,
     const size_t niter
 ) {
-    switch (channelgroups.size()) {
+    switch (freqs.size()) {
     case 1:
         return clean::_major<S, 1>(
-            channelgroups, imgGridspec, psfGridspec, minorgain, majorgain,
+            freqs, residuals, imgGridspec, psfs, psfGridspec, minorgain, majorgain,
             cleanThreshold, autoThreshold, niter
         );
         break;
     case 2:
         return clean::_major<S, 2>(
-            channelgroups, imgGridspec, psfGridspec, minorgain, majorgain,
+            freqs, residuals, imgGridspec, psfs, psfGridspec, minorgain, majorgain,
             cleanThreshold, autoThreshold, niter
         );
         break;
     case 3:
         return clean::_major<S, 3>(
-            channelgroups, imgGridspec, psfGridspec, minorgain, majorgain,
+            freqs, residuals, imgGridspec, psfs, psfGridspec, minorgain, majorgain,
             cleanThreshold, autoThreshold, niter
         );
         break;
     case 4:
         return clean::_major<S, 4>(
-            channelgroups, imgGridspec, psfGridspec, minorgain, majorgain,
+            freqs, residuals, imgGridspec, psfs, psfGridspec, minorgain, majorgain,
             cleanThreshold, autoThreshold, niter
         );
         break;
     case 5:
         return clean::_major<S, 5>(
-            channelgroups, imgGridspec, psfGridspec, minorgain, majorgain,
+            freqs, residuals, imgGridspec, psfs, psfGridspec, minorgain, majorgain,
             cleanThreshold, autoThreshold, niter
         );
         break;
     case 6:
         return clean::_major<S, 6>(
-            channelgroups, imgGridspec, psfGridspec, minorgain, majorgain,
+            freqs, residuals, imgGridspec, psfs, psfGridspec, minorgain, majorgain,
             cleanThreshold, autoThreshold, niter
         );
         break;
     case 7:
         return clean::_major<S, 7>(
-            channelgroups, imgGridspec, psfGridspec, minorgain, majorgain,
+            freqs, residuals, imgGridspec, psfs, psfGridspec, minorgain, majorgain,
             cleanThreshold, autoThreshold, niter
         );
         break;
     case 8:
         return clean::_major<S, 8>(
-            channelgroups, imgGridspec, psfGridspec, minorgain, majorgain,
+            freqs, residuals, imgGridspec, psfs, psfGridspec, minorgain, majorgain,
             cleanThreshold, autoThreshold, niter
         );
         break;
     case 9:
         return clean::_major<S, 9>(
-            channelgroups, imgGridspec, psfGridspec, minorgain, majorgain,
+            freqs, residuals, imgGridspec, psfs, psfGridspec, minorgain, majorgain,
             cleanThreshold, autoThreshold, niter
         );
         break;
     case 10:
         return clean::_major<S, 10>(
-            channelgroups, imgGridspec, psfGridspec, minorgain, majorgain,
+            freqs, residuals, imgGridspec, psfs, psfGridspec, minorgain, majorgain,
             cleanThreshold, autoThreshold, niter
         );
         break;

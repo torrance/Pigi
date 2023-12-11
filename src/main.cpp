@@ -7,6 +7,7 @@
 
 #include "config.h"
 #include "gridspec.h"
+#include "mpi.h"
 #include "mset.h"
 #include "routines.h"
 
@@ -233,18 +234,45 @@ int main(int argc, char** argv) {
         config.nMajor = nMajor.getValue() < 0 ?
                         std::numeric_limits<size_t>::max() : nMajor.getValue();
 
-        config.msets = MeasurementSet::partition(
-            fnames.getValue(), chanlow.getValue(), chanhigh.getValue(),
-            config.channelsOut, config.maxDuration
-        );
+        config.msets = fnames.getValue();
 
     } catch (TCLAP::ArgException &e) {
         fmt::println("Error: {} for argument {}", e.error(), e.argId());
     }
 
-    if (config.precision == 32) {
-        routines::clean<float>(config);
-    } else {
-        routines::clean<double>(config);
+    // Create MPI_Comm for hive
+    const int worldrank = MPI::getrank();
+    const int worldsize = MPI::getsize();
+
+    if (worldsize != config.channelsOut + 1) {
+        if (worldrank == 0) fmt::println(
+            stderr,
+            "Error: pigi must be started with (1 + --channels-out) processes; only {} detected",
+            worldsize
+        );
+        return 1;
     }
+
+    MPI_Comm comm;
+    MPI_Comm_split(MPI_COMM_WORLD, worldrank == 0, MPI::getrank(), &comm);
+
+    MPI_Comm intercom;
+    MPI_Intercomm_create(comm, 0, MPI_COMM_WORLD, worldrank == 0 ? 1 : 0, 0, &intercom);
+
+    if (worldrank == 0) {
+        if (config.precision == 32) {
+            routines::cleanQueen<float>(config, intercom);
+        } else {
+            routines::cleanQueen<double>(config, intercom);
+        }
+    } else {
+        if (config.precision == 32) {
+            routines::cleanWorker<float>(config, intercom, comm);
+        } else {
+            routines::cleanWorker<double>(config, intercom, comm);
+        }
+    }
+
+    MPI_Comm_free(&intercom);
+    MPI_Comm_free(&comm);
 }
