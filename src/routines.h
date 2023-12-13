@@ -1,6 +1,7 @@
 #pragma once
 
 #include <algorithm>
+#include <boost/mpi.hpp>
 #include <generator>
 #include <iterator>
 #include <memory>
@@ -25,30 +26,22 @@
 namespace routines {
 
 template <typename P>
-void cleanQueen(const Config& config, MPI_Comm hive) {
+void cleanQueen(const Config& config, boost::mpi::intercommunicator hive) {
     fmt::println("I am the colony queen! All shall love me and despair.");
 
-    const int hivesize = [&] {
-        int size;
-        MPI_Comm_remote_size(hive, &size);
-        return size;
-    }();
+    const int hivesize = hive.remote_size();
     fmt::println("Hive size is: {}", hivesize);
 
     const std::ranges::iota_view<int, int> srcs{0, hivesize};
 
-    std::vector<double> freqs;
+    std::vector<double> freqs(hivesize);
     for (const int src : srcs) {
-        freqs.push_back(
-            MPI::recv<double>(hive, src)
-        );
+        hive.recv(src, boost::mpi::any_source, freqs[src]);
     }
 
-    std::vector<HostArray<thrust::complex<P>, 2>> psfs;
+    std::vector<HostArray<thrust::complex<P>, 2>> psfs(hivesize);
     for (const int src : srcs) {
-        psfs.push_back(
-            MPI::recv<thrust::complex<P>, 2>(hive, src)
-        );
+        hive.recv(src, boost::mpi::any_source, psfs[src]);
     }
 
     PSF<P> psf;
@@ -71,7 +64,7 @@ void cleanQueen(const Config& config, MPI_Comm hive) {
 
         // Send gridspecPsf to workers; they will use this to crop their own psfs
         for (const int src : srcs) {
-            MPI::send<GridSpec>(gridspecPsf, hive, src);
+            hive.send(src, 0, gridspecPsf);
         }
 
         for (auto& psf : psfs) {
@@ -84,11 +77,9 @@ void cleanQueen(const Config& config, MPI_Comm hive) {
     }
 
     // Collect initial residual images from workers
-    std::vector<HostArray<StokesI<P>, 2>> residuals;
+    std::vector<HostArray<StokesI<P>, 2>> residuals(hivesize);
     for (const int src : srcs) {
-        residuals.push_back(
-            MPI::recv<StokesI<P>, 2>(hive, src)
-        );
+        hive.recv(src, boost::mpi::any_tag, residuals[src]);
     }
 
     // Write out dirty combined
@@ -108,7 +99,7 @@ void cleanQueen(const Config& config, MPI_Comm hive) {
         ++imajor
     ) {
         // Signal continuation of clean loop to workers
-        for (const int src : srcs) { MPI::send(true, hive, src); }
+        for (const int src : srcs) { hive.send(src, 0, true); }
 
         auto [minorComponentsMaps, iters, finalMajor] = clean::major<P>(
             freqs, residuals, config.gridconf.grid(), psfs, gridspecPsf,
@@ -124,12 +115,12 @@ void cleanQueen(const Config& config, MPI_Comm hive) {
                 minorComponents[idx] = val;
             }
 
-            MPI::send<StokesI<P>, 2>(minorComponents, hive, src);
+            hive.send(src, 0, minorComponents);
         }
 
         // Gather new residuals from workers
         for (const int src : srcs) {
-            residuals[src] = MPI::recv<StokesI<P>, 2>(hive, src);
+            hive.recv(src, boost::mpi::any_tag, residuals[src]);
         }
 
         if (finalMajor) {
@@ -138,15 +129,19 @@ void cleanQueen(const Config& config, MPI_Comm hive) {
     }
 
     // Signal end of clean loop to workers
-    for (const int src : srcs) { MPI::send(false, hive, src); }
+    for (const int src : srcs) { hive.send(src, 0, false); }
 
     // Write out the final images to disk
     HostArray<StokesI<P>, 2> residualCombined {config.gridconf.grid().shape()};
     HostArray<StokesI<P>, 2> componentsCombined {config.gridconf.grid().shape()};
 
-    for (const int src : srcs) {
-        residualCombined += residuals[src];
-        componentsCombined += MPI::recv<StokesI<P>, 2>(hive, src);
+    {
+        HostArray<StokesI<P>, 2> components;
+        for (const int src : srcs) {
+            residualCombined += residuals[src];
+            hive.recv(src, boost::mpi::any_tag, components);
+            componentsCombined += components;
+        }
     }
 
     residualCombined /= StokesI<P>(hivesize);
@@ -161,9 +156,13 @@ void cleanQueen(const Config& config, MPI_Comm hive) {
 }
 
 template <typename P>
-void cleanWorker(const Config& config, MPI_Comm queen, MPI_Comm hive) {
-    const int rank = MPI::getrank(hive);
-    const int hivesize = MPI::getsize(hive);
+void cleanWorker(
+    const Config& config,
+    boost::mpi::intercommunicator queen,
+    boost::mpi::communicator hive
+) {
+    const int rank = hive.rank();
+    const int hivesize = hive.size();
 
     fmt::println("Worker bee with rank {}, reporting for duty!", rank);
 
@@ -180,7 +179,7 @@ void cleanWorker(const Config& config, MPI_Comm queen, MPI_Comm hive) {
         std::numeric_limits<double>::min(), std::numeric_limits<double>::max()
     );
 
-    MPI::send(mset.midfreq(), queen, 0);
+    queen.send(0, 0, mset.midfreq());
 
     auto uvdata = [&] () -> std::generator<UVDatum<P>> {
         for (auto& uvdatum : mset) {
@@ -228,40 +227,48 @@ void cleanWorker(const Config& config, MPI_Comm queen, MPI_Comm hive) {
     // Create psf
     HostArray<thrust::complex<P>, 2> psf;
     {
-        MPI::Lock lock(hive);
+        mpi::Lock lock(hive);
         fmt::println(
             "Worker [{}/{}]: Constructing PSF...",
             rank + 1, hivesize
         );
         psf = invert<thrust::complex, P>(workunits, config.gridconf, true);
-        MPI::send<thrust::complex<P>, 2>(psf, queen, 0);
+        queen.send(0, 0, psf);
     };
     if (hivesize > 1) save(fmt::format("psf-{:02d}.fits", rank + 1), psf);
 
-    auto gridspecPsf = MPI::recv<GridSpec>(queen, 0);
+    GridSpec gridspecPsf;
+    queen.recv(0, boost::mpi::any_tag, gridspecPsf);
     psf = resize(psf, config.gridconf.grid(), gridspecPsf);
 
     // Initial inversion
     HostArray<StokesI<P>, 2> residual;
     {
-        MPI::Lock lock(hive);
+        mpi::Lock lock(hive);
         fmt::println(
             "Worker [{}/{}]: Constructing dirty image...",
             rank + 1, hivesize
         );
         residual = invert<StokesI, P>(workunits, config.gridconf);
-        MPI::send<StokesI<P>, 2>(residual, queen, 0);
+        queen.send(0, 0, residual);
     };
     if (hivesize > 1) save(fmt::format("dirty-{:02d}.fits", rank + 1), residual);
 
     // Initialize components array
     HostArray<StokesI<P>, 2> components{config.gridconf.grid().shape()};
 
+    // This flag is set by the queen, indicating whether to proceed
+    // for each major clean loop
+    bool again;
+    queen.recv(0, boost::mpi::any_tag, again);
+
     // Clean loops
-    while (MPI::recv<bool>(queen, 0)) {
+    while (again) {
+
         // Predict
         {
-            auto minorComponents = MPI::recv<StokesI<P>, 2>(queen, 0);
+            HostArray<StokesI<P>, 2> minorComponents;
+            queen.recv(0, boost::mpi::any_tag, minorComponents);
             components += minorComponents;
 
             // Correct for beamPower
@@ -269,7 +276,7 @@ void cleanWorker(const Config& config, MPI_Comm queen, MPI_Comm hive) {
                 minorComponents[i] /= beamPower[i];
             }
 
-            MPI::Lock lock(hive);
+            mpi::Lock lock(hive);
 
             fmt::println(
                 "Worker [{}/{}]: Removing clean components from uvdata...",
@@ -280,16 +287,19 @@ void cleanWorker(const Config& config, MPI_Comm queen, MPI_Comm hive) {
 
         // Invert
         {
-            MPI::Lock lock(hive);
+            mpi::Lock lock(hive);
             fmt::println(
                 "Worker [{}/{}]: Constructing residual image...", rank + 1, hivesize
             );
             residual = invert<StokesI, P>(workunits, config.gridconf);
-            MPI::send<StokesI<P>, 2>(residual, queen, 0);
+            queen.send(0, 0, residual);
         }
+
+        // Listen for major loop termination signal from queen
+        queen.recv(0, boost::mpi::any_tag, again);
     }
 
-    MPI::send<StokesI<P>, 2>(components, queen, 0);
+    queen.send(0, 0, components);
 
     // Write out data
     if (hivesize > 1) {

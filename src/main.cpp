@@ -2,12 +2,12 @@
 #include <limits>
 #include <string>
 
+#include <boost/mpi.hpp>
 #include <fmt/format.h>
 #include <tclap/CmdLine.h>
 
 #include "config.h"
 #include "gridspec.h"
-#include "mpi.h"
 #include "mset.h"
 #include "routines.h"
 
@@ -241,25 +241,22 @@ int main(int argc, char** argv) {
     }
 
     // Create MPI_Comm for hive
-    const int worldrank = MPI::getrank();
-    const int worldsize = MPI::getsize();
+    boost::mpi::environment env;
+    boost::mpi::communicator world;
 
-    if (worldsize != config.channelsOut + 1) {
-        if (worldrank == 0) fmt::println(
+    if (world.size() != config.channelsOut + 1) {
+        if (world.rank() == 0) fmt::println(
             stderr,
             "Error: pigi must be started with (1 + --channels-out) processes; only {} detected",
-            worldsize
+            world.size()
         );
         return 1;
     }
 
-    MPI_Comm comm;
-    MPI_Comm_split(MPI_COMM_WORLD, worldrank == 0, MPI::getrank(), &comm);
+    auto local = world.split(world.rank() == 0);
+    boost::mpi::intercommunicator intercom(local, 0, world, world.rank() == 0);
 
-    MPI_Comm intercom;
-    MPI_Intercomm_create(comm, 0, MPI_COMM_WORLD, worldrank == 0 ? 1 : 0, 0, &intercom);
-
-    if (worldrank == 0) {
+    if (world.rank() == 0) {
         if (config.precision == 32) {
             routines::cleanQueen<float>(config, intercom);
         } else {
@@ -267,12 +264,9 @@ int main(int argc, char** argv) {
         }
     } else {
         if (config.precision == 32) {
-            routines::cleanWorker<float>(config, intercom, comm);
+            routines::cleanWorker<float>(config, intercom, local);
         } else {
-            routines::cleanWorker<double>(config, intercom, comm);
+            routines::cleanWorker<double>(config, intercom, local);
         }
     }
-
-    MPI_Comm_free(&intercom);
-    MPI_Comm_free(&comm);
 }
