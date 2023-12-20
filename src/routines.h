@@ -264,7 +264,6 @@ void cleanWorker(
 
     // Clean loops
     while (again) {
-
         // Predict
         {
             HostArray<StokesI<P>, 2> minorComponents;

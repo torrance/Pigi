@@ -4,11 +4,44 @@
 
 #include <fmt/format.h>
 #include <boost/archive/basic_archive.hpp>
+#include <boost/mpi.hpp>
+#include <boost/serialization/string.hpp>
+#include <boost/serialization/vector.hpp>
+#include <thrust/complex.h>
 
+#include "config.h"
+#include "gridspec.h"
 #include "memory.h"
+#include "outputtypes.h"
+
+BOOST_IS_BITWISE_SERIALIZABLE(GridConfig);
 
 namespace boost {
     namespace serialization {
+        template<class Archive>
+        void serialize(Archive& ar, Config& payload, const unsigned) {
+            ar & payload.precision;
+            ar & payload.chanlow;
+            ar & payload.chanhigh;
+            ar & payload.channelsOut;
+            ar & payload.maxDuration;
+            ar & payload.msets;
+            ar & payload.weight;
+            ar & payload.robust;
+            ar & payload.size;
+            ar & payload.scale;
+            ar & payload.kernelsize;
+            ar & payload.paddingfactor;
+            ar & payload.wstep;
+            ar & payload.majorgain;
+            ar & payload.minorgain;
+            ar & payload.cleanThreshold;
+            ar & payload.autoThreshold;
+            ar & payload.nMajor;
+            ar & payload.nMinor;
+            ar & payload.gridconf;
+        }
+
         template<class Archive, typename T, int N>
         void serialize(Archive& ar, HostArray<T, N>& payload, const unsigned) {
             auto dims = payload.shape();

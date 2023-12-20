@@ -45,7 +45,7 @@ include_directories(${hippath})
 
 find_package(Catch2 3 REQUIRED)
 find_package(MPI REQUIRED COMPONENTS C)
-find_package(Boost REQUIRED COMPONENTS mpi serialization)
+find_package(Boost REQUIRED COMPONENTS mpi program_options serialization)
 
 # Required libraries
 find_library(Lcasa_casa NAMES casa_casa REQUIRED)
@@ -61,7 +61,7 @@ find_path(Ifmt fmt/format.h)
 find_library(Lhipfft NAMES hipfft PATHS ${hippath}/lib REQUIRED)
 find_path(Ihyperbeam NAMES mwa_hyperbeam.h REQUIRED)
 find_library(Lhyperbeam NAMES mwa_hyperbeam REQUIRED)
-find_path(Itclap NAMES tclap/CmdLine.h PATHS ${CMAKE_CURRENT_SOURCE_DIR}/external/tclap/include REQUIRED)
+find_path(Itoml11 NAMES toml11/toml.hpp PATHS ${CMAKE_CURRENT_SOURCE_DIR}/external REQUIRED)
 find_path(Igenerator NAMES generator PATHS ${CMAKE_CURRENT_SOURCE_DIR}/external/generator/include REQUIRED)
 
 if(${platform} STREQUAL nvidia)
@@ -70,8 +70,8 @@ endif()
 
 add_executable(main src/main.cpp)
 target_compile_options(main PRIVATE ${hipcxxflags})
-target_include_directories(main PRIVATE ${Igenerator} ${Itclap} ${Ifmt} ${Igsl} ${Icfitsio} ${Icasa} ${Ihyperbeam} ${MPI_C_INCLUDE_DIRS})
-target_link_libraries(main PRIVATE pthread ${Lcasa_casa} ${Lcasa_tables} ${Lcasa_measures} ${Lgsl} ${Lcfitsio} ${Lfmt} ${Lhipfft} ${Lhyperbeam} ${Lcufft} ${MPI_C_LIBRARIES} Boost::mpi Boost::serialization)
+target_include_directories(main PRIVATE ${Igenerator} ${Ifmt} ${Igsl} ${Icfitsio} ${Icasa} ${Ihyperbeam} ${MPI_C_INCLUDE_DIRS} ${Itoml11}/..)
+target_link_libraries(main PRIVATE pthread ${Lcasa_casa} ${Lcasa_tables} ${Lcasa_measures} ${Lgsl} ${Lcfitsio} ${Lfmt} ${Lhipfft} ${Lhyperbeam} ${Lcufft} ${MPI_C_LIBRARIES} Boost::mpi Boost::program_options Boost::serialization)
 
 add_executable(test src/test.cpp)
 target_compile_options(test PRIVATE ${hipcxxflags})

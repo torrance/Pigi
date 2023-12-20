@@ -185,8 +185,8 @@ public:
         const std::string fname,
         const int chanlow,
         const int chanhigh,
-        const double timelow,
-        const double timehigh
+        const double timelow = std::numeric_limits<double>::min(),
+        const double timehigh = std::numeric_limits<double>::max()
     ) : tbl(fname),
         chanlow(chanlow), chanhigh(chanhigh), timelow(timelow), timehigh(timehigh) {
 
@@ -213,6 +213,12 @@ public:
             casacore::Slicer::endIsLast
         }).tovector();
 
+        // Set actual chanhigh
+        this->chanhigh = std::min<int>(this->chanhigh, freqs.size() - 1);
+        if (this->chanhigh == -1) {
+            this->chanhigh = freqs.size() - 1;
+        }
+
         fmt::println("Measurement set {} opened", fname);
         fmt::println(
             "    Channels {} - {} ({:.1f} - {:.1f} MHz) Times {:.0f} - {:.0f} selected",
@@ -223,6 +229,10 @@ public:
 
     auto begin() { return Iterator(*this); }
     auto end() { return Iterator(*this, -1); }
+
+    auto channelrange() {
+        return std::make_tuple(chanlow, chanhigh);
+    }
 
     double midfreq() const {
         // TODO: Maybe (?) calculate midfreq using data weights?
