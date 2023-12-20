@@ -170,7 +170,7 @@ void cleanWorker(
     // upper channel is inclusive in the range
     const int chanwidth = (config.chanhigh - config.chanlow + 1) / config.channelsOut;
     const int chanlow = config.chanlow + chanwidth * rank;
-    const int chanhigh = std::min(chanwidth * (rank + 1) - 1, config.chanhigh);
+    const int chanhigh = std::min(chanlow + chanwidth * (rank + 1) - 1, config.chanhigh);
 
     // TODO: Concatenate measurement sets
     // For now, just take the first mset

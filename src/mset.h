@@ -207,11 +207,7 @@ public:
         // Get channel / freq information
         auto subtbl = tbl.keywordSet().asTable({"SPECTRAL_WINDOW"});
         casacore::ArrayColumn<double> freqsCol(subtbl, "CHAN_FREQ");
-
-        freqs = freqsCol.getSlice(0, casacore::Slicer{
-            casacore::IPosition {chanlow}, casacore::IPosition {chanhigh},
-            casacore::Slicer::endIsLast
-        }).tovector();
+        freqs = freqsCol.get(0).tovector();
 
         // Set actual chanhigh
         this->chanhigh = std::min<int>(this->chanhigh, freqs.size() - 1);
@@ -219,10 +215,16 @@ public:
             this->chanhigh = freqs.size() - 1;
         }
 
+        // Trim the freqs to the actual channel range
+        freqs = freqsCol.getSlice(0, casacore::Slicer{
+            casacore::IPosition {this->chanlow}, casacore::IPosition {this->chanhigh},
+            casacore::Slicer::endIsLast
+        }).tovector();
+
         fmt::println("Measurement set {} opened", fname);
         fmt::println(
             "    Channels {} - {} ({:.1f} - {:.1f} MHz) Times {:.0f} - {:.0f} selected",
-            chanlow, chanhigh, freqs.front() / 1e6, freqs.back() / 1e6,
+            this->chanlow, this->chanhigh, freqs.front() / 1e6, freqs.back() / 1e6,
             this->timelow, this->timehigh
         );
     }
