@@ -214,7 +214,10 @@ void cleanWorker(
     );
 
     // Partition data and write to disk
+    fmt::println("Worker [{}/{}]: Reading and partitioning data...", rank + 1, hivesize);
     auto workunits = partition(uvdata(), config.gridconf, Aterms);
+
+    applyWeights(*weighter, workunits);
 
     // Create beam power at standard grid resolution
     HostArray<StokesI<P>, 2> beamPower {config.gridconf.subgrid().shape()};
