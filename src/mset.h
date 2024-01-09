@@ -226,6 +226,16 @@ public:
             tbl.col("TIME_CENTROID") <= timehigh
         );
 
+        // Remove auto-correlations
+        tbl = tbl(
+            tbl.col("ANTENNA1") != tbl.col("ANTENNA2")
+        );
+
+        // Remove flagged row
+        tbl = tbl(
+            !tbl.col("FLAG_ROW")
+        );
+
         fieldtbl = casacore::tableCommand(
             "SELECT t2.PHASE_DIR FROM $1 t1 "
             "JOIN ::FIELD t2 ON t1.FIELD_ID = msid(t2.FIELD_ID)",

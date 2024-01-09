@@ -129,7 +129,7 @@ TEST_CASE("Measurement Set & Partition", "[mset]") {
         n += workunit.data.size();
     }
 
-    REQUIRE( n == 2790000 );
+    REQUIRE( n == 2745360 );
 
     SECTION("Phase center coordinate conversion") {
         auto radec = mset.phaseCenter();
