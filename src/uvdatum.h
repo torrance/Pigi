@@ -1,11 +1,21 @@
 #pragma once
 
+#include "coordinates.h"
 #include "outputtypes.h"
+#include "sharedhostptr.h"
+
+struct UVMeta {
+    long row;
+    double time;
+    long ant1;
+    long ant2;
+    RaDec phasecenter;
+};
 
 template <typename T>
 struct alignas(16) UVDatum {
-    size_t row;
-    size_t chan;
+    SharedHostPtr<UVMeta> meta;
+    int chan;
     T u;
     T v;
     T w;
@@ -15,7 +25,7 @@ struct alignas(16) UVDatum {
     template <typename S>
     explicit operator UVDatum<S>() const {
         return UVDatum<S> {
-            row, chan,
+            meta, chan,
             static_cast<S>(u), static_cast<S>(v), static_cast<S>(w),
             static_cast<LinearData<S>>(weights),
             static_cast<ComplexLinearData<S>>(data)

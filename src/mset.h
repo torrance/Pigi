@@ -1,7 +1,6 @@
 #pragma once
 
 #include <algorithm>
-#include <map>
 #include <limits>
 #include <string>
 #include <utility>
@@ -21,11 +20,15 @@ public:
         Iterator(MeasurementSet& mset, long nstart = 0) :
             mset(mset), lambdas(mset.freqs), nstart(nstart),
             uvwCol(mset.tbl, "UVW"),
+            timeCol(mset.tbl, "TIME_CENTROID"),
+            ant1Col(mset.tbl, "ANTENNA1"),
+            ant2Col(mset.tbl, "ANTENNA2"),
             flagrowCol(mset.tbl, "FLAG_ROW"),
             flagCol(mset.tbl, "FLAG"),
             weightCol(mset.tbl, "WEIGHT"),
             weightspectrumCol(mset.tbl, "WEIGHT_SPECTRUM"),
-            dataCol(mset.tbl, "CORRECTED_DATA") {
+            dataCol(mset.tbl, "CORRECTED_DATA"),
+            phaseCenterCol(mset.fieldtbl, "PHASE_DIR") {
 
             // Ensure our expectations about the size of cells are valid.
             // Cells selected using the slice are guaranteed to be correct and we don't need to
@@ -60,18 +63,26 @@ public:
         long nstart {};
 
         casacore::ArrayColumn<double> uvwCol;
+        casacore::ScalarColumn<double> timeCol;
+        casacore::ScalarColumn<int> ant1Col;
+        casacore::ScalarColumn<int> ant2Col;
         casacore::ScalarColumn<bool> flagrowCol;
         casacore::ArrayColumn<bool> flagCol;
         casacore::ArrayColumn<float> weightCol;
         casacore::ArrayColumn<float> weightspectrumCol;
         casacore::ArrayColumn<std::complex<float>> dataCol;
+        casacore::ArrayColumn<double> phaseCenterCol;
 
         casacore::Array<double> uvwArray;
+        casacore::Vector<double> timeArray;
+        casacore::Vector<int> ant1Array;
+        casacore::Vector<int> ant2Array;
         casacore::Vector<bool> flagrowArray;
         casacore::Array<bool> flagArray;
         casacore::Array<float> weightArray;
         casacore::Array<float> weightspectrumArray;
         casacore::Array<std::complex<float>> dataArray;
+        casacore::Array<double> phaseCenterArray;
 
         void rebuild_cache() {
             // Clear the cache
@@ -107,28 +118,47 @@ public:
 
             // Fetch row data in arrays
             uvwCol.getColumnRange(rowSlice, uvwArray, true);
+            timeCol.getColumnRange(rowSlice, timeArray, true);
+            ant1Col.getColumnRange(rowSlice, ant1Array, true);
+            ant2Col.getColumnRange(rowSlice, ant2Array, true);
             weightCol.getColumnRange(rowSlice, weightArray, true);
             flagrowCol.getColumnRange(rowSlice, flagrowArray, true);
             flagCol.getColumnRange(rowSlice, arraySlice, flagArray, true);
             weightspectrumCol.getColumnRange(rowSlice, arraySlice, weightspectrumArray, true);
             dataCol.getColumnRange(rowSlice, arraySlice, dataArray, true);
+            phaseCenterCol.getColumnRange(rowSlice, phaseCenterArray, true);
 
             // Create iterators
             auto uvwIter = uvwArray.begin();
+            auto timeIter = timeArray.begin();
+            auto ant1Iter = ant1Array.begin();
+            auto ant2Iter = ant2Array.begin();
             auto flagrowIter = flagrowArray.begin();
             auto weightIter = weightArray.begin();
             auto dataIter = dataArray.begin();
             auto weightspectrumIter = weightspectrumArray.begin();
             auto flagIter = flagArray.begin();
+            auto phaseCenterIter = phaseCenterArray.begin();
 
             for (long nrow {nstart}; nrow <= nend; ++nrow) {
                 double u_m = *uvwIter; ++uvwIter;
                 double v_m = -(*uvwIter); ++uvwIter;  // Invert v for MWA observations only (?)
                 double w_m = *uvwIter; ++uvwIter;
 
+                double time = *timeIter; ++timeIter;
+                int ant1 = *ant1Iter; ++ant1Iter;
+                int ant2 = *ant2Iter; ++ant2Iter;
+
                 bool flagrow = *flagrowIter; ++flagrowIter;
 
-                for (size_t ncol {}; ncol < lambdas.size(); ++ncol) {
+                double ra0 = *phaseCenterIter; ++phaseCenterIter;
+                double dec0 = *phaseCenterIter; ++phaseCenterIter;
+
+                auto rowmeta = makesharedhost<UVMeta>(
+                    nrow, time, ant1, ant2, RaDec{ra0, dec0}
+                );
+
+                for (int ncol {}; ncol < static_cast<int>(lambdas.size()); ++ncol) {
                     double u = u_m / lambdas[ncol];
                     double v = v_m / lambdas[ncol];
                     double w = w_m / lambdas[ncol];
@@ -169,7 +199,7 @@ public:
                     }
 
                     cache.push_back(UVDatum<double> {
-                        static_cast<size_t>(nrow), ncol, u, v, w, weights, data
+                        rowmeta, ncol, u, v, w, weights, data
                     });
                 }  // chan iteration
             }  // nrow iteration
@@ -196,6 +226,12 @@ public:
             tbl.col("TIME_CENTROID") <= timehigh
         );
 
+        fieldtbl = casacore::tableCommand(
+            "SELECT t2.PHASE_DIR FROM $1 t1 "
+            "JOIN ::FIELD t2 ON t1.FIELD_ID = msid(t2.FIELD_ID)",
+            tbl
+        ).table();
+
         // Set actual timelow and timehigh
         casacore::Vector<double> timeCol(
             (casacore::ScalarColumn<double> {tbl, "TIME_CENTROID"}).getColumn()
@@ -205,6 +241,7 @@ public:
         this->timehigh = *std::get<1>(minmax);
 
         // Get channel / freq information
+        // We assume the spectral window is identical for all
         auto subtbl = tbl.keywordSet().asTable({"SPECTRAL_WINDOW"});
         casacore::ArrayColumn<double> freqsCol(subtbl, "CHAN_FREQ");
         freqs = freqsCol.get(0).tovector();
@@ -282,84 +319,9 @@ public:
         };
     }
 
-    static std::map<int, std::vector<MeasurementSet>> partition(
-        std::vector<std::string> fnames,
-        int chanlow, int chanhigh,
-        int channelsOut = 1,
-        double maxDuration = std::numeric_limits<double>::max()
-    ) {
-        std::map<int, std::vector<MeasurementSet>> msets;
-
-        // ASSUME: All spectral indices match the first table
-        // TODO: Pass in chanlo and chanhi
-        auto spectralWindowTbl = casacore::Table(fnames[0])
-            .keywordSet().asTable("SPECTRAL_WINDOW");
-
-        auto freqs = casacore::ArrayColumn<double>(spectralWindowTbl, "CHAN_FREQ")
-            .get(0).tovector();
-
-        // Ensure chanlow >= 0
-        chanlow = std::max(0, chanlow);
-
-        // If chan is set > than the number of channels, assume we want up to max channels
-        chanhigh = std::min<int>(chanhigh, freqs.size() - 1);
-
-        auto chanlength = chanhigh - chanlow + 1;  // +1 since chanhigh is inclusive
-
-        // channelBounds contains pairs of low and high channels (inclusive)
-        std::vector<std::pair<int, int>> channelBounds {0};
-        for (
-            int chanBoundLow {};
-            chanBoundLow < chanhigh;
-            chanBoundLow += std::ceil(chanlength / channelsOut)
-        ) {
-            int chanBoundHigh = std::min<int>(
-                chanBoundLow + std::ceil(chanlength / channelsOut) - 1, chanhigh
-            );
-            channelBounds.push_back({chanBoundLow, chanBoundHigh});
-        }
-
-        for (auto fname : fnames) {
-            // ASSUME: One observation per mset
-            // TODO: Fix this
-            auto observationTbl = casacore::Table(fname).keywordSet().asTable("OBSERVATION");
-            auto timeRange = casacore::ArrayColumn<double>(observationTbl, "TIME_RANGE")
-                .get(0).tovector();
-
-            double duration = (timeRange[1] - timeRange[0]);
-            int timesOut = std::ceil(duration / maxDuration);
-
-            // timelow <= x < timehigh
-            for (int tn {}; tn < timesOut; ++tn) {
-                double timelow = tn * duration / timesOut + timeRange[0];
-                double timehigh = (tn + 1) * duration / timesOut + timeRange[0];
-
-                // With the exception of the last interval, we don't want the upper bound
-                // to be inclusive.
-                timehigh = std::nexttoward(timehigh, 0.);
-
-                // Avoid floating point errors, since we are testing using equality
-                if (tn == timesOut - 1) timehigh = timeRange[1];
-
-                for (int channelIndex {}; auto [chanBoundLow, chanBoundHigh] : channelBounds) {
-                    msets[++channelIndex].emplace_back(
-                        fname, chanBoundLow, chanBoundHigh, timelow, timehigh
-                    );
-
-                    fmt::println(
-                        "Opened mset {} channels {} - {}, time {} - {}",
-                        fname, chanBoundLow, chanBoundHigh, timelow, timehigh
-                    );
-                }
-
-            }
-        }
-
-        return msets;
-    }
-
 private:
     casacore::Table tbl;
+    casacore::Table fieldtbl;
     std::vector<double> freqs;
     int chanlow;
     int chanhigh;

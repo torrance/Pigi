@@ -184,6 +184,7 @@ TEMPLATE_TEST_CASE_SIG(
     }
 
     // Create uvdata
+    SharedHostPtr<UVMeta> meta;
     std::vector<UVDatum<double>> uvdata64;
     {
         std::mt19937 gen(1234);
@@ -225,7 +226,7 @@ TEMPLATE_TEST_CASE_SIG(
 
             // TODO: use emplace_back() when we can upgrade Clang
             uvdata64.push_back(
-                {i, 0, u, v, w, weights, data}
+                {meta, static_cast<int>(i), u, v, w, weights, data}
             );
         }
     }
@@ -316,6 +317,7 @@ TEMPLATE_TEST_CASE_SIG(
 
     // Create empty UVDatum
     std::vector<UVDatum<Q>> uvdata;
+    auto meta = makesharedhost<UVMeta>(0, 12345.6, 1, 5, RaDec{0, 1});
     for (size_t i {}; i < 5000; ++i) {
         Q u {randfloats(gen)}, v {randfloats(gen)}, w {randfloats(gen)};
         u = u * 1000;
@@ -324,7 +326,7 @@ TEMPLATE_TEST_CASE_SIG(
 
         // TODO: use emplace_back() when we can upgrade Clang
         uvdata.push_back({
-            i, 0, u, v, w,
+            meta, static_cast<int>(i), u, v, w,
             LinearData<Q> {1, 1, 1, 1},
             ComplexLinearData<Q> {0, 0, 0, 0}
         });
@@ -389,10 +391,10 @@ TEMPLATE_TEST_CASE_SIG(
     );
 
     // Flatten workunits back into uvdata and sort back to original order
-    // using the row attribute
+    // using the chan attribute
     for (const auto& workunit : workunits) {
         for (const auto& uvdatum : workunit.data) {
-            uvdata[uvdatum.row] = uvdatum;
+            uvdata[uvdatum.chan] = uvdatum;
         }
     }
 
@@ -420,7 +422,8 @@ TEMPLATE_TEST_CASE_SIG(
     fmt::println("Prediction max diff: {}", maxdiff);
 
     REQUIRE( maxdiff != -1 );
-    REQUIRE( maxdiff < THRESHOLDF * std::pow(10, THRESHOLDP));
+    REQUIRE( maxdiff < THRESHOLDF * std::pow(10, THRESHOLDP) );
+    REQUIRE( uvdata[0].meta->time == 12345.6 );
 }
 
 TEST_CASE("Clean", "[clean]") {
