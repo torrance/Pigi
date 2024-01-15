@@ -93,15 +93,14 @@ int main(int argc, char** argv) {
         if (vm.count("mset")) {
             // msets on the command line take precdence over those the config file
             config.msets = vm["mset"].as<std::vector<std::string>>();
+        }
 
+        if (config.msets.size()) {
             // Test opening of msets and replace
             // any default values: e.g. chanhigh == -1
-            // TODO: Concatenate msets
-            for (auto& fn : config.msets) {
-                MeasurementSet mset(fn, config.chanlow, config.chanhigh);
-                auto [_, chanhigh] = mset.channelrange();
-                config.chanhigh = chanhigh;
-            }
+            MeasurementSet mset(config.msets, config.chanlow, config.chanhigh);
+            auto [_, chanhigh] = mset.channelrange();
+            config.chanhigh = chanhigh;
         } else {
             printheader(stderr);
             fmt::println(stderr, "No msets provided; doing nothing");

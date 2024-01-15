@@ -175,7 +175,7 @@ void cleanWorker(
     // TODO: Concatenate measurement sets
     // For now, just take the first mset
     MeasurementSet mset(
-        config.msets.front(), chanlow, chanhigh,
+        config.msets, chanlow, chanhigh,
         std::numeric_limits<double>::min(), std::numeric_limits<double>::max()
     );
 

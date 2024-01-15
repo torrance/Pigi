@@ -3,8 +3,10 @@
 #include <algorithm>
 #include <limits>
 #include <string>
+#include <stdexcept>
 #include <utility>
 
+#include <casacore/ms/MeasurementSets.h>
 #include <casacore/tables/Tables.h>
 
 #include "channel.h"
@@ -145,7 +147,7 @@ public:
                 double v_m = -(*uvwIter); ++uvwIter;  // Invert v for MWA observations only (?)
                 double w_m = *uvwIter; ++uvwIter;
 
-                double time = *timeIter; ++timeIter;
+                double time = *timeIter / 86400.; ++timeIter;
                 int ant1 = *ant1Iter; ++ant1Iter;
                 int ant2 = *ant2Iter; ++ant2Iter;
 
@@ -212,13 +214,67 @@ public:
     MeasurementSet() = default;
 
     MeasurementSet(
-        const std::string fname,
+        const std::vector<std::string>& fnames,
         const int chanlow,
         const int chanhigh,
         const double timelow = std::numeric_limits<double>::min(),
         const double timehigh = std::numeric_limits<double>::max()
-    ) : tbl(fname),
-        chanlow(chanlow), chanhigh(chanhigh), timelow(timelow), timehigh(timehigh) {
+    ) : chanlow(chanlow), chanhigh(chanhigh), timelow(timelow), timehigh(timehigh) {
+        // Concatenate tables, whilst preserving FIELD_ID correctness
+        {
+            casacore::Block<casacore::String> fnamesblock(fnames.size());
+            for (size_t i {}; i < fnames.size(); ++i) {
+                fnamesblock[i] = fnames[i];
+            }
+
+            // Concatenate the following tables; the default is to use
+            // only the first table's subtables.
+            casacore::Block<casacore::String> concats(3);
+            concats[0] = "FIELD";
+            concats[1] = "OBSERVATION";
+            concats[2] = "MWA_TILE_POINTING";
+
+            casacore::Table tbls(fnamesblock, concats);
+            tbls.rename(std::tmpnam(NULL), casacore::Table::New);
+            tbls.flush();
+
+            // Once concatenated, we can create a reference table that forwards columns
+            // to the concatenated table. The exceptions are index columns to concatenated
+            // subtables, which we need to update.
+            casacore::Block<casacore::String> freshcols(2);
+            freshcols[0] = "FIELD_ID";
+            freshcols[1] = "OBSERVATION_ID";
+            tbl = casacore::MeasurementSet(tbls).referenceCopy("/tmp/concat1.ms", freshcols);
+
+            long mainOffset {}, fieldIdOffset {}, observationIdOffset {};
+            for (auto& fname : fnames) {
+                casacore::MeasurementSet ms0(fname);
+
+                // Increment the field ID by the offset
+                auto fieldIds = casacore::MSMainColumns(ms0).fieldId().getColumn();
+                for (auto& fieldId : fieldIds) fieldId += fieldIdOffset;
+                fieldIdOffset += ms0.field().nrow();
+
+                // And write updated ID back into concatenated field_id column
+                casacore::MSMainColumns(tbl).fieldId().putColumnRange(
+                    {casacore::IPosition(1, mainOffset), casacore::IPosition(1, ms0.nrow())},
+                    fieldIds
+                );
+
+                // Increment the observation ID by the offset
+                auto observationIds = casacore::MSMainColumns(ms0).observationId().getColumn();
+                for (auto& observationId : observationIds) observationId += observationIdOffset;
+                observationIdOffset += ms0.observation().nrow();
+
+                // And write updated ID back into concatenated observation_id column
+                casacore::MSMainColumns(tbl).observationId().putColumnRange(
+                    {casacore::IPosition(1, mainOffset), casacore::IPosition(1, ms0.nrow())},
+                    observationIds
+                );
+
+                mainOffset += ms0.nrow();
+            }
+        }
 
         // Filter table by time low and high
         tbl = tbl(
@@ -268,12 +324,15 @@ public:
             casacore::Slicer::endIsLast
         }).tovector();
 
-        fmt::println("Measurement set {} opened", fname);
+        fmt::println("Measurement set(s) opened");
         fmt::println(
-            "    Channels {} - {} ({:.1f} - {:.1f} MHz) Times {:.0f} - {:.0f} selected",
+            "   Channels {} - {} ({:.1f} - {:.1f} MHz) Times {:.0f} - {:.0f} selected from",
             this->chanlow, this->chanhigh, freqs.front() / 1e6, freqs.back() / 1e6,
             this->timelow, this->timehigh
         );
+        for (auto& fname : fnames) {
+            fmt::println("      - {}", fname);
+        }
     }
 
     auto begin() { return Iterator(*this); }
@@ -300,25 +359,43 @@ public:
     }
 
     std::string telescopeName() const {
-        auto observationTbl = tbl.keywordSet().asTable("OBSERVATION");
-        return casacore::ScalarColumn<casacore::String>(
-            observationTbl, "TELESCOPE_NAME"
-        ).get(0);
+        auto names = casacore::MSObservationColumns(
+            tbl.observation()
+        ).telescopeName().getColumn();
+
+        // TODO: Handle more than one type of telescope?
+        for (auto& name : names) {
+            if (name != names[0]) {
+                throw std::runtime_error("Multiple telescope types detected");
+            }
+        }
+
+        return names[0];
     }
 
-    std::array<uint32_t, 16> mwaDelays() const {
+    auto mwaDelays() const {
         auto mwaTilePointingTbl = tbl.keywordSet().asTable("MWA_TILE_POINTING");
-        auto delays = casacore::ArrayColumn<int>(
-            mwaTilePointingTbl, "DELAYS"
-        ).get(0);
+        auto intervals = casacore::ArrayColumn<double>(mwaTilePointingTbl, "INTERVAL");
+        auto delays = casacore::ArrayColumn<int>(mwaTilePointingTbl, "DELAYS");
 
-        // Copy casacore array to
-        std::array<uint32_t, 16> delays_uint32;
-        std::copy(
-            delays.begin(), delays.end(), delays_uint32.begin()
-        );
+        using mwadelay_t = std::tuple<double, double, std::array<uint32_t, 16>>;
 
-        return delays_uint32;
+        std::vector<mwadelay_t> delays_vec;
+
+        for (size_t i {}; i < mwaTilePointingTbl.nrow(); ++i) {
+            auto interval_row = intervals.get(i).tovector();
+            auto delays_row = delays.get(i);
+
+            // Copy casacore array to fixed array
+            std::array<uint32_t, 16> delays_uint32;
+            std::copy(delays_row.begin(), delays_row.end(), delays_uint32.begin());
+
+            delays_vec.push_back(std::make_tuple(
+                interval_row[0] / 86400., interval_row[1] / 86400., delays_uint32
+            ));
+        }
+
+        return delays_vec;
     }
 
     RaDec phaseCenter() const {
@@ -330,7 +407,7 @@ public:
     }
 
 private:
-    casacore::Table tbl;
+    casacore::MeasurementSet tbl;
     casacore::Table fieldtbl;
     std::vector<double> freqs;
     int chanlow;

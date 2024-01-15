@@ -117,7 +117,7 @@ TEST_CASE("Measurement Set & Partition", "[mset]") {
     auto Aterms = beam.gridResponse(gridconf.subgrid(), {0, 0}, 0);
 
     MeasurementSet mset(
-        TESTDATA, 0, 11, 0, std::numeric_limits<double>::max()
+        {TESTDATA}, 0, 11, 0, std::numeric_limits<double>::max()
     );
 
     auto workunits = partition(
