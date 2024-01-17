@@ -14,6 +14,7 @@
 #include <catch2/catch_template_test_macros.hpp>
 #include <fmt/format.h>
 
+#include "aterms.h"
 #include "clean.h"
 #include "degridder.h"
 #include "gridspec.h"
@@ -73,8 +74,8 @@ TEST_CASE("MSet reading and paritioning", "[io]") {
         .kernelsize = 96, .kernelpadding = 18, .wstep = 25
     };
 
-    HostArray<ComplexLinearData<double>, 2> Aterms {gridconf.grid().shape()};
-    Aterms.fill({1, 0, 0, 1});
+    HostArray<ComplexLinearData<double>, 2> Aterm {gridconf.grid().shape()};
+    Aterm.fill({1, 0, 0, 1});
 
     MeasurementSet mset(
         {TESTDATA}, 0, 191, 0, std::numeric_limits<double>::max()
@@ -89,7 +90,7 @@ TEST_CASE("MSet reading and paritioning", "[io]") {
     });
 
     auto workunits = simple_benchmark("Partition", 5, [&] {
-        return partition(uvdata, gridconf, Aterms);
+        return partition(uvdata, gridconf, Aterms<double>(Aterm));
     });
 }
 
@@ -101,8 +102,8 @@ TEMPLATE_TEST_CASE("Invert", "[invert]", float, double) {
         .kernelsize = 96, .kernelpadding = 18, .wstep = 25
     };
 
-    HostArray<ComplexLinearData<TestType>, 2> Aterms {gridconf.subgrid().shape()};
-    Aterms.fill({1, 0, 0, 1});
+    HostArray<ComplexLinearData<TestType>, 2> Aterm {gridconf.subgrid().shape()};
+    Aterm.fill({1, 0, 0, 1});
 
     MeasurementSet mset(
         {TESTDATA}, 0, 383, 0, std::numeric_limits<double>::max()
@@ -113,9 +114,9 @@ TEMPLATE_TEST_CASE("Invert", "[invert]", float, double) {
         for (auto& uvdatum : mset) {
             co_yield static_cast<UVDatum<TestType>>(uvdatum);
         }
-    }();
+    };
 
-    auto workunits = partition(uvdata, gridconf, Aterms);
+    auto workunits = partition(uvdata(), gridconf, Aterms<TestType>(Aterm));
 
     // Trigger precalculation of kernel configuration
     {
@@ -138,8 +139,8 @@ TEMPLATE_TEST_CASE("Predict", "[predict]", float, double) {
         .kernelsize = 96, .kernelpadding = 18, .wstep = 25
     };
 
-    HostArray<ComplexLinearData<TestType>, 2> Aterms {gridconf.subgrid().shape()};
-    Aterms.fill({1, 0, 0, 1});
+    HostArray<ComplexLinearData<TestType>, 2> Aterm {gridconf.subgrid().shape()};
+    Aterm.fill({1, 0, 0, 1});
 
     MeasurementSet mset(
         {TESTDATA}, 0, 383, 0, std::numeric_limits<double>::max()
@@ -150,9 +151,9 @@ TEMPLATE_TEST_CASE("Predict", "[predict]", float, double) {
         for (auto& uvdatum : mset) {
             co_yield static_cast<UVDatum<TestType>>(uvdatum);
         }
-    }();
+    };
 
-    auto workunits = partition(uvdata, gridconf, Aterms);
+    auto workunits = partition(uvdata(), gridconf, Aterms<TestType>(Aterm));
 
     // Create skymap
     HostArray<StokesI<TestType>, 2> skymap {gridconf.grid().shape()};

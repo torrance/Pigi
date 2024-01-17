@@ -250,7 +250,7 @@ public:
     // Explicit copy constructor from other pointer type
     template <typename S>
     explicit Array(const Span<T, N, S>& other) : Array{other.shape(), false} {
-        copy(*this, other);\
+        copy(*this, other);
     }
 
     // Delete copy assignment

@@ -298,3 +298,16 @@ __host__ __device__
 inline auto cld(T x, T y) {
     return (x + y - 1) / y;
 }
+
+struct Interval {
+    double start;
+    double end;
+
+    double mid() const {
+        return (start + end) / 2;
+    }
+
+    bool contains(double val) const {
+        return start < val && val < end;
+    }
+};

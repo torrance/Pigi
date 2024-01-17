@@ -8,6 +8,7 @@
 #include <optional>
 #include <ranges>
 
+#include "aterms.h"
 #include "beam.h"
 #include "clean.h"
 #include "config.h"
@@ -199,33 +200,23 @@ void cleanWorker(
         std::runtime_error(fmt::format("Unknown weight: {}", config.weight));
     }
 
-    // TODO: Add max duration
-
     auto phaseCenter = mset.phaseCenter();
     fmt::println(
         "Phase center set to RA={:.2f} Dec={:.2f}",
         rad2deg(phaseCenter.ra), rad2deg(phaseCenter.dec)
     );
 
-    // Construct A terms matrix for beam correction
-    auto beam = Beam::getBeam<P>(mset);
-    auto Aterms = beam->gridResponse(
-        config.gridconf.subgrid(), phaseCenter, mset.midfreq()
+    auto aterms = mkAterms<P>(
+        mset, config.gridconf.subgrid(), config.maxDuration, phaseCenter
     );
 
     // Partition data and write to disk
     fmt::println("Worker [{}/{}]: Reading and partitioning data...", rank + 1, hivesize);
-    auto workunits = partition(uvdata(), config.gridconf, Aterms);
+    auto workunits = partition(uvdata(), config.gridconf, aterms);
 
     applyWeights(*weighter, workunits);
 
-    // Create beam power at standard grid resolution
-    HostArray<StokesI<P>, 2> beamPower {config.gridconf.subgrid().shape()};
-    for (size_t i {}, I = config.gridconf.subgrid().size(); i < I; ++i) {
-        beamPower[i] = StokesI<P>::beamPower(Aterms[i], Aterms[i]);
-    }
-    beamPower = rescale(beamPower, config.gridconf.subgrid(), config.gridconf.padded());
-    beamPower = resize(beamPower, config.gridconf.padded(), config.gridconf.grid());
+    auto beamPower = mkAvgAtermPower<StokesI, P>(workunits, config.gridconf);
 
     // Create psf
     HostArray<thrust::complex<P>, 2> psf;

@@ -7,6 +7,7 @@
 #include <unordered_map>
 #include <vector>
 
+#include "aterms.h"
 #include "gridspec.h"
 #include "memmap.h"
 #include "memory.h"
@@ -31,20 +32,25 @@ struct WorkUnit {
     std::shared_ptr<HostArray< ComplexLinearData<S>, 2 >> Aleft;
     std::shared_ptr<HostArray< ComplexLinearData<S>, 2 >> Aright;
     T data;
+
+    template <typename P>
+    LinearData<P> totalWeight() const {
+        LinearData<P> w {};
+        for (const auto& uvdatum : this->data) {
+            w += static_cast<LinearData<P>>(uvdatum.weights);
+        }
+        return w;
+    }
 };
 
 template <typename T, typename S>
 auto partition(
     T&& uvdata,
     const GridConfig gridconf,
-    HostArray<ComplexLinearData<S>, 2>& Aterms
+    const Aterms<S>& aterms
 ) {
     // We use the padded gridspec during partitioning
     auto gridspec = gridconf.padded();
-
-    // Create copy of Aterms managed as a shared_ptr
-    // TODO: avoid this copy, and create shared pointer earlier in the call-chain?
-    auto Aterms_ptr = std::make_shared<HostArray<ComplexLinearData<S>, 2>>(Aterms);
 
     // Temporarily store workunits in a map to reduce search space during partitioning
     std::unordered_map<
@@ -53,6 +59,10 @@ auto partition(
     long long radius {gridconf.kernelsize / 2 - gridconf.kernelpadding};
 
     for (UVDatum<S> uvdatum : uvdata) {
+        // Find Aterm
+        auto Aleft = aterms.get(uvdatum.meta->time, uvdatum.meta->ant1);
+        auto Aright = aterms.get(uvdatum.meta->time, uvdatum.meta->ant2);
+
         // Find equivalent pixel coordinates of (u,v) position
         const auto [upx, vpx] = gridspec.UVtoGrid(uvdatum.u, uvdatum.v);
 
@@ -75,11 +85,12 @@ auto partition(
             // The +0.5 accounts for the off-center central pixel of an even grid
             // TODO: add one to upper bound
             if (
+                workunit.Aleft == Aleft &&
+                workunit.Aright == Aright &&
                 -radius <= upx - workunit.u0px + 0.5 &&
                 upx - workunit.u0px + 0.5 <= radius &&
                 -radius <= vpx - workunit.v0px + 0.5 &&
-                vpx - workunit.v0px + 0.5 <= radius &&
-                workunit.data.size() < 100000
+                vpx - workunit.v0px + 0.5 <= radius
             ) {
                 workunit.data.push_back(uvdatum);
                 found = true;
@@ -95,7 +106,7 @@ auto partition(
         // TODO: use emplace_back() when we can upgrade Clang
         wworkunits.push_back({
             u0px, v0px, u0, v0, static_cast<S>(w0),
-            Aterms_ptr, Aterms_ptr, {uvdatum}
+            Aleft, Aright, {uvdatum}
         });
     }
 

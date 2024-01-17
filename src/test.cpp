@@ -114,14 +114,14 @@ TEST_CASE("Measurement Set & Partition", "[mset]") {
     };
 
     Beam::Uniform<double> beam;
-    auto Aterms = beam.gridResponse(gridconf.subgrid(), {0, 0}, 0);
+    auto aterm = beam.gridResponse(gridconf.subgrid(), {0, 0}, 0);
 
     MeasurementSet mset(
         {TESTDATA}, 0, 11, 0, std::numeric_limits<double>::max()
     );
 
     auto workunits = partition(
-        mset, gridconf, Aterms
+        mset, gridconf, Aterms<double>(aterm)
     );
 
     size_t n {};
@@ -184,7 +184,7 @@ TEMPLATE_TEST_CASE_SIG(
     }
 
     // Create uvdata
-    SharedHostPtr<UVMeta> meta;
+    auto meta = makesharedhost<UVMeta>(0, 0, 0, 0, RaDec{0, 0});
     std::vector<UVDatum<double>> uvdata64;
     {
         std::mt19937 gen(1234);
@@ -252,7 +252,7 @@ TEMPLATE_TEST_CASE_SIG(
     };
 
     auto Aterm = beam.gridResponse(gridconf.subgrid(), gridorigin, freq);
-    auto workunits = partition(uvdata(), gridconf, Aterm);
+    auto workunits = partition(uvdata(), gridconf, Aterms<Q>(Aterm));
     auto img = invert<StokesI, Q>(workunits, gridconf);
 
     // Correct for beam
@@ -380,10 +380,10 @@ TEMPLATE_TEST_CASE_SIG(
     }
 
     // Predict using IDG
-    auto Aterms = beam.gridResponse(gridconf.subgrid(), phaseCenter, freq);
+    auto aterm = beam.gridResponse(gridconf.subgrid(), phaseCenter, freq);
 
     auto workunits = partition(
-        uvdata, gridconf, Aterms
+        uvdata, gridconf, Aterms<Q>(aterm)
     );
 
     predict<StokesI<Q>, Q>(
