@@ -21,15 +21,15 @@ public:
     public:
         Iterator(MeasurementSet& mset, long nstart = 0) :
             mset(mset), lambdas(mset.freqs), nstart(nstart),
-            uvwCol(mset.tbl, "UVW"),
-            timeCol(mset.tbl, "TIME_CENTROID"),
-            ant1Col(mset.tbl, "ANTENNA1"),
-            ant2Col(mset.tbl, "ANTENNA2"),
-            flagrowCol(mset.tbl, "FLAG_ROW"),
-            flagCol(mset.tbl, "FLAG"),
-            weightCol(mset.tbl, "WEIGHT"),
-            weightspectrumCol(mset.tbl, "WEIGHT_SPECTRUM"),
-            dataCol(mset.tbl, "CORRECTED_DATA"),
+            uvwCol(mset.ms, "UVW"),
+            timeCol(mset.ms, "TIME_CENTROID"),
+            ant1Col(mset.ms, "ANTENNA1"),
+            ant2Col(mset.ms, "ANTENNA2"),
+            flagrowCol(mset.ms, "FLAG_ROW"),
+            flagCol(mset.ms, "FLAG"),
+            weightCol(mset.ms, "WEIGHT"),
+            weightspectrumCol(mset.ms, "WEIGHT_SPECTRUM"),
+            dataCol(mset.ms, "CORRECTED_DATA"),
             phaseCenterCol(mset.fieldtbl, "PHASE_DIR") {
 
             // Ensure our expectations about the size of cells are valid.
@@ -94,7 +94,7 @@ public:
             const long batchsize = 100;
 
             // Early return if we've finished the table
-            if (nstart == -1 || nstart >= static_cast<long>(mset.tbl.nrow())) {
+            if (nstart == -1 || nstart >= static_cast<long>(mset.ms.nrow())) {
                 nstart = -1;
                 return;
             }
@@ -102,7 +102,7 @@ public:
             // Note: nend is inclusive, so subtract 1
             long nend = std::min(
                 nstart + batchsize,
-                static_cast<long>(mset.tbl.nrow())
+                static_cast<long>(mset.ms.nrow())
             ) - 1;
 
             // Set up slicers
@@ -234,7 +234,7 @@ public:
             concats[1] = "OBSERVATION";
             concats[2] = "MWA_TILE_POINTING";
 
-            casacore::Table tbls(fnamesblock, concats);
+            tbls = casacore::Table(fnamesblock, concats);
             tbls.rename(std::tmpnam(NULL), casacore::Table::New);
             tbls.flush();
 
@@ -244,7 +244,11 @@ public:
             casacore::Block<casacore::String> freshcols(2);
             freshcols[0] = "FIELD_ID";
             freshcols[1] = "OBSERVATION_ID";
-            tbl = casacore::MeasurementSet(tbls).referenceCopy("/tmp/concat1.ms", freshcols);
+            tbl = casacore::MeasurementSet(tbls).referenceCopy(std::tmpnam(NULL), freshcols);
+
+            // Copy tbl -> ms, so that we can delete the original table despite later
+            // filtering the tbl.
+            ms = tbl;
 
             long mainOffset {}, fieldIdOffset {}, observationIdOffset {};
             for (auto& fname : fnames) {
@@ -256,7 +260,7 @@ public:
                 fieldIdOffset += ms0.field().nrow();
 
                 // And write updated ID back into concatenated field_id column
-                casacore::MSMainColumns(tbl).fieldId().putColumnRange(
+                casacore::MSMainColumns(ms).fieldId().putColumnRange(
                     {casacore::IPosition(1, mainOffset), casacore::IPosition(1, ms0.nrow())},
                     fieldIds
                 );
@@ -267,7 +271,7 @@ public:
                 observationIdOffset += ms0.observation().nrow();
 
                 // And write updated ID back into concatenated observation_id column
-                casacore::MSMainColumns(tbl).observationId().putColumnRange(
+                casacore::MSMainColumns(ms).observationId().putColumnRange(
                     {casacore::IPosition(1, mainOffset), casacore::IPosition(1, ms0.nrow())},
                     observationIds
                 );
@@ -277,30 +281,30 @@ public:
         }
 
         // Filter table by time low and high
-        tbl = tbl(
-            tbl.col("TIME_CENTROID") >= timelow &&
-            tbl.col("TIME_CENTROID") <= timehigh
+        ms = ms(
+            ms.col("TIME_CENTROID") >= timelow &&
+            ms.col("TIME_CENTROID") <= timehigh
         );
 
         // Remove auto-correlations
-        tbl = tbl(
-            tbl.col("ANTENNA1") != tbl.col("ANTENNA2")
+        ms = ms(
+            ms.col("ANTENNA1") != ms.col("ANTENNA2")
         );
 
         // Remove flagged row
-        tbl = tbl(
-            !tbl.col("FLAG_ROW")
+        ms = ms(
+            !ms.col("FLAG_ROW")
         );
 
         fieldtbl = casacore::tableCommand(
             "SELECT t2.PHASE_DIR FROM $1 t1 "
             "JOIN ::FIELD t2 ON t1.FIELD_ID = msid(t2.FIELD_ID)",
-            tbl
+            ms
         ).table();
 
         // Set actual timelow and timehigh
         casacore::Vector<double> timeCol(
-            (casacore::ScalarColumn<double> {tbl, "TIME_CENTROID"}).getColumn()
+            (casacore::ScalarColumn<double> {ms, "TIME_CENTROID"}).getColumn()
         );
         auto minmax = std::minmax_element(timeCol.begin(), timeCol.end());
         this->timelow = *std::get<0>(minmax);
@@ -308,7 +312,7 @@ public:
 
         // Get channel / freq information
         // We assume the spectral window is identical for all
-        auto subtbl = tbl.keywordSet().asTable({"SPECTRAL_WINDOW"});
+        auto subtbl = ms.keywordSet().asTable({"SPECTRAL_WINDOW"});
         casacore::ArrayColumn<double> freqsCol(subtbl, "CHAN_FREQ");
         freqs = freqsCol.get(0).tovector();
 
@@ -333,6 +337,17 @@ public:
         for (auto& fname : fnames) {
             fmt::println("      - {}", fname);
         }
+    }
+
+    MeasurementSet(const MeasurementSet&) = delete;
+    MeasurementSet(MeasurementSet&&) = delete;
+    MeasurementSet& operator=(const MeasurementSet&) = delete;
+    MeasurementSet& operator=(MeasurementSet&&) = delete;
+    ~MeasurementSet() {
+        // For some reason, these can't be marked for deletion at the time of creation
+        // I'm not sure why, but otherwise a 'Table does not exist' exception is thrown.
+        tbl.markForDelete();
+        tbls.markForDelete();
     }
 
     auto begin() { return Iterator(*this); }
@@ -360,7 +375,7 @@ public:
 
     std::string telescopeName() const {
         auto names = casacore::MSObservationColumns(
-            tbl.observation()
+            ms.observation()
         ).telescopeName().getColumn();
 
         // TODO: Handle more than one type of telescope?
@@ -374,7 +389,7 @@ public:
     }
 
     auto mwaDelays() const {
-        auto mwaTilePointingTbl = tbl.keywordSet().asTable("MWA_TILE_POINTING");
+        auto mwaTilePointingTbl = ms.keywordSet().asTable("MWA_TILE_POINTING");
         auto intervals = casacore::ArrayColumn<double>(mwaTilePointingTbl, "INTERVAL");
         auto delays = casacore::ArrayColumn<int>(mwaTilePointingTbl, "DELAYS");
 
@@ -399,7 +414,7 @@ public:
     }
 
     RaDec phaseCenter() const {
-        auto sourceTbl = tbl.keywordSet().asTable("FIELD");
+        auto sourceTbl = ms.keywordSet().asTable("FIELD");
         auto direction = casacore::ArrayColumn<double>(sourceTbl, "PHASE_DIR").get(0);
         return {
             direction(casacore::IPosition {0, 0}), direction(casacore::IPosition {1, 0})
@@ -407,7 +422,9 @@ public:
     }
 
 private:
-    casacore::MeasurementSet tbl;
+    casacore::Table tbls;
+    casacore::Table tbl;
+    casacore::MeasurementSet ms;
     casacore::Table fieldtbl;
     std::vector<double> freqs;
     int chanlow;
