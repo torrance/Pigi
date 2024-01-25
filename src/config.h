@@ -37,14 +37,14 @@ struct Config {
     // IDG
     int kernelsize {128};
     int kernelpadding {18};
-    double paddingfactor {3.5};
+    double paddingfactor {1.5};
     int wstep {20};
 
     // Clean parameters
     float majorgain {0.5};
     float minorgain {0.1};
     float cleanThreshold {0};
-    float autoThreshold {1.5};
+    float autoThreshold {3.5};
     size_t nMajor {0};
     size_t nMinor {0};
 
@@ -128,6 +128,7 @@ struct Config {
             this->kernelpadding = find_or(tbl, "kernelpadding", this->kernelpadding);
             this->kernelsize = find_or(tbl, "kernelsize", this->kernelsize);
             this->paddingfactor = find_or(tbl, "paddingfactor", this->paddingfactor);
+            this->wstep = find_or(tbl, "wstep", this->wstep);
         }
 
         if (v.contains("clean")) {
@@ -164,7 +165,7 @@ struct Config {
             {"idg", {
                 {"kernelsize", {this->kernelsize, {
                     " The low-resolution kernel use by IDG during (de)gridding. A-terms",
-                    " be sampled at this resolution. For A-terms with complex detail,",
+                    " will be sampled at this resolution. For A-terms with complex detail,",
                     " consider increasing this size. Typical sizes range from 64 - 128",
                     " pixels. [32 <= int: pixel]",
                 }}},
