@@ -9,6 +9,7 @@
 #include <fmt/format.h>
 #include <thrust/complex.h>
 
+#include "aterms.h"
 #include "beam.h"
 #include "clean.h"
 #include "dft.h"
@@ -144,6 +145,80 @@ TEST_CASE("Measurement Set & Partition", "[mset]") {
         REQUIRE( std::abs(std::remainder(azel.az - expected.az, 2 * ::pi_v<double>)) < 1e-3 );
         REQUIRE( std::abs(std::remainder(azel.el - expected.el, 2 * ::pi_v<double>)) < 1e-3 );
     }
+}
+
+TEST_CASE("Widefield inversion", "[widefield]") {
+    using P = float;
+
+    // Config
+    double scale_asec = 15;
+    const GridConfig gridconf {
+        .imgNx = 9000, .imgNy = 9000, .imgScalelm = std::sin(deg2rad(scale_asec / 3600)),
+        .paddingfactor = 1.5, .kernelsize = 256, .kernelpadding = 18, .wstep = 25
+    };
+
+    const int oversample {6};
+    REQUIRE( gridconf.imgNx % oversample == 0 );
+
+    MeasurementSet mset({TESTDATA}, 0, 11);
+
+    // Copy uvdata to vector, for use in both idg and dft
+    std::vector<UVDatum<P>> uvdata;
+    for (auto& uvdatum : mset) {
+        uvdata.push_back(static_cast<UVDatum<P>>(uvdatum));
+    }
+
+    // Create beam
+    auto delays = std::get<2>(mset.mwaDelays().front());
+    Beam::MWA<P> beam(mset.midtime(), delays);
+
+    auto gridorigin = mset.phaseCenter();
+
+    fmt::println("IDG imaging...");
+    auto workunits = partition(
+        uvdata,
+        gridconf,
+        Aterms<P>{beam.gridResponse(gridconf.subgrid(), gridorigin, mset.midfreq())}
+    );
+    auto img = invert<StokesI, P>(workunits, gridconf);
+
+    fmt::println("Direct DT imaging...");
+
+    auto gridspec = GridSpec::fromScaleLM(
+        gridconf.grid().Nx / oversample,
+        gridconf.grid().Ny / oversample,
+        gridconf.grid().scalelm * oversample
+    );
+    auto aterm = beam.gridResponse(gridspec, gridorigin, mset.midfreq());
+
+    HostArray<StokesI<P>, 2> expected {gridspec.shape()};
+    idft<StokesI, P>(expected, aterm, uvdata, gridspec);
+
+    // Correct for beam power
+    for (size_t i {}; i < aterm.size(); ++i) {
+        auto a = static_cast<ComplexLinearData<double>>(aterm[i]);
+        expected[i] *= static_cast<StokesI<P>>(StokesI<double>::beamPower(a, a));
+    }
+
+    save("image.fits", img);
+    save("expected.fits", expected);
+
+    HostArray<StokesI<P>, 2> diff {expected};
+    for (size_t i {}; i < diff.size(); ++i) {
+        auto [xpx, ypx] = gridspec.linearToGrid(i);
+        xpx *= oversample; ypx *= oversample;
+        auto j = gridconf.grid().gridToLinear(xpx, ypx);
+        diff[i] -= img[j];
+    }
+    save("diff.fits", diff);
+
+    P maxdiff {-1};
+    for (size_t i {}; i < diff.size(); ++i) {
+        maxdiff = std::max(maxdiff, ::abs(diff[i]));
+    }
+    fmt::println("Max diff: {}", maxdiff);
+
+    REQUIRE(maxdiff < 1e-5);
 }
 
 // Catch2 doesn't seem to support namespace separators
