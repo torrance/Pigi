@@ -95,12 +95,10 @@ void _gpudift(
             output = static_cast<T>(matmul(matmul(Al, cell), Ar));
 
             // Calculate norm
-            T norm = static_cast<T>(matmul(
-                matmul(Al, ComplexLinearData<S>{{1, 1}, {1, 1}, {1, 1}, {1, 1}}), Ar
-            ));
+            T norm = T(matmul(Al, Ar).norm());
 
             // Finally, apply norm
-            output *= sqrt(2) / ::abs(norm);
+            output /= norm;
         }
 
         if (idx < subgridspec.size()) {

@@ -106,6 +106,17 @@ struct alignas(16) LinearData {
         return {::conj(xx), ::conj(xy), ::conj(yx), ::conj(yy)};
     }
 
+    // Frobenius norm
+    __host__ __device__
+    inline auto norm() const{
+        return sqrt(
+            xx.real() * xx.real() + xx.imag() * xx.imag() +
+            yx.real() * yx.real() + yx.imag() * yx.imag() +
+            xy.real() * xy.real() + xy.imag() * xy.imag() +
+            yy.real() * yy.real() + yy.imag() * yy.imag()
+        );
+    }
+
     inline auto isfinite() const {
         return ::isfinite(xx) && ::isfinite(yx) && ::isfinite(yx) && ::isfinite(yy);
     }
@@ -206,13 +217,7 @@ struct StokesI {
     }
 
     static StokesI<T> beamPower(ComplexLinearData<T>& Aleft, ComplexLinearData<T>& Aright) {
-        StokesI<T> norm = static_cast<StokesI<T>>(
-            matmul(
-                matmul(Aleft.inv(), ComplexLinearData<T> {{1, 1}, {1, 1}, {1, 1}, {1, 1}}),
-                Aright.inv().adjoint()
-            )
-        );
-        return std::sqrt(2) / thrust::abs(norm.I);
+        return StokesI<T>(1 / matmul(Aleft.inv(), Aright.inv().adjoint()).norm());
     }
 };
 
