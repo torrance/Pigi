@@ -38,12 +38,26 @@ void cleanQueen(const Config& config, boost::mpi::intercommunicator hive) {
 
     std::vector<double> freqs(hivesize);
     for (const int src : srcs) {
-        hive.recv(src, boost::mpi::any_source, freqs[src]);
+        hive.recv(src, boost::mpi::any_tag, freqs[src]);
+    }
+
+    // Collect beams from workers
+    {
+        HostArray<StokesI<P>, 2> beamPowerCombined {config.gridconf.grid().shape()};
+        HostArray<StokesI<P>, 2> beamPower;
+
+        for (const int src : srcs) {
+            hive.recv(src, boost::mpi::any_tag, beamPower);
+            beamPowerCombined += beamPower;
+        }
+        beamPowerCombined /= StokesI<P>(hivesize);
+
+        save("beam.fits", beamPowerCombined);
     }
 
     std::vector<HostArray<thrust::complex<P>, 2>> psfs(hivesize);
     for (const int src : srcs) {
-        hive.recv(src, boost::mpi::any_source, psfs[src]);
+        hive.recv(src, boost::mpi::any_tag, psfs[src]);
     }
 
     PSF<P> psf;
@@ -90,6 +104,7 @@ void cleanQueen(const Config& config, boost::mpi::intercommunicator hive) {
         for (auto& residual : residuals) {
             dirtyCombined += residual;
         }
+        dirtyCombined /= StokesI<P>(hivesize);
 
         save("dirty.fits", dirtyCombined);
     }
@@ -149,9 +164,11 @@ void cleanQueen(const Config& config, boost::mpi::intercommunicator hive) {
     residualCombined /= StokesI<P>(hivesize);
     componentsCombined /= StokesI<P>(hivesize);
 
+    fmt::println("Queen: Convolving final image...");
     auto imageCombined = convolve(componentsCombined, psf.draw(config.gridconf.grid()));
     imageCombined += residualCombined;
 
+    fmt::println("Queen: Writing out files...");
     save("residual.fits", residualCombined);
     save("components.fits", componentsCombined);
     save("image.fits", imageCombined);
@@ -208,11 +225,20 @@ void cleanWorker(
 
     // Partition data and write to disk
     fmt::println("Worker [{}/{}]: Reading and partitioning data...", rank + 1, hivesize);
-    auto workunits = partition(uvdata(), config.gridconf, aterms);
+    auto workunits = [&] {
+        // Since partition temporarily loads all UV data into memory, we need to serialize
+        // it on the one node. TODO: Ensure this lock only occurs on the local machie.
+        mpi::Lock lock(hive);
+        return partition(uvdata(), config.gridconf, aterms);
+    }();
+
+    fmt::println("Worker [{}/{}]: Constructing average beam...", rank + 1, hivesize);
+    auto beamPower = mkAvgAtermPower<StokesI, P>(workunits, config.gridconf);
+
+    queen.send(0, 0, beamPower);
+    if (hivesize > 1) save(fmt::format("beam-{:02d}.fits", rank + 1), beamPower);
 
     applyWeights(*weighter, workunits);
-
-    auto beamPower = mkAvgAtermPower<StokesI, P>(workunits, config.gridconf);
 
     // Create psf
     HostArray<thrust::complex<P>, 2> psf;
@@ -253,7 +279,7 @@ void cleanWorker(
     queen.recv(0, boost::mpi::any_tag, again);
 
     // Clean loops
-    while (again) {
+    for (int i {1}; again; ++i) {
         // Predict
         {
             HostArray<StokesI<P>, 2> minorComponents;
@@ -268,8 +294,8 @@ void cleanWorker(
             mpi::Lock lock(hive);
 
             fmt::println(
-                "Worker [{}/{}]: Removing clean components from uvdata...",
-                rank + 1, hivesize
+                "Worker [{}/{}]: Removing clean components from uvdata... (major cycle {})",
+                rank + 1, hivesize, i
             );
             predict<StokesI<P>, P>(workunits, minorComponents, config.gridconf, DegridOp::Subtract);
         }
@@ -278,7 +304,8 @@ void cleanWorker(
         {
             mpi::Lock lock(hive);
             fmt::println(
-                "Worker [{}/{}]: Constructing residual image...", rank + 1, hivesize
+                "Worker [{}/{}]: Constructing residual image... (major cycle {})",
+                rank + 1, hivesize, i
             );
             residual = invert<StokesI, P>(workunits, config.gridconf);
             queen.send(0, 0, residual);
@@ -292,6 +319,7 @@ void cleanWorker(
 
     // Write out data
     if (hivesize > 1) {
+        save(fmt::format("residual-{:02d}.fits", rank + 1), residual);
         save(fmt::format("components-{:02d}.fits", rank + 1), components);
 
         auto image = convolve(
