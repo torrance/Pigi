@@ -34,11 +34,9 @@ auto getKernelConfig(T fn, int N, size_t sharedMem=0) {
     static int nblocksmax, nthreads;
 
     [[maybe_unused]] static auto _ = [&]() {
-        fmt::println("Calculating kernel configuration...");
         HIPCHECK( hipOccupancyMaxPotentialBlockSize(
             &nblocksmax, &nthreads, fn, sharedMem, 0
         ) );
-        fmt::println("Recommended launch config: blocksmax={}, threads={}", nblocksmax, nthreads);
         return true;
     }();
 
