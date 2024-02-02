@@ -17,6 +17,7 @@
 #include "invert.h"
 #include "mpi.h"
 #include "mset.h"
+#include "phaserotate.h"
 #include "predict.h"
 #include "psf.h"
 #include "taper.h"
@@ -184,6 +185,7 @@ void cleanWorker(
 
     auto uvdata = [&] () -> std::generator<UVDatum<P>> {
         for (auto& uvdatum : mset) {
+            if (config.phaserotate) phaserotate(uvdatum, config.phasecenter);
             co_yield static_cast<UVDatum<P>>(uvdatum);
         }
     };
@@ -200,14 +202,8 @@ void cleanWorker(
         std::runtime_error(fmt::format("Unknown weight: {}", config.weight));
     }
 
-    auto phaseCenter = mset.phaseCenter();
-    fmt::println(
-        "Phase center set to RA={:.2f} Dec={:.2f}",
-        rad2deg(phaseCenter.ra), rad2deg(phaseCenter.dec)
-    );
-
     auto aterms = mkAterms<P>(
-        mset, config.gridconf.subgrid(), config.maxDuration, phaseCenter
+        mset, config.gridconf.subgrid(), config.maxDuration, config.phasecenter
     );
 
     // Partition data and write to disk

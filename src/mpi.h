@@ -10,11 +10,13 @@
 #include <thrust/complex.h>
 
 #include "config.h"
+#include "coordinates.h"
 #include "gridspec.h"
 #include "memory.h"
 #include "outputtypes.h"
 
 BOOST_IS_BITWISE_SERIALIZABLE(GridConfig);
+BOOST_IS_BITWISE_SERIALIZABLE(RaDec);
 
 namespace boost {
     namespace serialization {
@@ -30,6 +32,8 @@ namespace boost {
             ar & payload.robust;
             ar & payload.size;
             ar & payload.scale;
+            ar & payload.phasecenter;
+            ar & payload.phaserotate;
             ar & payload.kernelsize;
             ar & payload.paddingfactor;
             ar & payload.wstep;

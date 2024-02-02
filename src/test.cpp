@@ -18,6 +18,7 @@
 #include "invert.h"
 #include "memory.h"
 #include "mset.h"
+#include "phaserotate.h"
 #include "psf.h"
 #include "predict.h"
 #include "taper.h"
@@ -104,6 +105,79 @@ TEST_CASE("Utility functions", "[utility]") {
 
     REQUIRE(maxdiff != -1);
     REQUIRE(maxdiff < 2e-2);
+}
+
+TEMPLATE_TEST_CASE("Phase rotation", "[phaserotation]", float, double) {
+    if (!TESTDATA) { SKIP("TESTDATA path not provided"); }
+
+    MeasurementSet mset(
+        {TESTDATA}, 0, 11, 0, std::numeric_limits<double>::max()
+    );
+
+    std::vector<UVDatum<TestType>> uvdata;
+    for (auto& uvdatum : mset) {
+        uvdata.push_back(static_cast<UVDatum<TestType>>(uvdatum));
+    }
+
+    std::vector<UVDatum<TestType>> expected(uvdata);
+
+    RaDec original = uvdata.front().meta->phasecenter;
+
+    for (auto& uvdatum : uvdata) {
+        phaserotate(uvdatum, {0, 0});
+    }
+
+    for (auto& uvdatum : uvdata) {
+        uvdatum.meta->phasecenter = {0, 0};
+    }
+
+    double maxudiff {}, maxvdiff {}, maxwdiff {}, maxdatadiff {};
+    for (size_t i {}; i < uvdata.size(); ++i) {
+        maxudiff = std::max<double>(maxudiff, std::abs(uvdata[i].u - expected[i].u));
+        maxvdiff = std::max<double>(maxvdiff, std::abs(uvdata[i].v - expected[i].v));
+        maxwdiff = std::max<double>(maxwdiff, std::abs(uvdata[i].w - expected[i].w));
+
+
+        auto data = uvdata[i].data;
+        data -= expected[i].data;
+        maxdatadiff = std::max<double>(
+            maxdatadiff,
+            thrust::abs(static_cast<thrust::complex<double>>(data))
+        );
+    }
+
+    // Ensure we have done some kind of shift
+    REQUIRE(maxudiff > 1);
+    REQUIRE(maxvdiff > 1);
+    REQUIRE(maxwdiff > 1);
+    REQUIRE(maxdatadiff > 1);
+
+    for (auto& uvdatum : uvdata) {
+        phaserotate(uvdatum, original);
+    }
+
+    maxudiff = 0, maxvdiff = 0, maxwdiff = 0, maxdatadiff = 0;
+    for (size_t i {}; i < uvdata.size(); ++i) {
+        maxudiff = std::max<double>(maxudiff, std::abs(uvdata[i].u - expected[i].u));
+        maxvdiff = std::max<double>(maxvdiff, std::abs(uvdata[i].v - expected[i].v));
+        maxwdiff = std::max<double>(maxwdiff, std::abs(uvdata[i].w - expected[i].w));
+
+
+        auto data = uvdata[i].data;
+        data -= expected[i].data;
+        maxdatadiff = std::max<double>(
+            maxdatadiff,
+            thrust::abs(static_cast<thrust::complex<double>>(data))
+        );
+    }
+
+    // Now ensure we have returned back
+    double alloweddiff {std::is_same_v<float, TestType> ? 1e-3 : 1e-12};
+    REQUIRE(maxudiff < alloweddiff);
+    REQUIRE(maxvdiff < alloweddiff);
+    REQUIRE(maxwdiff < alloweddiff);
+    REQUIRE(maxdatadiff < (std::is_same_v<float, TestType> ? 1e-1 : 1e-9));
+    fmt::println("Max data diff: {:g}", maxdatadiff);
 }
 
 TEST_CASE("Measurement Set & Partition", "[mset]") {

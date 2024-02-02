@@ -48,7 +48,7 @@ Aterms<P> mkAterms(
     MeasurementSet& mset,
     const GridSpec& gridspec,
     const double maxDuration,
-    RaDec& gridorigin
+    const RaDec& gridorigin
 ) {
     std::vector<std::tuple<Interval, typename Aterms<P>::aterm_t>> aterms;
 

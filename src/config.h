@@ -33,6 +33,8 @@ struct Config {
     // Image
     int size {1000};
     double scale {15}; // arcseconds
+    RaDec phasecenter {};
+    bool phaserotate {false};
 
     // IDG
     int kernelsize {128};
@@ -150,6 +152,17 @@ struct Config {
             const auto tbl = toml::find(v, "field");
             this->size = find_or(tbl, "size", this->size);
             this->scale = find_or(tbl, "scale", this->scale);
+            this->phaserotate = find_or(tbl, "phaserotate", this->phaserotate);
+
+            if (tbl.contains("phasecenter")) {
+                const auto subtbl = toml::find(tbl, "phasecenter");
+                this->phasecenter.ra = deg2rad(
+                    find_or(subtbl, "ra", rad2deg(this->phasecenter.ra))
+                );
+                this->phasecenter.dec = deg2rad(
+                    find_or(subtbl, "dec", rad2deg(this->phasecenter.dec))
+                );
+            }
         }
 
         // TODO: Remove gridconf from config object
@@ -255,6 +268,21 @@ struct Config {
                 {"scale", {this->scale, {
                     " The angular size of a pixel at the center of the field.",
                     " [0 <= float: arcsecond]",
+                }}},
+                {"phasecenter", toml::basic_value<toml::preserve_comments>({
+                    {"dec", rad2deg(this->phasecenter.dec)},
+                    {"ra", rad2deg(this->phasecenter.ra)}
+                }, {
+                    " The phase center of this field. Visibilities will be rotated to this",
+                    " new phase center in memory; this will not affect input data. The",
+                    " phase rotation is performed as a simple 3D matrix rotation with",
+                    " respect to the mseaurement set's stated phase center and this value,",
+                    " where both are assumed to use the same epoch. [float: degree]",
+                })},
+                {"phaserotate", {this->phaserotate, {
+                    " Enables phase rotation of visibilities to new field.phasecenter. If",
+                    " disabled, all input data must be phased to the same phase center and",
+                    " the first phase center will be assumed valid for all data. [bool]",
                 }}},
             }},
             {"mset", {

@@ -97,10 +97,14 @@ int main(int argc, char** argv) {
 
         if (config.msets.size()) {
             // Test opening of msets and replace
-            // any default values: e.g. chanhigh == -1
+            // any default values: e.g. chanhigh == -1 and phasecenter
             MeasurementSet mset(config.msets, config.chanlow, config.chanhigh);
             auto [_, chanhigh] = mset.channelrange();
             config.chanhigh = chanhigh;
+
+            if (!config.phaserotate) {
+                config.phasecenter = mset.phaseCenter();
+            }
         } else {
             printheader(stderr);
             fmt::println(stderr, "No msets provided; doing nothing");
