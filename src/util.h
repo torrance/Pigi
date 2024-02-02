@@ -308,6 +308,6 @@ struct Interval {
     }
 
     bool contains(double val) const {
-        return start < val && val < end;
+        return start <= val && val < end;
     }
 };

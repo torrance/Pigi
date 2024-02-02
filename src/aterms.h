@@ -36,7 +36,7 @@ public:
         for (auto& [interval, aterm] : aterms) {
             if (interval.contains(mjd)) return aterm;
         }
-        throw std::runtime_error("No Aterm found for specified time");
+        throw std::runtime_error(fmt::format("No Aterm found for time = {}", mjd));
     }
 
 private:
@@ -101,7 +101,7 @@ HostArray<T<P>, 2> mkAvgAtermPower(auto&& workunits, const GridConfig& gridconf)
 
         for (size_t i {}, I = gridconf.subgrid().size(); i < I; ++i) {
             beamPower64[i] += static_cast<T<double>>(StokesI<P>::beamPower(
-                workunit.Aleft->operator[](i), workunit.Aright->operator[](i)
+                (*workunit.Aleft)[i], (*workunit.Aright)[i]
             )) *= weight;
         }
     }
@@ -109,10 +109,9 @@ HostArray<T<P>, 2> mkAvgAtermPower(auto&& workunits, const GridConfig& gridconf)
     // Normalise sum by its total weight
     for (auto& val : beamPower64) val /= totalWeight;
 
-    // No rescale and resize
+    // Now rescale and resize
     auto beamPower = static_cast<HostArray<T<P>, 2>>(beamPower64);
     beamPower = rescale(beamPower, gridconf.subgrid(), gridconf.padded());
     beamPower = resize(beamPower, gridconf.padded(), gridconf.grid());
-
     return beamPower;
 }
