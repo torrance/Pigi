@@ -55,7 +55,7 @@ auto simple_benchmark(std::string_view name, const int N, const F f) {
     auto mean = std::accumulate(timings.begin(), timings.end(), 0.) / N;
     double variance {};
     for (auto timing : timings) {
-        variance += std::pow(timing - mean, 2);
+        variance += std::pow(timing - mean, 2) / N;
     }
 
     fmt::println(
