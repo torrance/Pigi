@@ -71,7 +71,7 @@ endif()
 
 add_executable(main src/main.cpp)
 target_compile_options(main PRIVATE ${hipcxxflags})
-target_include_directories(main PRIVATE ${Igenerator} ${Ifmt} ${Igsl} ${Icfitsio} ${Icasa} ${Ihyperbeam} ${MPI_C_INCLUDE_DIRS} ${Itoml11}/..)
+target_include_directories(main PRIVATE ${Igenerator} ${Ifmt} ${Igsl} ${Icfitsio} ${Icasa} ${Ihyperbeam} ${MPI_C_INCLUDE_DIRS} ${Itoml11})
 target_link_libraries(main PRIVATE pthread ${Lcasa_casa} ${Lcasa_tables} ${Lcasa_measures} ${Lcasa_ms} ${Lgsl} ${Lcfitsio} ${Lfmt} ${Lhipfft} ${Lhyperbeam} ${Lcufft} ${MPI_C_LIBRARIES} Boost::mpi Boost::program_options Boost::serialization)
 
 add_executable(test src/test.cpp)
