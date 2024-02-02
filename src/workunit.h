@@ -22,7 +22,7 @@ struct UVWOrigin {
     UVWOrigin(T u0, T v0, T w0) : u0(u0), v0(v0), w0(w0) {}
 };
 
-template <typename S, typename T=std::vector<UVDatum<S>, MMapAllocator<UVDatum<S>>>>
+template <typename S, typename Alloc=MMapAllocator<UVDatum<S>>>
 struct WorkUnit {
     long long u0px;
     long long v0px;
@@ -31,7 +31,7 @@ struct WorkUnit {
     S w0;
     std::shared_ptr<HostArray< ComplexLinearData<S>, 2 >> Aleft;
     std::shared_ptr<HostArray< ComplexLinearData<S>, 2 >> Aright;
-    T data;
+    std::vector<UVDatum<S>, Alloc> data;
 
     template <typename P>
     LinearData<P> totalWeight() const {
@@ -54,7 +54,7 @@ auto partition(
 
     // Temporarily store workunits in a map to reduce search space during partitioning
     std::unordered_map<
-        double, std::vector<WorkUnit< S, std::vector<UVDatum<S>> >>
+        double, std::vector<WorkUnit< S, std::allocator<UVDatum<S>> >>
     > wlayers;
     long long radius {gridconf.kernelsize / 2 - gridconf.kernelpadding};
 
