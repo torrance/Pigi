@@ -92,18 +92,14 @@ namespace mpi {
 
             if (rank == 0) {
                 // No lock; Rank 0 always defaults to obtaining the lock first
-                fmt::println("Rank {} acquired lock", rank);
                 return;
             }
 
             // Aquire lock
             comm.recv(rank - 1, 0);
-            fmt::println("Rank {} acquired lock", rank);
         }
 
         ~Lock() {
-            fmt::println("Rank {} releasing lock", rank);
-
             // Release the lock by sending on to the next rank, unless we are the last rank
             if (rank + 1 < size) {
                 comm.send(rank + 1, 0);
