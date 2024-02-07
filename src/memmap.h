@@ -1,3 +1,5 @@
+#pragma once
+
 #include <errno.h>     // errno
 #include <fcntl.h>     // open
 #include <filesystem>  // temp_directory_path
@@ -12,19 +14,21 @@
 
 #include "util.h"
 
-template <typename T>
+template <typename T, int N = 0>
 class MMapAllocator {
 public:
     using value_type = T;
-    using is_always_equal = std::true_type;
 
     MMapAllocator() noexcept = default;
 
     template <typename U>
-    MMapAllocator(const MMapAllocator<U>&) noexcept {}
+    MMapAllocator(const MMapAllocator<U, N>&) noexcept {}
 
-    bool operator==(MMapAllocator<T>&) { return true; }
-    bool operator!=(MMapAllocator<T>&) { return false; }
+    bool operator==(MMapAllocator<T, N>&) { return true; }
+    bool operator!=(MMapAllocator<T, N>&) { return false; }
+
+    template <typename U>
+    struct rebind { using other = MMapAllocator<U, N>; };
 
     T* allocate(size_t n) {
         // Convert n from units of T to bytes

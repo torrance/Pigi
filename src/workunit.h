@@ -43,9 +43,9 @@ struct WorkUnit {
     }
 };
 
-template <typename T, typename S>
+template <typename S>
 auto partition(
-    T&& uvdata,
+    auto&& uvdata,
     const GridConfig gridconf,
     const Aterms<S>& aterms
 ) {
@@ -53,8 +53,13 @@ auto partition(
     auto gridspec = gridconf.padded();
 
     // Temporarily store workunits in a map to reduce search space during partitioning
+    // Note: we use MMapAllocator here because the standard C++ allocator ends up retaining
+    // GBs of memory, potentially due to memory fragmentation as part of a pseudo-random
+    // access pattern with a long tail of small allocations. Note the N parameter of
+    // MMapAllocator is specfied so that after we are finished here, the whole thing is
+    // truncated - and uses a different backing file to flattened workunits below.
     std::unordered_map<
-        double, std::vector<WorkUnit< S, std::allocator<UVDatum<S>> >>
+        double, std::vector<WorkUnit< S, MMapAllocator<UVDatum<S>, 1> >>
     > wlayers;
     long long radius {gridconf.kernelsize / 2 - gridconf.kernelpadding};
 
@@ -142,7 +147,7 @@ auto partition(
             workunits.push_back({
                 workunit.u0px, workunit.v0px,
                 workunit.u0, workunit.v0, workunit.w0,
-                workunit.Aleft, workunit.Aright, data
+                workunit.Aleft, workunit.Aright, std::move(data)
             });
 
             wworkunits.pop_back();
