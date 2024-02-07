@@ -1,9 +1,7 @@
 #pragma once
 
-#include <algorithm>
 #include <cmath>
 #include <memory>
-#include <numeric>
 #include <unordered_map>
 #include <vector>
 
@@ -115,31 +113,11 @@ auto partition(
         });
     }
 
-    // Print some stats about our partitioning
-    std::vector<size_t> sizes;
-    for (const auto& [_, workunits] : wlayers) {
-        for (const auto& workunit : workunits) sizes.push_back(workunit.data.size());
-    }
-
-    std::sort(sizes.begin(), sizes.end());
-    auto median = sizes[sizes.size() / 2];
-    S sum = std::accumulate(sizes.begin(), sizes.end(), 0);
-    auto mean = sum / sizes.size();
-    fmt::println(
-        "Partitioning complete: {} workunits, size min {} < (mean {:.1f} median {}) < max {}",
-        sizes.size(), sizes.front(), mean, median, sizes.back()
-    );
-
     // Flatten workunits and write to file-backed mmap memory
     std::vector<WorkUnit<S>> workunits;
-    size_t completed {};
     for (auto& [_, wworkunits] : wlayers) {
         while (!wworkunits.empty()) {
             auto& workunit = wworkunits.back();
-
-            fmt::print("\rWriting visibilities to disk... {:.1f}%", 100 * completed / sum);
-            fflush(stdout);
-            completed += workunit.data.size();
 
             std::vector<UVDatum<S>, MMapAllocator<UVDatum<S>>> data(workunit.data.size());
             std::copy(workunit.data.begin(), workunit.data.end(), data.begin());
@@ -153,7 +131,6 @@ auto partition(
             wworkunits.pop_back();
         }
     }
-    fmt::println("\rWriting visibilities to disk... 100.0%");
 
     return workunits;
 }

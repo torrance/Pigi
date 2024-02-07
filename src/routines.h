@@ -224,12 +224,29 @@ void cleanWorker(
     );
 
     // Partition data and write to disk
-    fmt::println("Worker [{}/{}]: Reading and partitioning data...", rank + 1, hivesize);
     auto workunits = [&] {
         // Since partition temporarily loads all UV data into memory, we need to serialize
-        // it on the one node. TODO: Ensure this lock only occurs on the local machie.
+        // it on the one node. TODO: Ensure this lock only occurs on the local machine.
         mpi::Lock lock(hive);
-        return partition(uvdata(), config.gridconf, aterms);
+
+        fmt::println("Worker [{}/{}]: Reading and partitioning data...", rank + 1, hivesize);
+        auto workunits = partition(uvdata(), config.gridconf, aterms);
+
+        // Print some stats about our partitioning
+        std::vector<size_t> sizes;
+        for (const auto& workunit : workunits) sizes.push_back(workunit.data.size());
+
+        std::sort(sizes.begin(), sizes.end());
+        auto median = sizes[sizes.size() / 2];
+        P sum = std::accumulate(sizes.begin(), sizes.end(), 0);
+        auto mean = sum / sizes.size();
+        fmt::println(
+            "Worker [{}/{}]: Partitioning complete: {} workunits, "
+            "size min {} < (mean {:.1f} median {}) < max {}",
+            rank + 1, hivesize, sizes.size(), sizes.front(), mean, median, sizes.back()
+        );
+
+        return workunits;
     }();
 
     fmt::println("Worker [{}/{}]: Constructing average beam...", rank + 1, hivesize);
