@@ -41,7 +41,7 @@ RaDec lmToRaDec(const double l, const double m, const RaDec& origin) {
     // and for NaN to propagate
     auto n = std::sqrt(1 - l * l - m * m);
 
-    auto ra = origin.ra + std::atan2(l, n * std::cos(origin.dec) - m * std::sin(origin.dec));
+    auto ra = origin.ra - std::atan2(l, n * std::cos(origin.dec) - m * std::sin(origin.dec));
     auto dec = std::asin(m * std::cos(origin.dec) + n * std::sin(origin.dec));
 
     return {ra, dec};
