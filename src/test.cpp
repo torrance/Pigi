@@ -86,6 +86,34 @@ TEST_CASE("Matrix tests", "[matrix]") {
     ));
 }
 
+TEST_CASE("Coordinates", "[coordinates]") {
+    RaDec gridorigin {.ra=deg2rad(156.), .dec=deg2rad(-42.)};
+    double mjd = 58290.621412037035;
+    AzEl azelorigin = radecToAzel(gridorigin, mjd, Beam::MWA<double>::origin);
+
+    {
+        // Calculated using Astropy
+        AzEl expected {deg2rad(229.97110571 - 360), deg2rad(14.81615802)};
+
+        REQUIRE(std::abs(azelorigin.az - expected.az) < 1e-5);
+        REQUIRE(std::abs(azelorigin.el - expected.el) < 1e-5);
+    }
+
+    double scalelm = std::sin(deg2rad(15. / 3600.));
+    int lpx {3500}, mpx {5500};
+    int N {8000};
+    gridorigin = {.ra=deg2rad(17.4208333333333), .dec=deg2rad(-45.7819444444444)};
+
+    auto radec = lmToRaDec((lpx - N / 2) * scalelm, (mpx - N / 2) * scalelm, gridorigin);
+    {
+        // Calculcated using Astropy
+        RaDec expected {.ra=deg2rad(20.12114593), .dec=deg2rad(-39.48407916)};
+
+        REQUIRE(std::abs(radec.ra - expected.ra) < 1e-5);
+        REQUIRE(std::abs(radec.dec - expected.dec) < 1e-5);
+    }
+}
+
 TEST_CASE("Utility functions", "[utility]") {
     auto smallGridspec = GridSpec::fromScaleUV(128, 128, 1);
     auto largeGridspec = GridSpec::fromScaleUV(1000, 1000, 1);
