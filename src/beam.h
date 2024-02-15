@@ -160,13 +160,11 @@ public:
     HostArray<ComplexLinearData<Q>, 2> gridResponse(
         const GridSpec& gridspec, const RaDec& gridorigin, const double freq
     ) override {
-        AzEl gridoriginAzEl = radecToAzel(gridorigin, mjd, origin);
-
         // Create vectors of az and za to pass to hyperbeam
         std::vector<double> azs, zas;
         for (size_t i {}; i < gridspec.size(); ++ i) {
             auto [l, m] = gridspec.linearToSky<double>(i);
-            auto azel = lmToAzEl(l, m, gridoriginAzEl);
+            auto azel = radecToAzel(lmToRaDec(l, m, gridorigin), mjd, origin);
             azs.push_back(azel.az);
             zas.push_back(pi_v<double> / 2 - azel.el);
         }

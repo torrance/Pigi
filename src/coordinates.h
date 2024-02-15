@@ -25,17 +25,6 @@ struct LongLat {
     double lat {};
 };
 
-AzEl lmToAzEl(const double l, const double m, const AzEl& origin) {
-    // Don't use ndash here, as we _want_ below horizon values to be invalid
-    // and for NaN to propagate
-    auto n = std::sqrt(1 - l * l - m * m);
-
-    auto az = origin.az + std::atan2(l, n * std::cos(origin.el) - m * std::sin(origin.el));
-    auto el = std::asin(m * std::cos(origin.el) + n * std::sin(origin.el));
-
-    return {az, el};
-}
-
 RaDec lmToRaDec(const double l, const double m, const RaDec& origin) {
     // Don't use ndash here, as we _want_ below horizon values to be invalid
     // and for NaN to propagate
