@@ -255,11 +255,11 @@ TEST_CASE("Widefield inversion", "[widefield]") {
     // Config
     double scale_asec = 15;
     const GridConfig gridconf {
-        .imgNx = 12000, .imgNy = 12000, .imgScalelm = std::sin(deg2rad(scale_asec / 3600)),
+        .imgNx = 9000, .imgNy = 9000, .imgScalelm = std::sin(deg2rad(scale_asec / 3600)),
         .paddingfactor = 1.5, .kernelsize = 128, .kernelpadding = 18, .wstep = 25
     };
 
-    const int oversample {8};
+    const int oversample {6};
     REQUIRE( gridconf.imgNx % oversample == 0 );
 
     MeasurementSet mset({TESTDATA}, 0, 11);
