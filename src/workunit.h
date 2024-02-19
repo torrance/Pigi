@@ -20,7 +20,7 @@ struct UVWOrigin {
     UVWOrigin(T u0, T v0, T w0) : u0(u0), v0(v0), w0(w0) {}
 };
 
-template <typename S, typename Alloc=MMapAllocator<UVDatum<S>>>
+template <typename S>
 struct WorkUnit {
     long long u0px;
     long long v0px;
@@ -29,15 +29,15 @@ struct WorkUnit {
     S w0;
     std::shared_ptr<HostArray< ComplexLinearData<S>, 2 >> Aleft;
     std::shared_ptr<HostArray< ComplexLinearData<S>, 2 >> Aright;
-    std::vector<UVDatum<S>, Alloc> data;
+    std::vector<UVDatum<S>*> data;
 
     template <typename P>
     LinearData<P> totalWeight() const {
-        LinearData<P> w {};
-        for (const auto& uvdatum : this->data) {
-            w += static_cast<LinearData<P>>(uvdatum.weights);
+        LinearData<double> w {};
+        for (const auto uvdatumptr : this->data) {
+            w += static_cast<LinearData<double>>(uvdatumptr->weights);
         }
-        return w;
+        return static_cast<LinearData<P>>(w);
     }
 };
 
@@ -51,17 +51,10 @@ auto partition(
     auto gridspec = gridconf.padded();
 
     // Temporarily store workunits in a map to reduce search space during partitioning
-    // Note: we use MMapAllocator here because the standard C++ allocator ends up retaining
-    // GBs of memory, potentially due to memory fragmentation as part of a pseudo-random
-    // access pattern with a long tail of small allocations. Note the N parameter of
-    // MMapAllocator is specfied so that after we are finished here, the whole thing is
-    // truncated - and uses a different backing file to flattened workunits below.
-    std::unordered_map<
-        double, std::vector<WorkUnit< S, MMapAllocator<UVDatum<S>, 1> >>
-    > wlayers;
+    std::unordered_map<double, std::vector<WorkUnit<S>>> wlayers;
     long long radius {gridconf.kernelsize / 2 - gridconf.kernelpadding};
 
-    for (UVDatum<S> uvdatum : uvdata) {
+    for (auto& uvdatum : uvdata) {
         // Find Aterm
         auto Aleft = aterms.get(uvdatum.meta->time, uvdatum.meta->ant1);
         auto Aright = aterms.get(uvdatum.meta->time, uvdatum.meta->ant2);
@@ -95,7 +88,7 @@ auto partition(
                 -radius <= vpx - workunit.v0px + 0.5 &&
                 vpx - workunit.v0px + 0.5 <= radius
             ) {
-                workunit.data.push_back(uvdatum);
+                workunit.data.push_back(&uvdatum);
                 found = true;
                 break;
             }
@@ -109,26 +102,19 @@ auto partition(
         // TODO: use emplace_back() when we can upgrade Clang
         wworkunits.push_back({
             u0px, v0px, u0, v0, static_cast<S>(w0),
-            Aleft, Aright, {uvdatum}
+            Aleft, Aright, {&uvdatum}
         });
     }
 
-    // Flatten workunits and write to file-backed mmap memory
+    // Flatten workunits
     std::vector<WorkUnit<S>> workunits;
     for (auto& [_, wworkunits] : wlayers) {
-        while (!wworkunits.empty()) {
-            auto& workunit = wworkunits.back();
-
-            std::vector<UVDatum<S>, MMapAllocator<UVDatum<S>>> data(workunit.data.size());
-            std::copy(workunit.data.begin(), workunit.data.end(), data.begin());
-
+        for (auto& workunit : wworkunits) {
             workunits.push_back({
                 workunit.u0px, workunit.v0px,
                 workunit.u0, workunit.v0, workunit.w0,
-                workunit.Aleft, workunit.Aright, std::move(data)
+                workunit.Aleft, workunit.Aright, std::move(workunit.data)
             });
-
-            wworkunits.pop_back();
         }
     }
 

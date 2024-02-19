@@ -12,6 +12,7 @@
 #include "channel.h"
 #include "coordinates.h"
 #include "constants.h"
+#include "memmap.h"
 #include "outputtypes.h"
 #include "uvdatum.h"
 
@@ -19,7 +20,7 @@ class MeasurementSet {
 public:
     class Iterator {
     public:
-        Iterator(MeasurementSet& mset, long nstart = 0) :
+        Iterator(const MeasurementSet& mset, long nstart = 0) :
             mset(mset), lambdas(mset.freqs), nstart(nstart),
             uvwCol(mset.ms, "UVW"),
             timeCol(mset.ms, "TIME_CENTROID"),
@@ -58,7 +59,7 @@ public:
         bool operator!=(const Iterator& other) const { return !(*this == other); }
 
     private:
-        MeasurementSet& mset;
+        const MeasurementSet& mset;
         std::vector<double> lambdas;
         std::vector<UVDatum<double>> cache;
         std::vector<UVDatum<double>>::iterator cache_current;
@@ -350,10 +351,10 @@ public:
         tbls.markForDelete();
     }
 
-    auto begin() { return Iterator(*this); }
-    auto end() { return Iterator(*this, -1); }
+    auto begin() const { return Iterator(*this); }
+    auto end() const { return Iterator(*this, -1); }
 
-    auto channelrange() {
+    auto channelrange() const {
         return std::make_tuple(chanlow, chanhigh);
     }
 
@@ -371,6 +372,20 @@ public:
     double midtime() const {
         // Return mjd value (converted from seconds -> days)
         return (timehigh + timelow) / (2. * 86400.);
+    }
+
+    size_t size() const {
+        auto [chanlo, chanhi] = this->channelrange();
+        return ms.nrow() * (chanhi - chanlo + 1);
+    }
+
+    template <typename P>
+    std::vector<UVDatum<P>, MMapAllocator<UVDatum<P>>> data() const {
+        std::vector<UVDatum<P>, MMapAllocator<UVDatum<P>>> uvdata(this->size());
+        for (size_t i {}; auto& uvdatum : *this) {
+            uvdata[i++] = static_cast<UVDatum<P>>(uvdatum);
+        }
+        return uvdata;
     }
 
     std::string telescopeName() const {

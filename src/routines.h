@@ -200,24 +200,27 @@ void cleanWorker(
 
     queen.send(0, 0, mset.midfreq());
 
-    auto uvdata = [&] () -> std::generator<UVDatum<P>> {
-        for (auto& uvdatum : mset) {
-            if (config.phaserotate) phaserotate(uvdatum, config.phasecenter);
-            co_yield static_cast<UVDatum<P>>(uvdatum);
+    auto uvdata = mset.data<P>();
+
+    if (config.phaserotate) {
+        for (auto& uvdatum : uvdata) {
+            phaserotate(uvdatum, config.phasecenter);
         }
     };
 
     fmt::println("Worker [{}/{}]: Calculating visibility weights...", rank + 1, hivesize);
     std::shared_ptr<Weighter<P>> weighter {};
     if (config.weight == "uniform") {
-        weighter = std::make_shared<Uniform<P>>(uvdata(), config.gridconf.padded());
+        weighter = std::make_shared<Uniform<P>>(uvdata, config.gridconf.padded());
     } else if (config.weight == "natural") {
-        weighter = std::make_shared<Natural<P>>(uvdata(), config.gridconf.padded());
+        weighter = std::make_shared<Natural<P>>(uvdata, config.gridconf.padded());
     } else if (config.weight == "briggs") {
-        weighter = std::make_shared<Briggs<P>>(uvdata(), config.gridconf.padded(), config.robust);
+        weighter = std::make_shared<Briggs<P>>(uvdata, config.gridconf.padded(), config.robust);
     } else {
         std::runtime_error(fmt::format("Unknown weight: {}", config.weight));
     }
+
+    applyWeights(*weighter, uvdata);
 
     auto aterms = mkAterms<P>(
         mset, config.gridconf.subgrid(), config.maxDuration, config.phasecenter
@@ -230,7 +233,7 @@ void cleanWorker(
         mpi::Lock lock(hive);
 
         fmt::println("Worker [{}/{}]: Reading and partitioning data...", rank + 1, hivesize);
-        auto workunits = partition(uvdata(), config.gridconf, aterms);
+        auto workunits = partition(uvdata, config.gridconf, aterms);
 
         // Print some stats about our partitioning
         std::vector<size_t> sizes;
@@ -254,8 +257,6 @@ void cleanWorker(
 
     queen.send(0, 0, beamPower);
     if (hivesize > 1) save(fmt::format("beam-{:02d}.fits", rank + 1), beamPower);
-
-    applyWeights(*weighter, workunits);
 
     // Create psf
     HostArray<thrust::complex<P>, 2> psf;

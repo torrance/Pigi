@@ -82,11 +82,7 @@ TEST_CASE("MSet reading and paritioning", "[io]") {
     );
 
     auto uvdata = simple_benchmark("MSet read", 5, [&] {
-        std::vector<UVDatum<double>> uvdata;
-        for (auto& uvdatum : mset) {
-            uvdata.push_back(uvdatum);
-        }
-        return uvdata;
+        return mset.data<double>();
     });
 
     auto workunits = simple_benchmark("Partition", 5, [&] {
@@ -110,13 +106,8 @@ TEMPLATE_TEST_CASE("Invert", "[invert]", float, double) {
     );
 
     // Convert to TestType precision
-    auto uvdata = [&] () -> std::generator<UVDatum<TestType>> {
-        for (auto& uvdatum : mset) {
-            co_yield static_cast<UVDatum<TestType>>(uvdatum);
-        }
-    };
-
-    auto workunits = partition(uvdata(), gridconf, Aterms<TestType>(Aterm));
+    auto uvdata = mset.data<TestType>();
+    auto workunits = partition(uvdata, gridconf, Aterms<TestType>(Aterm));
 
     // Trigger precalculation of kernel configuration
     {
@@ -146,14 +137,8 @@ TEMPLATE_TEST_CASE("Predict", "[predict]", float, double) {
         {TESTDATA}, 0, 383, 0, std::numeric_limits<double>::max()
     );
 
-    // Convert to TestType precision
-    auto uvdata = [&] () -> std::generator<UVDatum<TestType>> {
-        for (auto& uvdatum : mset) {
-            co_yield static_cast<UVDatum<TestType>>(uvdatum);
-        }
-    };
-
-    auto workunits = partition(uvdata(), gridconf, Aterms<TestType>(Aterm));
+    auto uvdata = mset.data<TestType>();
+    auto workunits = partition(uvdata, gridconf, Aterms<TestType>(Aterm));
 
     // Create skymap
     HostArray<StokesI<TestType>, 2> skymap {gridconf.grid().shape()};

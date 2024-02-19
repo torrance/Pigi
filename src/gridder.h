@@ -230,8 +230,14 @@ void gridder(
 
                 const UVWOrigin origin {workunit->u0, workunit->v0, workunit->w0};
 
-                // Transfer data to device and retrieve A terms
-                const DeviceArray<UVDatum<S>, 1> uvdata {workunit->data};
+                // Assemble uvdata from pointers and transfer to host
+                HostArray<UVDatum<S>, 1> uvdata_h(workunit->data.size());
+                for (size_t i {}; const auto uvdatumptr : workunit->data) {
+                    uvdata_h[i++] = *uvdatumptr;
+                }
+                const DeviceArray<UVDatum<S>, 1> uvdata_d {uvdata_h};
+
+                // Retrieve A terms that have already been sent to device
                 const auto& Aleft = Aterms.at(workunit->Aleft);
                 const auto& Aright = Aterms.at(workunit->Aright);
 
@@ -240,7 +246,7 @@ void gridder(
 
                 // DFT
                 gpudift<T, S>(
-                    subgrid, Aleft, Aright, origin, uvdata, subgridspec, makePSF
+                    subgrid, Aleft, Aright, origin, uvdata_d, subgridspec, makePSF
                 );
 
                 // Apply taper and perform FFT normalization

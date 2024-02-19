@@ -214,8 +214,14 @@ void degridder(
                 // maybe is a std::optional; let's get the value
                 auto workunit = *maybe;
 
-                // Transfer data to device and retrieve A terms
-                DeviceArray<UVDatum<S>, 1> uvdata {workunit->data};
+                // Assemble uvdata from pointers and transfer to host
+                HostArray<UVDatum<S>, 1> uvdata_h(workunit->data.size());
+                for (size_t i {}; const auto uvdatumptr : workunit->data) {
+                    uvdata_h[i++] = *uvdatumptr;
+                }
+                const DeviceArray<UVDatum<S>, 1> uvdata_d {uvdata_h};
+
+                // Retrieve A terms that have already been sent to device
                 const auto& Aleft = Aterms.at(workunit->Aleft);
                 const auto& Aright = Aterms.at(workunit->Aright);
 
@@ -230,13 +236,16 @@ void degridder(
                 }, subgrid, Aleft, Aright, subtaper);
 
                 gpudft<S>(
-                    uvdata,
+                    uvdata_d,
                     {workunit->u0, workunit->v0, workunit->w0},
                     subgrid, gridconf.subgrid(), degridop
                 );
 
                 // Transfer data back to host
-                copy(workunit->data, uvdata);
+                copy(uvdata_h, uvdata_d);
+                for (size_t i {}; const auto& uvdatum : uvdata_h) {
+                    *(workunit->data[i++]) = uvdatum;
+                }
             }
 
             HIPFFTCHECK( hipfftDestroy(plan) );

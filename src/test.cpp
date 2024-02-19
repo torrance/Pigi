@@ -223,8 +223,9 @@ TEST_CASE("Measurement Set & Partition", "[mset]") {
         {TESTDATA}, 0, 11, 0, std::numeric_limits<double>::max()
     );
 
+    auto uvdata = mset.data<double>();
     auto workunits = partition(
-        mset, gridconf, Aterms<double>(aterm)
+        uvdata, gridconf, Aterms<double>(aterm)
     );
 
     size_t n {};
@@ -232,7 +233,7 @@ TEST_CASE("Measurement Set & Partition", "[mset]") {
         n += workunit.data.size();
     }
 
-    REQUIRE( n == 2745360 );
+    REQUIRE( n == mset.size() );
 
     SECTION("Phase center coordinate conversion") {
         auto radec = mset.phaseCenter();
@@ -265,10 +266,7 @@ TEST_CASE("Widefield inversion", "[widefield]") {
     MeasurementSet mset({TESTDATA}, 0, 11);
 
     // Copy uvdata to vector, for use in both idg and dft
-    std::vector<UVDatum<P>> uvdata;
-    for (auto& uvdatum : mset) {
-        uvdata.push_back(static_cast<UVDatum<P>>(uvdatum));
-    }
+    auto uvdata = mset.data<P>();
 
     // Create beam
     auto delays = std::get<2>(mset.mwaDelays().front());
@@ -422,14 +420,13 @@ TEMPLATE_TEST_CASE_SIG(
     }
 
     // Cast to float or double
-    auto uvdata = [&] () -> std::generator<UVDatum<Q>> {
-        for (const auto& uvdatum : uvdata64) {
-            co_yield static_cast<UVDatum<Q>>(uvdatum);
-        }
-    };
+    std::vector<UVDatum<Q>> uvdata(uvdata64.size());
+    for (size_t i {}; const auto& uvdatum : uvdata64) {
+        uvdata[i++] = static_cast<UVDatum<Q>>(uvdatum);
+    }
 
     auto Aterm = beam.gridResponse(gridconf.subgrid(), gridorigin, freq);
-    auto workunits = partition(uvdata(), gridconf, Aterms<Q>(Aterm));
+    auto workunits = partition(uvdata, gridconf, Aterms<Q>(Aterm));
     auto img = invert<StokesI, Q>(workunits, gridconf);
 
     // Correct for beam
@@ -570,8 +567,8 @@ TEMPLATE_TEST_CASE_SIG(
     // Flatten workunits back into uvdata and sort back to original order
     // using the chan attribute
     for (const auto& workunit : workunits) {
-        for (const auto& uvdatum : workunit.data) {
-            uvdata[uvdatum.chan] = uvdatum;
+        for (const auto uvdatumptr : workunit.data) {
+            uvdata[uvdatumptr->chan] = *uvdatumptr;
         }
     }
 

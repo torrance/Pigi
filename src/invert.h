@@ -72,9 +72,7 @@ HostArray<T<S>, 2> invert(
     // Accumulation variable requires double precision
     T<double> weightTotal {};
     for (const auto& workunit : workunits) {
-        for (const auto& uvdatum : workunit.data) {
-            weightTotal += T<double>(uvdatum.weights);
-        }
+        weightTotal += T<double>(workunit.template totalWeight<double>());
     }
     img /= T<S>(weightTotal);
 
