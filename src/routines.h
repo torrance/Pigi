@@ -29,12 +29,13 @@ namespace routines {
 
 template <typename P>
 void cleanQueen(const Config& config, boost::mpi::intercommunicator hive) {
-    fmt::println("I am the colony queen! All shall love me and despair.");
+    fmt::println("Queen: All shall love me and despair.");
 
     const int hivesize = hive.remote_size();
-    fmt::println("Hive size is: {}", hivesize);
 
     const std::ranges::iota_view<int, int> srcs{0, hivesize};
+
+    const GridConfig gridconf = config.gridconf();
 
     std::vector<double> freqs(hivesize);
     for (const int src : srcs) {
@@ -43,7 +44,7 @@ void cleanQueen(const Config& config, boost::mpi::intercommunicator hive) {
 
     // Collect beams from workers
     {
-        HostArray<StokesI<P>, 2> beamPowerCombined {config.gridconf.grid().shape()};
+        HostArray<StokesI<P>, 2> beamPowerCombined {gridconf.grid().shape()};
         HostArray<StokesI<P>, 2> beamPower;
 
         for (const int src : srcs) {
@@ -64,7 +65,7 @@ void cleanQueen(const Config& config, boost::mpi::intercommunicator hive) {
     GridSpec gridspecPsf;
     {
         // Collect psfs from workers
-        HostArray<thrust::complex<P>, 2> psfCombined {config.gridconf.grid().shape()};
+        HostArray<thrust::complex<P>, 2> psfCombined {gridconf.grid().shape()};
         for (const auto& psf : psfs) {
             psfCombined += psf;
         }
@@ -75,7 +76,7 @@ void cleanQueen(const Config& config, boost::mpi::intercommunicator hive) {
         // are included in cutout. We use this smaller window to speed up PSF fitting and
         // cleaning.
         gridspecPsf = cropPsf(
-            psfCombined, config.gridconf.grid(), 0.2 * (1 - config.majorgain)
+            psfCombined, gridconf.grid(), 0.2 * (1 - config.majorgain)
         );
 
         // Send gridspecPsf to workers; they will use this to crop their own psfs
@@ -84,9 +85,9 @@ void cleanQueen(const Config& config, boost::mpi::intercommunicator hive) {
         }
 
         for (auto& psf : psfs) {
-            psf = resize(psf, config.gridconf.grid(), gridspecPsf);
+            psf = resize(psf, gridconf.grid(), gridspecPsf);
         }
-        psfCombined = resize(psfCombined, config.gridconf.grid(), gridspecPsf);
+        psfCombined = resize(psfCombined, gridconf.grid(), gridspecPsf);
 
         // Fit the combined psf to construct Gaussian PSF
         psf = PSF(psfCombined, gridspecPsf);
@@ -100,7 +101,7 @@ void cleanQueen(const Config& config, boost::mpi::intercommunicator hive) {
 
     // Write out dirty combined
     {
-        HostArray<StokesI<P>, 2> dirtyCombined {config.gridconf.grid().shape()};
+        HostArray<StokesI<P>, 2> dirtyCombined {gridconf.grid().shape()};
         for (auto& residual : residuals) {
             dirtyCombined += residual;
         }
@@ -119,7 +120,7 @@ void cleanQueen(const Config& config, boost::mpi::intercommunicator hive) {
         for (const int src : srcs) { hive.send(src, 0, true); }
 
         auto [minorComponentsMaps, iters, finalMajor] = clean::major<P>(
-            freqs, residuals, config.gridconf.grid(), psfs, gridspecPsf,
+            freqs, residuals, gridconf.grid(), psfs, gridspecPsf,
             config.minorgain, config.majorgain, config.cleanThreshold,
             config.autoThreshold, config.nMinor - iminor
         );
@@ -127,7 +128,7 @@ void cleanQueen(const Config& config, boost::mpi::intercommunicator hive) {
 
         // Send out clean components for subtraction from visibilities by workers
         for (const int src : srcs) {
-            HostArray<StokesI<P>, 2> minorComponents {config.gridconf.grid().shape()};
+            HostArray<StokesI<P>, 2> minorComponents {gridconf.grid().shape()};
             for (auto [idx, val] : minorComponentsMaps[src]) {
                 minorComponents[idx] = val;
             }
@@ -149,8 +150,8 @@ void cleanQueen(const Config& config, boost::mpi::intercommunicator hive) {
     for (const int src : srcs) { hive.send(src, 0, false); }
 
     // Write out the final images to disk
-    HostArray<StokesI<P>, 2> residualCombined {config.gridconf.grid().shape()};
-    HostArray<StokesI<P>, 2> componentsCombined {config.gridconf.grid().shape()};
+    HostArray<StokesI<P>, 2> residualCombined {gridconf.grid().shape()};
+    HostArray<StokesI<P>, 2> componentsCombined {gridconf.grid().shape()};
 
     {
         HostArray<StokesI<P>, 2> components;
@@ -165,7 +166,7 @@ void cleanQueen(const Config& config, boost::mpi::intercommunicator hive) {
     componentsCombined /= StokesI<P>(hivesize);
 
     fmt::println("Queen: Convolving final image...");
-    auto imageCombined = convolve(componentsCombined, psf.draw(config.gridconf.grid()));
+    auto imageCombined = convolve(componentsCombined, psf.draw(gridconf.grid()));
     imageCombined += residualCombined;
 
     fmt::println("Queen: Writing out files...");
@@ -183,7 +184,9 @@ void cleanWorker(
     const int rank = hive.rank();
     const int hivesize = hive.size();
 
-    fmt::println("Worker bee with rank {}, reporting for duty!", rank);
+    fmt::println("Worker [{}/{}]: Reporting for duty!", rank + 1, hivesize);
+
+    const GridConfig gridconf = config.gridconf();
 
     // Be careful in these channel boundary calculations to remember that the
     // upper channel is inclusive in the range
@@ -203,6 +206,7 @@ void cleanWorker(
     auto uvdata = mset.data<P>();
 
     if (config.phaserotate) {
+        fmt::println("Worker [{}/{}]: Phase rotating visibilities...", rank + 1, hivesize);
         for (auto& uvdatum : uvdata) {
             phaserotate(uvdatum, config.phasecenter);
         }
@@ -211,11 +215,11 @@ void cleanWorker(
     fmt::println("Worker [{}/{}]: Calculating visibility weights...", rank + 1, hivesize);
     std::shared_ptr<Weighter<P>> weighter {};
     if (config.weight == "uniform") {
-        weighter = std::make_shared<Uniform<P>>(uvdata, config.gridconf.padded());
+        weighter = std::make_shared<Uniform<P>>(uvdata, gridconf.padded());
     } else if (config.weight == "natural") {
-        weighter = std::make_shared<Natural<P>>(uvdata, config.gridconf.padded());
+        weighter = std::make_shared<Natural<P>>(uvdata, gridconf.padded());
     } else if (config.weight == "briggs") {
-        weighter = std::make_shared<Briggs<P>>(uvdata, config.gridconf.padded(), config.robust);
+        weighter = std::make_shared<Briggs<P>>(uvdata, gridconf.padded(), config.robust);
     } else {
         std::runtime_error(fmt::format("Unknown weight: {}", config.weight));
     }
@@ -223,7 +227,7 @@ void cleanWorker(
     applyWeights(*weighter, uvdata);
 
     auto aterms = mkAterms<P>(
-        mset, config.gridconf.subgrid(), config.maxDuration, config.phasecenter
+        mset, gridconf.subgrid(), config.maxDuration, config.phasecenter
     );
 
     // Partition data and write to disk
@@ -233,7 +237,7 @@ void cleanWorker(
         mpi::Lock lock(hive);
 
         fmt::println("Worker [{}/{}]: Reading and partitioning data...", rank + 1, hivesize);
-        auto workunits = partition(uvdata, config.gridconf, aterms);
+        auto workunits = partition(uvdata, gridconf, aterms);
 
         // Print some stats about our partitioning
         std::vector<size_t> sizes;
@@ -253,7 +257,7 @@ void cleanWorker(
     }();
 
     fmt::println("Worker [{}/{}]: Constructing average beam...", rank + 1, hivesize);
-    auto beamPower = mkAvgAtermPower<StokesI, P>(workunits, config.gridconf);
+    auto beamPower = mkAvgAtermPower<StokesI, P>(workunits, gridconf);
 
     queen.send(0, 0, beamPower);
     if (hivesize > 1) save(fmt::format("beam-{:02d}.fits", rank + 1), beamPower);
@@ -266,14 +270,14 @@ void cleanWorker(
             "Worker [{}/{}]: Constructing PSF...",
             rank + 1, hivesize
         );
-        psf = invert<thrust::complex, P>(workunits, config.gridconf, true);
+        psf = invert<thrust::complex, P>(workunits, gridconf, true);
         queen.send(0, 0, psf);
     };
     if (hivesize > 1) save(fmt::format("psf-{:02d}.fits", rank + 1), psf);
 
     GridSpec gridspecPsf;
     queen.recv(0, boost::mpi::any_tag, gridspecPsf);
-    psf = resize(psf, config.gridconf.grid(), gridspecPsf);
+    psf = resize(psf, gridconf.grid(), gridspecPsf);
 
     // Initial inversion
     HostArray<StokesI<P>, 2> residual;
@@ -283,13 +287,13 @@ void cleanWorker(
             "Worker [{}/{}]: Constructing dirty image...",
             rank + 1, hivesize
         );
-        residual = invert<StokesI, P>(workunits, config.gridconf);
+        residual = invert<StokesI, P>(workunits, gridconf);
         queen.send(0, 0, residual);
     };
     if (hivesize > 1) save(fmt::format("dirty-{:02d}.fits", rank + 1), residual);
 
     // Initialize components array
-    HostArray<StokesI<P>, 2> components{config.gridconf.grid().shape()};
+    HostArray<StokesI<P>, 2> components{gridconf.grid().shape()};
 
     // This flag is set by the queen, indicating whether to proceed
     // for each major clean loop
@@ -305,7 +309,7 @@ void cleanWorker(
             components += minorComponents;
 
             // Correct for beamPower
-            for (size_t i {}, I = config.gridconf.grid().size(); i < I; ++i) {
+            for (size_t i {}, I = gridconf.grid().size(); i < I; ++i) {
                 minorComponents[i] /= beamPower[i];
             }
 
@@ -315,7 +319,7 @@ void cleanWorker(
                 "Worker [{}/{}]: Removing clean components from uvdata... (major cycle {})",
                 rank + 1, hivesize, i
             );
-            predict<StokesI<P>, P>(workunits, minorComponents, config.gridconf, DegridOp::Subtract);
+            predict<StokesI<P>, P>(workunits, minorComponents, gridconf, DegridOp::Subtract);
         }
 
         // Invert
@@ -325,7 +329,7 @@ void cleanWorker(
                 "Worker [{}/{}]: Constructing residual image... (major cycle {})",
                 rank + 1, hivesize, i
             );
-            residual = invert<StokesI, P>(workunits, config.gridconf);
+            residual = invert<StokesI, P>(workunits, gridconf);
             queen.send(0, 0, residual);
         }
 
@@ -342,7 +346,7 @@ void cleanWorker(
 
         auto image = convolve(
             components,
-            PSF<P>(psf, gridspecPsf).draw(config.gridconf.grid())
+            PSF<P>(psf, gridspecPsf).draw(gridconf.grid())
         );
         image += residual;
 
