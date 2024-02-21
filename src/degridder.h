@@ -228,6 +228,15 @@ void degridder(
                 // Allocate subgrid and extract from grid
                 auto subgrid = extractSubgrid(grid, *workunit, gridconf);
 
+                // Apply deltal, deltam shift to visibilities
+                map([=, subgridspec=gridconf.subgrid()] __device__ (auto idx, auto& subgrid) {
+                    auto [u, v] = subgridspec.linearToUV<S>(idx);
+                    subgrid *= cispi(2 * (
+                        u * static_cast<S>(subgridspec.deltal) +
+                        v * static_cast<S>(subgridspec.deltam)
+                    ));
+                }, Iota(), subgrid);
+
                 fftExec(plan, subgrid, HIPFFT_BACKWARD);
 
                 // Apply aterms, taper and normalize post-FFT

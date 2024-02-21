@@ -452,16 +452,16 @@ TEMPLATE_TEST_CASE_SIG(
 TEMPLATE_TEST_CASE_SIG(
     "Predict", "[predict]",
     ((typename Q, typename BEAM, int THRESHOLDF, int THRESHOLDP), Q, BEAM, THRESHOLDF, THRESHOLDP),
-    (float, (UniformBeam<float>), 2, -5),
-    (double, (UniformBeam<double>), 1, -12),
-    (float, (GaussianBeam<float>), 2, -5),
-    (double, (GaussianBeam<double>), 1, -12),
-    (float, (MWABeam<float>), 3, -5),
-    (double, (MWABeam<double>), 2, -5)
+    (float, (UniformBeam<float>), 3, -5),
+    (double, (UniformBeam<double>), 2, -12),
+    (float, (GaussianBeam<float>), 3, -5),
+    (double, (GaussianBeam<double>), 2, -12),
+    (float, (MWABeam<float>), 4, -5),
+    (double, (MWABeam<double>), 3, -5)
 ) {
     const GridConfig gridconf {
         .imgNx = 2000, .imgNy = 2000, .imgScalelm = 1. / (4000 * 20), .paddingfactor = 2,
-        .kernelsize = 96, .kernelpadding = 17, .wstep = 25
+        .kernelsize = 96, .kernelpadding = 17, .wstep = 25, .deltal = 0.015, .deltam = -0.01
     };
     const GridSpec gridspec = gridconf.grid();
     const double freq {150e6};

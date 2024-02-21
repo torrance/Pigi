@@ -60,6 +60,16 @@ void predict(
         }, Iota(), imgd, wlayer);
 
         fftExec(plan, wlayer, HIPFFT_FORWARD);
+
+        // Reset deltal, deltam shift to visibilities
+        map([=] __device__ (auto idx, auto& wlayer) {
+            auto [u, v] = gridspec.linearToUV<S>(idx);
+            wlayer *= cispi(-2 * (
+                u * static_cast<S>(gridspec.deltal) +
+                v * static_cast<S>(gridspec.deltam)
+            ));
+        }, Iota(), wlayer);
+
         degridder<T, S>(wworkunits, wlayer, subtaperd, gridconf, degridop);
     }
 
