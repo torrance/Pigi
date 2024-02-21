@@ -71,7 +71,13 @@ void _gpudift(
                 );
 
                 if constexpr(makePSF) {
-                    uvdatum.data = {1, 1, 1, 1};
+                    // Predict PSF into projection center
+                    S deltal = subgridspec.deltal, deltam = subgridspec.deltam;
+                    S deltan = ndash<S>(deltal, deltam);
+                    auto val = cispi(-2 * (
+                        uvdatum.u * deltal + uvdatum.v * deltam + uvdatum.w * deltan
+                    ));
+                    uvdatum.data = {val, val, val, val};
                 }
 
                 uvdatum.data *= uvdatum.weights;
