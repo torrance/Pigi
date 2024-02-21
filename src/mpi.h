@@ -16,6 +16,7 @@
 #include "outputtypes.h"
 
 BOOST_IS_BITWISE_SERIALIZABLE(GridConfig);
+BOOST_IS_BITWISE_SERIALIZABLE(GridSpec);
 BOOST_IS_BITWISE_SERIALIZABLE(RaDec);
 
 namespace boost {
@@ -34,6 +35,7 @@ namespace boost {
             ar & payload.scale;
             ar & payload.phasecenter;
             ar & payload.phaserotate;
+            ar & payload.projectioncenter;
             ar & payload.kernelsize;
             ar & payload.paddingfactor;
             ar & payload.wstep;
@@ -43,7 +45,6 @@ namespace boost {
             ar & payload.autoThreshold;
             ar & payload.nMajor;
             ar & payload.nMinor;
-            ar & payload.gridconf;
         }
 
         template<class Archive, typename T, int N>
@@ -72,14 +73,6 @@ namespace boost {
         template<class Archive, typename T>
         void serialize(Archive& ar, StokesI<T>& payload, const unsigned) {
             ar & payload.I;
-        }
-
-        template<class Archive>
-        void serialize(Archive& ar, GridSpec& payload, const unsigned) {
-            ar & payload.Nx;
-            ar & payload.Ny;
-            ar & payload.scalelm;
-            ar & payload.scaleuv;
         }
     }
 }

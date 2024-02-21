@@ -1,5 +1,6 @@
 #pragma once
 
+#include <limits>
 #include <string>
 #include <vector>
 
@@ -28,13 +29,14 @@ struct Config {
     std::string weight {"uniform"};
     float robust {0};
 
-    GridConfig gridconf;
-
     // Image
     int size {1000};
     double scale {15}; // arcseconds
     RaDec phasecenter {};
     bool phaserotate {false};
+    RaDec projectioncenter {
+        std::numeric_limits<double>::quiet_NaN(), std::numeric_limits<double>::quiet_NaN()
+    };
 
     // IDG
     int kernelsize {128};
@@ -163,14 +165,17 @@ struct Config {
                     find_or(subtbl, "dec", rad2deg(this->phasecenter.dec))
                 );
             }
-        }
 
-        // TODO: Remove gridconf from config object
-        double scalelm = std::asin(deg2rad(this->scale / 3600.));
-        this->gridconf = GridConfig(
-            this->size, this->size, scalelm, this->paddingfactor,
-            this->kernelsize, this->kernelpadding, this->wstep
-        );
+            if (tbl.contains("projectioncenter")) {
+                const auto subtbl = toml::find(tbl, "projectioncenter");
+                this->projectioncenter.ra = deg2rad(
+                    find_or(subtbl, "ra", rad2deg(this->projectioncenter.ra))
+                );
+                this->projectioncenter.dec = deg2rad(
+                    find_or(subtbl, "dec", rad2deg(this->projectioncenter.dec))
+                );
+            }
+        }
     }
 
     toml::basic_value<toml::preserve_comments> into_toml() const {
@@ -269,6 +274,15 @@ struct Config {
                     " The angular size of a pixel at the center of the field.",
                     " [0 <= float: arcsecond]",
                 }}},
+                {"projectioncenter", toml::basic_value<toml::preserve_comments>({
+                    {"dec", rad2deg(this->projectioncenter.dec)},
+                    {"ra", rad2deg(this->projectioncenter.ra)}
+                }, {
+                    " The projection center is the associated celestial coordinate of the",
+                    " the central image pixel. Typically, this will be the same as the",
+                    " phase center and can be omitted use the phase center value.",
+                    " [float: degree]",
+                })},
                 {"phasecenter", toml::basic_value<toml::preserve_comments>({
                     {"dec", rad2deg(this->phasecenter.dec)},
                     {"ra", rad2deg(this->phasecenter.ra)}
@@ -304,6 +318,18 @@ struct Config {
                     " values provided in this configuration file. [array of paths]",
                 }}},
             }},
+        };
+    }
+
+    GridConfig gridconf() const {
+        double scalelm = std::asin(deg2rad(this->scale / 3600.));
+        auto [deltal, deltam] = RaDecTolm(this->projectioncenter, this->phasecenter);
+
+        return {
+            .imgNx = this->size, .imgNy = this->size, .imgScalelm = scalelm,
+            .paddingfactor = this->paddingfactor, .kernelsize = this->kernelsize,
+            .kernelpadding = this->kernelpadding, .wstep = static_cast<double>(this->wstep),
+            .deltal = deltal, .deltam = deltam
         };
     }
 
