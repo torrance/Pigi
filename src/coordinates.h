@@ -36,6 +36,13 @@ RaDec lmToRaDec(const double l, const double m, const RaDec& origin) {
     return {ra, dec};
 }
 
+auto RaDecTolm(const RaDec& radec, const RaDec& origin) {
+    double l = std::cos(radec.dec) * std::sin(origin.ra - radec.ra);
+    double m = std::sin(radec.dec) * std::cos(origin.dec) -
+               std::cos(radec.dec) * std::sin(origin.dec) * std::cos(origin.ra - radec.ra);
+    return std::make_tuple(l, m);
+}
+
 AzEl radecToAzel(const RaDec& radec, const double& mjd, const LongLat& origin) {
     // Create observation frame from time and origin
     casacore::MPosition pos(

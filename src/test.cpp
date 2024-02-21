@@ -112,6 +112,10 @@ TEST_CASE("Coordinates", "[coordinates]") {
         REQUIRE(std::abs(radec.ra - expected.ra) < 1e-5);
         REQUIRE(std::abs(radec.dec - expected.dec) < 1e-5);
     }
+
+    auto [l, m] = RaDecTolm(radec, gridorigin);
+    REQUIRE(std::abs(l - (lpx - N / 2) * scalelm) < 1e-9);
+    REQUIRE(std::abs(m - (mpx - N / 2) * scalelm) < 1e-9);
 }
 
 TEST_CASE("Utility functions", "[utility]") {
