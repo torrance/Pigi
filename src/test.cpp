@@ -340,7 +340,8 @@ TEMPLATE_TEST_CASE_SIG(
     // Config
     const GridConfig gridconf {
         .imgNx = 1000, .imgNy = 1000, .imgScalelm = std::sin(deg2rad(2. / 60)),
-        .paddingfactor = 1.5, .kernelsize = 96, .kernelpadding = 18, .wstep = 25
+        .paddingfactor = 1.5, .kernelsize = 96, .kernelpadding = 18, .wstep = 25,
+        .deltal = 0.02, .deltam = -0.01
     };
     const GridSpec gridspec = gridconf.grid();
     double freq {150e6};

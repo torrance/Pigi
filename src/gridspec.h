@@ -10,20 +10,23 @@ struct GridSpec {
     long long Ny;
     double scalelm;
     double scaleuv;
+    double deltal {};
+    double deltam {};
 
     bool operator==(const GridSpec& other) const {
         return (
             Nx == other.Nx && Ny == other.Ny &&
-            scalelm == other.scalelm && scaleuv == other.scaleuv
+            scalelm == other.scalelm && scaleuv == other.scaleuv &&
+            deltal == other.deltal && deltam == other.deltam
         );
     }
 
-    static GridSpec fromScaleLM(long long Nx, long long Ny, double scalelm) {
-        return GridSpec {Nx, Ny, scalelm, 1 / (Nx * scalelm)};
+    static GridSpec fromScaleLM(long long Nx, long long Ny, double scalelm, double deltal = 0, double deltam = 0) {
+        return GridSpec {Nx, Ny, scalelm, 1 / (Nx * scalelm), deltal, deltam};
     }
 
-    static GridSpec fromScaleUV(long long Nx, long long Ny, double scaleuv) {
-        return GridSpec {Nx, Ny, 1 / (Nx * scaleuv), scaleuv};
+    static GridSpec fromScaleUV(long long Nx, long long Ny, double scaleuv, double deltal = 0, double deltam = 0) {
+        return GridSpec {Nx, Ny, 1 / (Nx * scaleuv), scaleuv, deltal, deltam};
     }
 
     __host__ __device__ inline auto size() const {
@@ -55,8 +58,8 @@ struct GridSpec {
         auto [lpx, mpx] = linearToGrid(idx);
 
         return std::make_tuple(
-            (lpx - Nx / 2) * static_cast<S>(scalelm),
-            (mpx - Ny / 2) * static_cast<S>(scalelm)
+            (lpx - Nx / 2) * static_cast<S>(scalelm) + static_cast<S>(deltal),
+            (mpx - Ny / 2) * static_cast<S>(scalelm) + static_cast<S>(deltam)
         );
     }
 
@@ -94,7 +97,8 @@ struct std::hash<GridSpec> {
         using std::hash;
         return (
             hash<long long>()(key.Nx) ^ hash<long long>()(key.Ny) ^
-            hash<double>()(key.scalelm) ^ hash<double>()(key.scaleuv)
+            hash<double>()(key.scalelm) ^ hash<double>()(key.scaleuv) ^
+            hash<long>()(key.deltal) ^ hash<long>()(key.deltam)
         );
     }
 };
@@ -107,9 +111,11 @@ struct GridConfig {
     long long kernelsize {};
     long long kernelpadding {};
     double wstep {1};
+    double deltal {};
+    double deltam {};
 
     GridSpec grid() const {
-        return GridSpec::fromScaleLM(imgNx, imgNy, imgScalelm);
+        return GridSpec::fromScaleLM(imgNx, imgNy, imgScalelm, deltal, deltam);
     }
 
     GridSpec padded() const {
@@ -117,13 +123,13 @@ struct GridConfig {
         return GridSpec::fromScaleLM(
             imgNx * paddingfactor + int(int(imgNx * paddingfactor) % 2 == 1),
             imgNy * paddingfactor + int(int(imgNy * paddingfactor) % 2 == 1),
-            imgScalelm
+            imgScalelm, deltal, deltam
         );
     }
 
     GridSpec subgrid() const {
         return GridSpec::fromScaleUV(
-            kernelsize, kernelsize, padded().scaleuv
+            kernelsize, kernelsize, padded().scaleuv, deltal, deltam
         );
     }
 };
