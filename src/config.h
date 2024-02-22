@@ -1,6 +1,7 @@
 #pragma once
 
 #include <limits>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -15,8 +16,64 @@
 
 #define TOML11_COLORIZE_ERROR_MESSAGE = 1
 
+namespace toml {
+    template <>
+    struct from<RaDec> {
+        static RaDec from_toml(const value& v) {
+            return {
+                deg2rad(find<double>(v, "ra")), deg2rad(find<double>(v, "dec"))
+            };
+        }
+    };
+
+    template <>
+    struct into<RaDec> {
+        static toml::value into_toml(const RaDec& radec) {
+            return {{"ra", rad2deg(radec.ra)}, {"dec", rad2deg(radec.dec)}};
+        }
+    };
+
+    template <typename T>
+    struct into<std::optional<T>> {
+        static toml::value into_toml(const std::optional<T>& opt) {
+            return opt.value_or(T());
+        }
+    };
+}
+
 struct Config {
-    int precision {32};
+    struct Field {
+        int size {1000};
+        std::optional<RaDec> projectioncenter {};
+
+        void validate() const {
+            if (size < 1000) {
+                throw std::runtime_error("[[image.fields]].size must be >= 1000");
+            }
+        }
+
+        void from_toml(const toml::value& v) {
+            this->size = find_or(v, "size", this->size);
+            if (v.contains("projectioncenter")) {
+                this->projectioncenter = toml::find<RaDec>(v, "projectioncenter");
+            }
+        }
+
+        toml::basic_value<toml::preserve_comments> into_toml() const {
+            return {
+                {"size", {this->size, {
+                    " The image size (size x size). [1000 <= int: pixel]",
+                }}},
+                {"projectioncenter", toml::basic_value<toml::preserve_comments>(
+                    this->projectioncenter, {
+                    " The projection center is the associated celestial coordinate of the",
+                    " the central image pixel. Typically, this will be the same as the",
+                    " phase center and can be omitted (or commented out) to use the phase",
+                    " center value. [float: degree]",
+                })},
+            };
+        }
+    };
 
     // Measurement set selection
     int chanlow {0};
@@ -30,15 +87,12 @@ struct Config {
     float robust {0};
 
     // Image
-    int size {1000};
     double scale {15}; // arcseconds
-    RaDec phasecenter {};
-    bool phaserotate {false};
-    RaDec projectioncenter {
-        std::numeric_limits<double>::quiet_NaN(), std::numeric_limits<double>::quiet_NaN()
-    };
+    std::optional<RaDec> phasecenter {};
+    std::vector<Field> fields {{.size = 1000}};
 
     // IDG
+    int precision {32};
     int kernelsize {128};
     int kernelpadding {18};
     double paddingfactor {1.5};
@@ -70,9 +124,6 @@ struct Config {
         }
         if (weight != "uniform" && weight != "natural" && weight != "briggs") {
             throw std::runtime_error("weight.scheme must be one of uniform|natural|briggs");
-        }
-        if (size < 1000) {
-            throw std::runtime_error("field.size must be >= 1000");
         }
         if (scale <= 0) {
             throw std::runtime_error("field.scale must be >= 0");
@@ -107,11 +158,23 @@ struct Config {
         if (nMinor < 0) {
             throw std::runtime_error("clean.nminor must be >= 0");
         }
+        if (!phasecenter) {
+            // This should be set by main
+            throw std::runtime_error("image.phasecenter must be set");
+        }
+        if (fields.empty()) {
+            throw std::runtime_error("At least one [[image.fields]] must be set");
+        }
+
+        for (auto& field : fields) {
+            if (!field.projectioncenter) {
+                field.projectioncenter = phasecenter;
+            }
+            field.validate();
+        }
     }
 
     void from_toml(const toml::value& v) {
-        this->precision = find_or(v, "precision", this->precision);
-
         if (v.contains("mset")) {
             const auto tbl = toml::find(v, "mset");
             this->chanlow = find_or(tbl, "chanlow", this->chanlow);
@@ -129,6 +192,7 @@ struct Config {
 
         if (v.contains("idg")) {
             const auto tbl = toml::find(v, "idg");
+            this->precision = find_or(tbl, "precision", this->precision);
             this->kernelpadding = find_or(tbl, "kernelpadding", this->kernelpadding);
             this->kernelsize = find_or(tbl, "kernelsize", this->kernelsize);
             this->paddingfactor = find_or(tbl, "paddingfactor", this->paddingfactor);
@@ -150,31 +214,13 @@ struct Config {
             this->maxDuration = find_or(tbl, "maxduration", this->maxDuration);
         }
 
-        if (v.contains("field")) {
-            const auto tbl = toml::find(v, "field");
-            this->size = find_or(tbl, "size", this->size);
+        if (v.contains("image")) {
+            const auto tbl = toml::find(v, "image");
             this->scale = find_or(tbl, "scale", this->scale);
-            this->phaserotate = find_or(tbl, "phaserotate", this->phaserotate);
-
             if (tbl.contains("phasecenter")) {
-                const auto subtbl = toml::find(tbl, "phasecenter");
-                this->phasecenter.ra = deg2rad(
-                    find_or(subtbl, "ra", rad2deg(this->phasecenter.ra))
-                );
-                this->phasecenter.dec = deg2rad(
-                    find_or(subtbl, "dec", rad2deg(this->phasecenter.dec))
-                );
+                this->phasecenter = toml::find<RaDec>(tbl, "phasecenter");
             }
-
-            if (tbl.contains("projectioncenter")) {
-                const auto subtbl = toml::find(tbl, "projectioncenter");
-                this->projectioncenter.ra = deg2rad(
-                    find_or(subtbl, "ra", rad2deg(this->projectioncenter.ra))
-                );
-                this->projectioncenter.dec = deg2rad(
-                    find_or(subtbl, "dec", rad2deg(this->projectioncenter.dec))
-                );
-            }
+            this->fields = find_or(tbl, "fields", this->fields);
         }
     }
 
@@ -266,45 +312,29 @@ struct Config {
                     " this parameter is ignored. [float]",
                 }}},
             }},
-            {"field", {
-                {"size", {this->size, {
-                    " The image size (size x size). [1000 <= int: pixel]",
-                }}},
+            {"image", {
+                {"fields", this->fields},
+                {"phasecenter", toml::basic_value<toml::preserve_comments>(
+                    this->phasecenter, {
+                    " The phase center of this field. Visibilities will be rotated to this",
+                    " new phase center; this rotation is in memory only and will not",
+                    " affect input data. The phase rotation is performed as a simple 3D",
+                    " matrix rotation with respect to the measurement set's stated phase",
+                    " center, where both values are assumed to use the same epoch. Omit",
+                    " (or comment out) this value to use the phase center of the first",
+                    " measurement set. [float: degree]",
+                })},
                 {"scale", {this->scale, {
                     " The angular size of a pixel at the center of the field.",
                     " [0 <= float: arcsecond]",
                 }}},
-                {"projectioncenter", toml::basic_value<toml::preserve_comments>({
-                    {"dec", rad2deg(this->projectioncenter.dec)},
-                    {"ra", rad2deg(this->projectioncenter.ra)}
-                }, {
-                    " The projection center is the associated celestial coordinate of the",
-                    " the central image pixel. Typically, this will be the same as the",
-                    " phase center and can be omitted use the phase center value.",
-                    " [float: degree]",
-                })},
-                {"phasecenter", toml::basic_value<toml::preserve_comments>({
-                    {"dec", rad2deg(this->phasecenter.dec)},
-                    {"ra", rad2deg(this->phasecenter.ra)}
-                }, {
-                    " The phase center of this field. Visibilities will be rotated to this",
-                    " new phase center in memory; this will not affect input data. The",
-                    " phase rotation is performed as a simple 3D matrix rotation with",
-                    " respect to the mseaurement set's stated phase center and this value,",
-                    " where both are assumed to use the same epoch. [float: degree]",
-                })},
-                {"phaserotate", {this->phaserotate, {
-                    " Enables phase rotation of visibilities to new field.phasecenter. If",
-                    " disabled, all input data must be phased to the same phase center and",
-                    " the first phase center will be assumed valid for all data. [bool]",
-                }}},
             }},
             {"mset", {
                 {"chanhigh", {this->chanhigh, {
-                    " Select channels <= chanhigh. [int]",
+                    " Select channels <= chanhigh. -1 indicates maximum channel. [int]",
                 }}},
                 {"chanlow", {this->chanlow, {
-                    " Select channels >= chanlow. -1 indicates maximum channel. [int]",
+                    " Select channels >= chanlow. [int]",
                 }}},
                 {"channelsout", {this->channelsOut, {
                     " Break up the channel range into channelsout equal-sized chunks.",
@@ -323,13 +353,15 @@ struct Config {
 
     GridConfig gridconf() const {
         double scalelm = std::asin(deg2rad(this->scale / 3600.));
-        auto [deltal, deltam] = RaDecTolm(this->projectioncenter, this->phasecenter);
+        auto [deltal, deltam] = RaDecTolm(
+            this->fields.front().projectioncenter.value(), this->phasecenter.value()
+        );
 
         return {
-            .imgNx = this->size, .imgNy = this->size, .imgScalelm = scalelm,
-            .paddingfactor = this->paddingfactor, .kernelsize = this->kernelsize,
-            .kernelpadding = this->kernelpadding, .wstep = static_cast<double>(this->wstep),
-            .deltal = deltal, .deltam = deltam
+            .imgNx = this->fields.front().size, .imgNy = this->fields.front().size,
+            .imgScalelm = scalelm, .paddingfactor = this->paddingfactor,
+            .kernelsize = this->kernelsize, .kernelpadding = this->kernelpadding,
+            .wstep = static_cast<double>(this->wstep), .deltal = deltal, .deltam = deltam
         };
     }
 

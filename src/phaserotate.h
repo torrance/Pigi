@@ -10,6 +10,8 @@ template<typename P>
 void phaserotate(UVDatum<P>& uvdatum, const RaDec to) {
     const RaDec from = uvdatum.meta->phasecenter;
 
+    if (to == from) return;
+
     const double cos_deltara = std::cos(to.ra - from.ra);
     const double sin_deltara = std::sin(to.ra - from.ra);
     const double sin_decfrom = std::sin(from.dec);
@@ -39,4 +41,14 @@ void phaserotate(UVDatum<P>& uvdatum, const RaDec to) {
     uvdatum.v = vprime;
     uvdatum.w = wprime;
     uvdatum.data *= cispi(-2 * (wprime - w));
+
+    // Force w >= 0 since V(u, v, w) = *V(-u, -v, -w)
+    // TODO: Verify adjoint() versus simple conj()
+    if (uvdatum.w < 0) {
+        uvdatum.u = -uvdatum.u;
+        uvdatum.v = -uvdatum.v;
+        uvdatum.w = -uvdatum.w;
+        uvdatum.weights = uvdatum.weights.adjoint();
+        uvdatum.data = uvdatum.data.adjoint();
+    }
 }

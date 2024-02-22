@@ -102,17 +102,9 @@ int main(int argc, char** argv) {
             auto [_, chanhigh] = mset.channelrange();
             config.chanhigh = chanhigh;
 
-            // TODO: Set phasecenter by method, which updates projection center
-            if (!config.phaserotate) {
+            // Phase center defaults to first measurement set's phase center, if unset.
+            if (!config.phasecenter) {
                 config.phasecenter = mset.phaseCenter();
-            }
-
-            // If projectioncenter is unset (== {NaN, NaN}), set to phase center.
-            if (
-                std::isnan(config.projectioncenter.ra) ||
-                std::isnan(config.projectioncenter.dec)
-            ) {
-                config.projectioncenter = config.phasecenter;
             }
         } else {
             printheader(stderr);

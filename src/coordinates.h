@@ -13,6 +13,10 @@
 struct RaDec {
     double ra {};
     double dec {};
+
+    bool operator==(const RaDec& other) const {
+        return ra == other.ra && dec == other.dec;
+    }
 };
 
 struct AzEl {

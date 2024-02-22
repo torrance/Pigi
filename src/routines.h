@@ -203,14 +203,20 @@ void cleanWorker(
 
     queen.send(0, 0, mset.midfreq());
 
+    fmt::println(
+        "Worker [{}/{}]: Reading data and writing to mmap-backed memory...",
+        rank + 1, hivesize
+    );
     auto uvdata = mset.data<P>();
 
-    if (config.phaserotate) {
-        fmt::println("Worker [{}/{}]: Phase rotating visibilities...", rank + 1, hivesize);
-        for (auto& uvdatum : uvdata) {
-            phaserotate(uvdatum, config.phasecenter);
-        }
-    };
+    fmt::println(
+        "Worker [{}/{}]: Phase rotating visibilities to RA {:.2f} Dec {:.2f}...",
+        rank + 1, hivesize,
+        rad2deg(config.phasecenter.value().ra), rad2deg(config.phasecenter.value().dec)
+    );
+    for (auto& uvdatum : uvdata) {
+        phaserotate(uvdatum, *config.phasecenter);
+    }
 
     fmt::println("Worker [{}/{}]: Calculating visibility weights...", rank + 1, hivesize);
     std::shared_ptr<Weighter<P>> weighter {};
@@ -227,7 +233,7 @@ void cleanWorker(
     applyWeights(*weighter, uvdata);
 
     auto aterms = mkAterms<P>(
-        mset, gridconf.subgrid(), config.maxDuration, config.phasecenter
+        mset, gridconf.subgrid(), config.maxDuration, config.phasecenter.value()
     );
 
     // Partition data and write to disk
@@ -236,7 +242,7 @@ void cleanWorker(
         // it on the one node. TODO: Ensure this lock only occurs on the local machine.
         mpi::Lock lock(hive);
 
-        fmt::println("Worker [{}/{}]: Reading and partitioning data...", rank + 1, hivesize);
+        fmt::println("Worker [{}/{}]: Partitioning data...", rank + 1, hivesize);
         auto workunits = partition(uvdata, gridconf, aterms);
 
         // Print some stats about our partitioning

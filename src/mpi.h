@@ -18,10 +18,11 @@
 BOOST_IS_BITWISE_SERIALIZABLE(GridConfig);
 BOOST_IS_BITWISE_SERIALIZABLE(GridSpec);
 BOOST_IS_BITWISE_SERIALIZABLE(RaDec);
+BOOST_IS_BITWISE_SERIALIZABLE(Config::Field);
 
 namespace boost {
     namespace serialization {
-        template<class Archive>
+        template <typename Archive>
         void serialize(Archive& ar, Config& payload, const unsigned) {
             ar & payload.precision;
             ar & payload.chanlow;
@@ -31,11 +32,9 @@ namespace boost {
             ar & payload.msets;
             ar & payload.weight;
             ar & payload.robust;
-            ar & payload.size;
             ar & payload.scale;
             ar & payload.phasecenter;
-            ar & payload.phaserotate;
-            ar & payload.projectioncenter;
+            ar & payload.fields;
             ar & payload.kernelsize;
             ar & payload.paddingfactor;
             ar & payload.wstep;
@@ -47,7 +46,7 @@ namespace boost {
             ar & payload.nMinor;
         }
 
-        template<class Archive, typename T, int N>
+        template <typename Archive, typename T, int N>
         void serialize(Archive& ar, HostArray<T, N>& payload, const unsigned) {
             auto dims = payload.shape();
             ar & dims;
@@ -60,7 +59,7 @@ namespace boost {
             }
         }
 
-        template<class Archive, typename T>
+        template <typename Archive, typename T>
         void serialize(Archive& ar, thrust::complex<T>& payload, const unsigned) {
             T real = payload.real();
             T imag = payload.imag();
@@ -70,9 +69,22 @@ namespace boost {
             payload.imag(imag);
         }
 
-        template<class Archive, typename T>
+        template <typename Archive, typename T>
         void serialize(Archive& ar, StokesI<T>& payload, const unsigned) {
             ar & payload.I;
+        }
+
+        template <typename Archive, typename T>
+        void serialize(Archive& ar, std::optional<T>& payload, const unsigned) {
+            bool hasvalue = payload.has_value();
+            ar & hasvalue;
+            if (hasvalue) {
+                T val = payload.value_or(T());
+                ar & val;
+                payload = val;
+            } else {
+                payload.reset();
+            }
         }
     }
 }

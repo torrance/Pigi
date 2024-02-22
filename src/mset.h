@@ -195,6 +195,7 @@ public:
 
                     // We can always force w >= 0, since V(u, v, w) = V*(-u, -v, -w)
                     // and this helps reduce the number of distinct w-layers.
+                    // TODO: Verify adjoint() versus simple conj()
                     if (w < 0) {
                         u = -u; v = -v; w = -w;
                         data = data.adjoint();
