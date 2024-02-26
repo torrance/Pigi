@@ -34,7 +34,6 @@ auto _major(
     std::vector<HostArray<StokesI<S>, 2>>& residuals,
     const GridSpec imgGridspec,
     std::vector<HostArray<thrust::complex<S>, 2>>& psfs,
-    const GridSpec psfGridspec,
     const double minorgain,
     const double majorgain,
     const double cleanThreshold,
@@ -117,6 +116,7 @@ auto _major(
     }
 
     // Combine PSFs so that N axis is dense
+    GridSpec psfGridspec {.Nx=psfs.front().size(0), .Ny=psfs.front().size(1)};
     HostArray<std::array<S, N>, 2> psfsDense {psfGridspec.shape()};
     for (size_t n {}; n < N; ++n) {
         auto& psf = psfs[n];
@@ -249,7 +249,6 @@ auto major(
     std::vector<HostArray<StokesI<S>, 2>>& residuals,
     const GridSpec imgGridspec,
     std::vector<HostArray<thrust::complex<S>, 2>>& psfs,
-    const GridSpec psfGridspec,
     const double minorgain,
     const double majorgain,
     const double cleanThreshold,
@@ -259,61 +258,61 @@ auto major(
     switch (freqs.size()) {
     case 1:
         return clean::_major<S, 1>(
-            freqs, residuals, imgGridspec, psfs, psfGridspec, minorgain, majorgain,
+            freqs, residuals, imgGridspec, psfs, minorgain, majorgain,
             cleanThreshold, autoThreshold, niter
         );
         break;
     case 2:
         return clean::_major<S, 2>(
-            freqs, residuals, imgGridspec, psfs, psfGridspec, minorgain, majorgain,
+            freqs, residuals, imgGridspec, psfs, minorgain, majorgain,
             cleanThreshold, autoThreshold, niter
         );
         break;
     case 3:
         return clean::_major<S, 3>(
-            freqs, residuals, imgGridspec, psfs, psfGridspec, minorgain, majorgain,
+            freqs, residuals, imgGridspec, psfs, minorgain, majorgain,
             cleanThreshold, autoThreshold, niter
         );
         break;
     case 4:
         return clean::_major<S, 4>(
-            freqs, residuals, imgGridspec, psfs, psfGridspec, minorgain, majorgain,
+            freqs, residuals, imgGridspec, psfs, minorgain, majorgain,
             cleanThreshold, autoThreshold, niter
         );
         break;
     case 5:
         return clean::_major<S, 5>(
-            freqs, residuals, imgGridspec, psfs, psfGridspec, minorgain, majorgain,
+            freqs, residuals, imgGridspec, psfs, minorgain, majorgain,
             cleanThreshold, autoThreshold, niter
         );
         break;
     case 6:
         return clean::_major<S, 6>(
-            freqs, residuals, imgGridspec, psfs, psfGridspec, minorgain, majorgain,
+            freqs, residuals, imgGridspec, psfs, minorgain, majorgain,
             cleanThreshold, autoThreshold, niter
         );
         break;
     case 7:
         return clean::_major<S, 7>(
-            freqs, residuals, imgGridspec, psfs, psfGridspec, minorgain, majorgain,
+            freqs, residuals, imgGridspec, psfs, minorgain, majorgain,
             cleanThreshold, autoThreshold, niter
         );
         break;
     case 8:
         return clean::_major<S, 8>(
-            freqs, residuals, imgGridspec, psfs, psfGridspec, minorgain, majorgain,
+            freqs, residuals, imgGridspec, psfs, minorgain, majorgain,
             cleanThreshold, autoThreshold, niter
         );
         break;
     case 9:
         return clean::_major<S, 9>(
-            freqs, residuals, imgGridspec, psfs, psfGridspec, minorgain, majorgain,
+            freqs, residuals, imgGridspec, psfs, minorgain, majorgain,
             cleanThreshold, autoThreshold, niter
         );
         break;
     case 10:
         return clean::_major<S, 10>(
-            freqs, residuals, imgGridspec, psfs, psfGridspec, minorgain, majorgain,
+            freqs, residuals, imgGridspec, psfs, minorgain, majorgain,
             cleanThreshold, autoThreshold, niter
         );
         break;

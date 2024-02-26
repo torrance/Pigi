@@ -19,8 +19,12 @@ long double kbalpha<float>() { return 4.2; }
 template <>
 long double kbalpha<double>() { return 10; }
 
+std::mutex kblock;
+
 template <typename T>
 const auto& kaiserbessel(const GridSpec gridspec, const long double alpha = kbalpha<T>()) {
+    std::lock_guard l(kblock);
+
     // Memoise output
     static std::unordered_map<GridSpec, const HostArray<T, 2>> cache;
     if (auto taper = cache.find(gridspec); taper != cache.end()) {

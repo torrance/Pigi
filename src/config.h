@@ -351,18 +351,22 @@ struct Config {
         };
     }
 
-    GridConfig gridconf() const {
+    std::vector<GridConfig> gridconfs() const {
         double scalelm = std::asin(deg2rad(this->scale / 3600.));
-        auto [deltal, deltam] = RaDecTolm(
-            this->fields.front().projectioncenter.value(), this->phasecenter.value()
-        );
 
-        return {
-            .imgNx = this->fields.front().size, .imgNy = this->fields.front().size,
-            .imgScalelm = scalelm, .paddingfactor = this->paddingfactor,
-            .kernelsize = this->kernelsize, .kernelpadding = this->kernelpadding,
-            .wstep = static_cast<double>(this->wstep), .deltal = deltal, .deltam = deltam
-        };
+        std::vector<GridConfig> gridconfs;
+        for (const auto& field : fields) {
+            auto [deltal, deltam] = RaDecTolm(
+                field.projectioncenter.value(), phasecenter.value()
+            );
+            gridconfs.push_back({
+                .imgNx = field.size, .imgNy = field.size,
+                .imgScalelm = scalelm, .paddingfactor = this->paddingfactor,
+                .kernelsize = kernelsize, .kernelpadding = kernelpadding,
+                .wstep = static_cast<double>(wstep), .deltal = deltal, .deltam = deltam
+            });
+        }
+        return gridconfs;
     }
 
 private:

@@ -90,7 +90,7 @@ Aterms<P> mkAterms(
 }
 
 template <template<typename> typename T, typename P>
-HostArray<T<P>, 2> mkAvgAtermPower(auto&& workunits, const GridConfig& gridconf) {
+HostArray<T<P>, 2> mkAvgAtermPower(const auto& workunits, const GridConfig& gridconf) {
     // Add together low-resolution beams at full double precision
     HostArray<T<double>, 2> beamPower64 {gridconf.subgrid().shape()};
     T<double> totalWeight {};

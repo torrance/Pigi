@@ -8,7 +8,7 @@
 #include "routines.h"
 
 int main(int argc, char** argv) {
-    boost::mpi::environment env;
+    boost::mpi::environment env(boost::mpi::threading::multiple);
     boost::mpi::communicator world;
 
     Config config;

@@ -1,12 +1,15 @@
 #pragma once
 
 #include <algorithm>
-#include <boost/mpi.hpp>
+#include <barrier>
 #include <generator>
 #include <iterator>
 #include <memory>
+#include <mutex>
 #include <optional>
 #include <ranges>
+
+#include <boost/mpi.hpp>
 
 #include "aterms.h"
 #include "beam.h"
@@ -32,147 +35,178 @@ void cleanQueen(const Config& config, boost::mpi::intercommunicator hive) {
     fmt::println("Queen: All shall love me and despair.");
 
     const int hivesize = hive.remote_size();
+    const auto gridconfs = config.gridconfs();
 
     const std::ranges::iota_view<int, int> srcs{0, hivesize};
-
-    const GridConfig gridconf = config.gridconf();
+    const std::ranges::iota_view<size_t, size_t> fieldids{0, gridconfs.size()};
 
     std::vector<double> freqs(hivesize);
     for (const int src : srcs) {
         hive.recv(src, boost::mpi::any_tag, freqs[src]);
     }
 
-    // Collect beams from workers
-    {
-        HostArray<StokesI<P>, 2> beamPowerCombined {gridconf.grid().shape()};
-        HostArray<StokesI<P>, 2> beamPower;
+    // Initialize shared values for cleaning
+    // Vectors of vectors are indexed by [fieldid][channel]
+    std::vector<std::vector<HostArray<thrust::complex<P>, 2>>> psfss(gridconfs.size());
+    std::vector<std::vector<HostArray<StokesI<P>, 2>>> residualss(gridconfs.size());
+    std::vector<clean::ComponentMap<StokesI<P>>> minorComponentsMaps;
+    size_t iminor {};
+    bool finalMajor {};
 
-        for (const int src : srcs) {
-            hive.recv(src, boost::mpi::any_tag, beamPower);
-            beamPowerCombined += beamPower;
-        }
-        beamPowerCombined /= StokesI<P>(hivesize);
-
-        save("beam.fits", beamPowerCombined);
-    }
-
-    std::vector<HostArray<thrust::complex<P>, 2>> psfs(hivesize);
-    for (const int src : srcs) {
-        hive.recv(src, boost::mpi::any_tag, psfs[src]);
-    }
-
-    PSF<P> psf;
-    GridSpec gridspecPsf;
-    {
-        // Collect psfs from workers
-        HostArray<thrust::complex<P>, 2> psfCombined {gridconf.grid().shape()};
-        for (const auto& psf : psfs) {
-            psfCombined += psf;
-        }
-        psfCombined /= thrust::complex<P>(hivesize);
-        save("psf.fits", psfCombined);
-
-        // Further crop psfs so that all pixels > 0.2 * (1 - majorgain)
-        // are included in cutout. We use this smaller window to speed up PSF fitting and
-        // cleaning.
-        gridspecPsf = cropPsf(
-            psfCombined, gridconf.grid(), 0.2 * (1 - config.majorgain)
-        );
-
-        // Send gridspecPsf to workers; they will use this to crop their own psfs
-        for (const int src : srcs) {
-            hive.send(src, 0, gridspecPsf);
-        }
-
-        for (auto& psf : psfs) {
-            psf = resize(psf, gridconf.grid(), gridspecPsf);
-        }
-        psfCombined = resize(psfCombined, gridconf.grid(), gridspecPsf);
-
-        // Fit the combined psf to construct Gaussian PSF
-        psf = PSF(psfCombined, gridspecPsf);
-    }
-
-    // Collect initial residual images from workers
-    std::vector<HostArray<StokesI<P>, 2>> residuals(hivesize);
-    for (const int src : srcs) {
-        hive.recv(src, boost::mpi::any_tag, residuals[src]);
-    }
-
-    // Write out dirty combined
-    {
-        HostArray<StokesI<P>, 2> dirtyCombined {gridconf.grid().shape()};
-        for (auto& residual : residuals) {
-            dirtyCombined += residual;
-        }
-        dirtyCombined /= StokesI<P>(hivesize);
-
-        save("dirty.fits", dirtyCombined);
-    }
-
-    // Major clean loops
-    for (
-        size_t imajor {}, iminor {};
-        imajor < config.nMajor && iminor < config.nMinor;
-        ++imajor
-    ) {
-        // Signal continuation of clean loop to workers
-        for (const int src : srcs) { hive.send(src, 0, true); }
-
-        auto [minorComponentsMaps, iters, finalMajor] = clean::major<P>(
-            freqs, residuals, gridconf.grid(), psfs, gridspecPsf,
+    // Create a barrier object that does cleaning as part of its completion function.
+    // This completion function is run just by one thread.
+    std::barrier cleanbarrier(gridconfs.size(), [&] () -> void {
+        auto [_minorComponentsMaps, _iters, _finalMajor] = clean::major<P>(
+            freqs, residualss[0], gridconfs[0].grid(), psfss[0],
             config.minorgain, config.majorgain, config.cleanThreshold,
             config.autoThreshold, config.nMinor - iminor
         );
-        iminor += iters;
 
-        // Send out clean components for subtraction from visibilities by workers
-        for (const int src : srcs) {
-            HostArray<StokesI<P>, 2> minorComponents {gridconf.grid().shape()};
-            for (auto [idx, val] : minorComponentsMaps[src]) {
-                minorComponents[idx] = val;
+        minorComponentsMaps = std::move(_minorComponentsMaps);
+        iminor += _iters;
+        finalMajor = _finalMajor;
+    });
+
+    std::vector<std::thread> threads;
+    for (size_t fieldid : fieldids) {
+        threads.emplace_back([&, fieldid=fieldid] {
+            auto gridconf = gridconfs[fieldid];
+
+            // Collect beams from workers
+            {
+                HostArray<StokesI<P>, 2> beamPowerCombined {gridconf.grid().shape()};
+                HostArray<StokesI<P>, 2> beamPower;
+
+                for (const int src : srcs) {
+                    hive.recv(src, fieldid, beamPower);
+                    beamPowerCombined += beamPower;
+                }
+                beamPowerCombined /= StokesI<P>(hivesize);
+
+                save(fmt::format("beam-field{:02d}.fits", fieldid + 1), beamPowerCombined);
             }
 
-            hive.send(src, 0, minorComponents);
-        }
+            auto& psfs = psfss[fieldid];
+            psfs.resize(hivesize);
+            for (const int src : srcs) {
+                hive.recv(src, fieldid, psfs[src]);
+            }
 
-        // Gather new residuals from workers
-        for (const int src : srcs) {
-            hive.recv(src, boost::mpi::any_tag, residuals[src]);
-        }
+            PSF<P> psf;
+            GridSpec gridspecPsf;
+            {
+                // Collect psfs from workers
+                HostArray<thrust::complex<P>, 2> psfCombined {gridconf.grid().shape()};
+                for (const auto& psf : psfs) {
+                    psfCombined += psf;
+                }
+                psfCombined /= thrust::complex<P>(hivesize);
+                save(fmt::format("psf-field{:02d}.fits", fieldid + 1), psfCombined);
 
-        if (finalMajor) {
-            break;
-        }
+                // Further crop psfs so that all pixels > 0.2 * (1 - majorgain)
+                // are included in cutout. We use this smaller window to speed up PSF fitting and
+                // cleaning.
+                gridspecPsf = cropPsf(
+                    psfCombined, gridconf.grid(), 0.2 * (1 - config.majorgain)
+                );
+
+                // Send gridspecPsf to workers; they will use this to crop their own psfs
+                for (const int src : srcs) {
+                    hive.send(src, fieldid, gridspecPsf);
+                }
+
+                for (auto& psf : psfs) {
+                    psf = resize(psf, gridconf.grid(), gridspecPsf);
+                }
+                psfCombined = resize(psfCombined, gridconf.grid(), gridspecPsf);
+
+                // Fit the combined psf to construct Gaussian PSF
+                psf = PSF(psfCombined, gridspecPsf);
+            }
+
+            // Collect initial residual images from workers
+            auto& residuals = residualss[fieldid];
+            residuals.resize(hivesize);
+            for (const int src : srcs) {
+                hive.recv(src, fieldid, residuals[src]);
+            }
+
+            // Write out dirty combined
+            {
+                HostArray<StokesI<P>, 2> dirtyCombined {gridconf.grid().shape()};
+                for (auto& residual : residuals) {
+                    dirtyCombined += residual;
+                }
+                dirtyCombined /= StokesI<P>(hivesize);
+
+                save(fmt::format("dirty-field{:02d}.fits", fieldid + 1), dirtyCombined);
+            }
+
+            // Major clean loops
+            for (
+                size_t imajor {}, iminor {};
+                imajor < config.nMajor && iminor < config.nMinor;
+                ++imajor
+            ) {
+                // Signal continuation of clean loop to workers
+                for (const int src : srcs) hive.send(src, fieldid, true);
+
+                // Run cleaning on just one thread
+                cleanbarrier.arrive_and_wait();
+
+                // Send out clean components for subtraction from visibilities by workers
+                if (fieldid == 0) {
+                for (const int src : srcs) {
+                    HostArray<StokesI<P>, 2> minorComponents {gridconf.grid().shape()};
+                    for (auto [idx, val] : minorComponentsMaps[src]) {
+                        minorComponents[idx] = val;
+                    }
+
+                    hive.send(src, fieldid, minorComponents);
+                }
+                }
+
+                // Gather new residuals from workers
+                for (const int src : srcs) {
+                    hive.recv(src, fieldid, residuals[src]);
+                }
+
+                if (finalMajor) {
+                    break;
+                }
+            }
+
+            // Signal end of clean loop to workers
+            for (const int src : srcs) hive.send(src, fieldid, false);
+
+            // Write out the final images to disk
+            HostArray<StokesI<P>, 2> residualCombined {gridconf.grid().shape()};
+            HostArray<StokesI<P>, 2> componentsCombined {gridconf.grid().shape()};
+
+            {
+                HostArray<StokesI<P>, 2> components;
+                for (const int src : srcs) {
+                    residualCombined += residuals[src];
+                    hive.recv(src, fieldid, components);
+                    componentsCombined += components;
+                }
+            }
+
+            residualCombined /= StokesI<P>(hivesize);
+            componentsCombined /= StokesI<P>(hivesize);
+
+            fmt::println("Queen: (Field {}) Convolving final image...", fieldid + 1);
+            auto imageCombined = convolve(componentsCombined, psf.draw(gridconf.grid()));
+            imageCombined += residualCombined;
+
+            fmt::println("Queen: (Field {}) Writing out files...", fieldid + 1);
+            save(fmt::format("residual-field{:02d}.fits", fieldid + 1), residualCombined);
+            save(fmt::format("components-field{:02d}.fits", fieldid + 1), componentsCombined);
+            save(fmt::format("image-field{:02d}.fits", fieldid + 1), imageCombined);
+        });
     }
 
-    // Signal end of clean loop to workers
-    for (const int src : srcs) { hive.send(src, 0, false); }
-
-    // Write out the final images to disk
-    HostArray<StokesI<P>, 2> residualCombined {gridconf.grid().shape()};
-    HostArray<StokesI<P>, 2> componentsCombined {gridconf.grid().shape()};
-
-    {
-        HostArray<StokesI<P>, 2> components;
-        for (const int src : srcs) {
-            residualCombined += residuals[src];
-            hive.recv(src, boost::mpi::any_tag, components);
-            componentsCombined += components;
-        }
-    }
-
-    residualCombined /= StokesI<P>(hivesize);
-    componentsCombined /= StokesI<P>(hivesize);
-
-    fmt::println("Queen: Convolving final image...");
-    auto imageCombined = convolve(componentsCombined, psf.draw(gridconf.grid()));
-    imageCombined += residualCombined;
-
-    fmt::println("Queen: Writing out files...");
-    save("residual.fits", residualCombined);
-    save("components.fits", componentsCombined);
-    save("image.fits", imageCombined);
+    for (auto& thread : threads) thread.join();
 }
 
 template <typename P>
@@ -186,7 +220,7 @@ void cleanWorker(
 
     fmt::println("Worker [{}/{}]: Reporting for duty!", rank + 1, hivesize);
 
-    const GridConfig gridconf = config.gridconf();
+    const auto gridconfs = config.gridconfs();
 
     // Be careful in these channel boundary calculations to remember that the
     // upper channel is inclusive in the range
@@ -220,144 +254,199 @@ void cleanWorker(
 
     fmt::println("Worker [{}/{}]: Calculating visibility weights...", rank + 1, hivesize);
     std::shared_ptr<Weighter<P>> weighter {};
-    if (config.weight == "uniform") {
-        weighter = std::make_shared<Uniform<P>>(uvdata, gridconf.padded());
-    } else if (config.weight == "natural") {
-        weighter = std::make_shared<Natural<P>>(uvdata, gridconf.padded());
-    } else if (config.weight == "briggs") {
-        weighter = std::make_shared<Briggs<P>>(uvdata, gridconf.padded(), config.robust);
-    } else {
-        std::runtime_error(fmt::format("Unknown weight: {}", config.weight));
-    }
+    {
+        // Use the padded grid of the largest field for weighting
+        auto grid = std::max_element(
+            gridconfs.begin(), gridconfs.end(), [] (auto& a, auto &b) {
+                return a.imgNx * a.imgNy < b.imgNx * b.imgNy;
+            }
+        )->padded();
 
+        if (config.weight == "uniform") {
+            weighter = std::make_shared<Uniform<P>>(uvdata, grid);
+        } else if (config.weight == "natural") {
+            weighter = std::make_shared<Natural<P>>(uvdata, grid);
+        } else if (config.weight == "briggs") {
+            weighter = std::make_shared<Briggs<P>>(uvdata, grid, config.robust);
+        } else {
+            std::runtime_error(fmt::format("Unknown weight: {}", config.weight));
+        }
+    }
     applyWeights(*weighter, uvdata);
 
-    auto aterms = mkAterms<P>(
-        mset, gridconf.subgrid(), config.maxDuration, config.phasecenter.value()
-    );
+    std::mutex writelock;
+    std::barrier barrier(gridconfs.size(), [] {});
 
-    // Partition data and write to disk
-    auto workunits = [&] {
-        // Since partition temporarily loads all UV data into memory, we need to serialize
-        // it on the one node. TODO: Ensure this lock only occurs on the local machine.
-        mpi::Lock lock(hive);
+    // The rest of the work done by workers is threaded: one thread per field
+    std::vector<std::thread> threads;
+    for (size_t fieldid {}; fieldid < gridconfs.size(); ++fieldid) {
+        threads.emplace_back([&, fieldid=fieldid] {
+            fmt::println(
+                "Worker [{}/{}]: (Field {}) Thread created",
+                rank + 1, hivesize, fieldid + 1
+            );
+            auto gridconf = gridconfs[fieldid];
 
-        fmt::println("Worker [{}/{}]: Partitioning data...", rank + 1, hivesize);
-        auto workunits = partition(uvdata, gridconf, aterms);
+            auto aterms = [&] {
+                // Segfaults occur without out this lock - due to Casacore issues
+                // TODO: Remove this lock and add at a lower level
+                std::lock_guard l(writelock);
+                return mkAterms<P>(
+                    mset, gridconf.subgrid(), config.maxDuration, config.phasecenter.value()
+                );
+            }();
 
-        // Print some stats about our partitioning
-        std::vector<size_t> sizes;
-        for (const auto& workunit : workunits) sizes.push_back(workunit.data.size());
+            // Partition data
+            auto workunits = [&] {
+                fmt::println(
+                    "Worker [{}/{}]: (Field {}) Partitioning data...",
+                    rank + 1, hivesize, fieldid + 1
+                );
+                auto workunits = partition(uvdata, gridconf, aterms);
 
-        std::sort(sizes.begin(), sizes.end());
-        auto median = sizes[sizes.size() / 2];
-        P sum = std::accumulate(sizes.begin(), sizes.end(), 0);
-        auto mean = sum / sizes.size();
-        fmt::println(
-            "Worker [{}/{}]: Partitioning complete: {} workunits, "
-            "size min {} < (mean {:.1f} median {}) < max {}",
-            rank + 1, hivesize, sizes.size(), sizes.front(), mean, median, sizes.back()
-        );
+                // Print some stats about our partitioning
+                std::vector<size_t> sizes;
+                for (const auto& workunit : workunits) sizes.push_back(workunit.data.size());
 
-        return workunits;
-    }();
+                std::sort(sizes.begin(), sizes.end());
+                auto median = sizes[sizes.size() / 2];
+                P sum = std::accumulate(sizes.begin(), sizes.end(), 0);
+                auto mean = sum / sizes.size();
+                fmt::println(
+                    "Worker [{}/{}]: (Field {}) Partitioning complete: {} workunits, "
+                    "size min {} < (mean {:.1f} median {}) < max {}",
+                    rank + 1, hivesize, fieldid + 1, sizes.size(), sizes.front(),
+                    mean, median, sizes.back()
+                );
 
-    fmt::println("Worker [{}/{}]: Constructing average beam...", rank + 1, hivesize);
-    auto beamPower = mkAvgAtermPower<StokesI, P>(workunits, gridconf);
+                return workunits;
+            }();
 
-    queen.send(0, 0, beamPower);
-    if (hivesize > 1) save(fmt::format("beam-{:02d}.fits", rank + 1), beamPower);
+            fmt::println(
+                "Worker [{}/{}]: (Field {}) Constructing average beam...",
+                rank + 1, hivesize, fieldid + 1
+            );
+            auto beamPower = mkAvgAtermPower<StokesI, P>(workunits, gridconf);
 
-    // Create psf
-    HostArray<thrust::complex<P>, 2> psf;
-    {
-        mpi::Lock lock(hive);
-        fmt::println(
-            "Worker [{}/{}]: Constructing PSF...",
-            rank + 1, hivesize
-        );
-        psf = invert<thrust::complex, P>(workunits, gridconf, true);
-        queen.send(0, 0, psf);
-    };
-    if (hivesize > 1) save(fmt::format("psf-{:02d}.fits", rank + 1), psf);
+            queen.send(0, fieldid, beamPower);
+            if (hivesize > 1) save(
+                fmt::format("beam-field{:02d}-{:02d}.fits", fieldid + 1, rank + 1), beamPower
+            );
 
-    GridSpec gridspecPsf;
-    queen.recv(0, boost::mpi::any_tag, gridspecPsf);
-    psf = resize(psf, gridconf.grid(), gridspecPsf);
+            // Create psf
+            HostArray<thrust::complex<P>, 2> psf;
+            {
+                // mpi::Lock lock(hive);
+                fmt::println(
+                    "Worker [{}/{}]: (Field {}) Constructing PSF...",
+                    rank + 1, hivesize, fieldid + 1
+                );
+                psf = invert<thrust::complex, P>(workunits, gridconf, true);
+                queen.send(0, fieldid, psf);
+            };
+            if (hivesize > 1) save(
+                fmt::format("psf-field{:02d}-{:02d}.fits", fieldid + 1, rank + 1), psf
+            );
 
-    // Initial inversion
-    HostArray<StokesI<P>, 2> residual;
-    {
-        mpi::Lock lock(hive);
-        fmt::println(
-            "Worker [{}/{}]: Constructing dirty image...",
-            rank + 1, hivesize
-        );
-        residual = invert<StokesI, P>(workunits, gridconf);
-        queen.send(0, 0, residual);
-    };
-    if (hivesize > 1) save(fmt::format("dirty-{:02d}.fits", rank + 1), residual);
+            GridSpec gridspecPsf;
+            queen.recv(0, fieldid, gridspecPsf);
+            psf = resize(psf, gridconf.grid(), gridspecPsf);
 
-    // Initialize components array
-    HostArray<StokesI<P>, 2> components{gridconf.grid().shape()};
+            // Initial inversion
+            HostArray<StokesI<P>, 2> residual;
+            {
+                // mpi::Lock lock(hive);
+                fmt::println(
+                    "Worker [{}/{}]: (Field {}) Constructing dirty image...",
+                    rank + 1, hivesize, fieldid + 1
+                );
+                residual = invert<StokesI, P>(workunits, gridconf);
+                queen.send(0, fieldid, residual);
+            };
+            if (hivesize > 1) save(fmt::format(
+                "dirty-field{:02d}-{:02d}.fits", fieldid + 1, rank + 1
+            ), residual);
 
-    // This flag is set by the queen, indicating whether to proceed
-    // for each major clean loop
-    bool again;
-    queen.recv(0, boost::mpi::any_tag, again);
+            // Pre-allocate the components array, used to sum components
+            // from each major iteration
+            HostArray<StokesI<P>, 2> components(gridconf.grid().shape());
 
-    // Clean loops
-    for (int i {1}; again; ++i) {
-        // Predict
-        {
-            HostArray<StokesI<P>, 2> minorComponents;
-            queen.recv(0, boost::mpi::any_tag, minorComponents);
-            components += minorComponents;
+            // This flag is set by the queen, indicating whether to proceed
+            // for each major clean loop
+            bool again;
+            queen.recv(0, fieldid, again);
 
-            // Correct for beamPower
-            for (size_t i {}, I = gridconf.grid().size(); i < I; ++i) {
-                minorComponents[i] /= beamPower[i];
+            // Clean loops
+            for (int i {1}; again; ++i) {
+                // Predict
+                if (fieldid == 0) {
+                    HostArray<StokesI<P>, 2> minorComponents;
+                    queen.recv(0, fieldid, minorComponents);
+                    components += minorComponents;
+
+                    // Correct for beamPower
+                    for (size_t i {}, I = gridconf.grid().size(); i < I; ++i) {
+                        minorComponents[i] /= beamPower[i];
+                    }
+
+                    // mpi::Lock lock(hive);
+                    // Since predict mutates the underlying visibility data, we must ensure
+                    // calls occur sequentially
+                    std::lock_guard l(writelock);
+
+                    fmt::println(
+                        "Worker [{}/{}]: (Field {}) Removing clean components "
+                        "from uvdata... (major cycle {})",
+                        rank + 1, hivesize, fieldid + 1, i
+                    );
+                    predict<StokesI<P>, P>(workunits, minorComponents, gridconf, DegridOp::Subtract);
+                }
+
+                // Wait for all threads to finish writing to the visibilties
+                // before inversion
+                barrier.arrive_and_wait();
+
+                // Invert
+                {
+                    // mpi::Lock lock(hive);
+                    fmt::println(
+                        "Worker [{}/{}]: (Field {}) Constructing "
+                        "residual image... (major cycle {})",
+                        rank + 1, hivesize, fieldid + 1, i
+                    );
+                    residual = invert<StokesI, P>(workunits, gridconf);
+                    queen.send(0, fieldid, residual);
+                }
+
+                // Listen for major loop termination signal from queen
+                queen.recv(0, fieldid, again);
             }
 
-            mpi::Lock lock(hive);
+            queen.send(0, fieldid, components);
 
-            fmt::println(
-                "Worker [{}/{}]: Removing clean components from uvdata... (major cycle {})",
-                rank + 1, hivesize, i
-            );
-            predict<StokesI<P>, P>(workunits, minorComponents, gridconf, DegridOp::Subtract);
-        }
+            // Write out data
+            if (hivesize > 1) {
+                save(fmt::format(
+                    "residual-field{:02d}-{:02d}.fits", fieldid + 1, rank + 1
+                ), residual);
+                save(fmt::format(
+                    "components-field{:02}-{:02d}.fits", fieldid + 1, rank + 1
+                ), components);
 
-        // Invert
-        {
-            mpi::Lock lock(hive);
-            fmt::println(
-                "Worker [{}/{}]: Constructing residual image... (major cycle {})",
-                rank + 1, hivesize, i
-            );
-            residual = invert<StokesI, P>(workunits, gridconf);
-            queen.send(0, 0, residual);
-        }
+                auto image = convolve(
+                    components,
+                    PSF<P>(psf, gridspecPsf).draw(gridconf.grid())
+                );
+                image += residual;
 
-        // Listen for major loop termination signal from queen
-        queen.recv(0, boost::mpi::any_tag, again);
+                save(fmt::format(
+                    "image-field{:02}-{:02d}.fits", fieldid + 1, rank + 1
+                ), image);
+            }
+
+        });
     }
-
-    queen.send(0, 0, components);
-
-    // Write out data
-    if (hivesize > 1) {
-        save(fmt::format("residual-{:02d}.fits", rank + 1), residual);
-        save(fmt::format("components-{:02d}.fits", rank + 1), components);
-
-        auto image = convolve(
-            components,
-            PSF<P>(psf, gridspecPsf).draw(gridconf.grid())
-        );
-        image += residual;
-
-        save(fmt::format("image-{:02d}.fits", rank + 1), image);
-    }
+    for (auto& thread : threads) thread.join();
 }
 
 }
