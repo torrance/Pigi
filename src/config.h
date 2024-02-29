@@ -359,11 +359,20 @@ struct Config {
             auto [deltal, deltam] = RaDecTolm(
                 field.projectioncenter.value(), phasecenter.value()
             );
+
+            // We snap deltal and deltam to nearest pixel value
+            long long deltalpx {std::llround(deltal / scalelm)};
+            long long deltampx {std::llround(deltam / scalelm)};
+
+            deltal = deltalpx * scalelm;
+            deltam = deltampx * scalelm;
+
             gridconfs.push_back({
                 .imgNx = field.size, .imgNy = field.size,
                 .imgScalelm = scalelm, .paddingfactor = this->paddingfactor,
                 .kernelsize = kernelsize, .kernelpadding = kernelpadding,
-                .wstep = static_cast<double>(wstep), .deltal = deltal, .deltam = deltam
+                .wstep = static_cast<double>(wstep),
+                .deltal = deltal, .deltam = deltam
             });
         }
         return gridconfs;

@@ -5,12 +5,14 @@
 #include <fmt/format.h>
 #include <boost/archive/basic_archive.hpp>
 #include <boost/mpi.hpp>
+#include <boost/serialization/unordered_map.hpp>
 #include <boost/serialization/string.hpp>
 #include <boost/serialization/vector.hpp>
 #include <thrust/complex.h>
 
 #include "config.h"
 #include "coordinates.h"
+#include "clean.h"
 #include "gridspec.h"
 #include "memory.h"
 #include "outputtypes.h"
@@ -19,6 +21,7 @@ BOOST_IS_BITWISE_SERIALIZABLE(GridConfig);
 BOOST_IS_BITWISE_SERIALIZABLE(GridSpec);
 BOOST_IS_BITWISE_SERIALIZABLE(RaDec);
 BOOST_IS_BITWISE_SERIALIZABLE(Config::Field);
+BOOST_IS_BITWISE_SERIALIZABLE(clean::LMpx);
 
 namespace boost {
     namespace serialization {

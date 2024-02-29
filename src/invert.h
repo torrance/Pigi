@@ -50,12 +50,13 @@ HostArray<T<S>, 2> invert(
         gridder<T<S>, S>(wlayerd, wworkunits, subtaperd, gridconf, makePSF);
 
         // Apply deltal, deltam shift
-        map([=] __device__ (auto idx, auto& wlayerd) {
+        map([
+            =,
+            deltal=static_cast<S>(gridspec.deltal),
+            deltam=static_cast<S>(gridspec.deltam)
+        ] __device__ (auto idx, auto& wlayerd) {
             auto [u, v] = gridspec.linearToUV<S>(idx);
-            wlayerd *= cispi(2 * (
-                u * static_cast<S>(gridspec.deltal) +
-                v * static_cast<S>(subgridspec.deltam)
-            ));
+            wlayerd *= cispi(2 * (u * deltal + v * deltam));
         }, Iota(), wlayerd);
 
         // FFT the full wlayer

@@ -62,12 +62,13 @@ void predict(
         fftExec(plan, wlayer, HIPFFT_FORWARD);
 
         // Reset deltal, deltam shift to visibilities
-        map([=] __device__ (auto idx, auto& wlayer) {
+        map([
+            =,
+            deltal=static_cast<S>(gridspec.deltal),
+            deltam=static_cast<S>(gridspec.deltam)
+        ] __device__ (auto idx, auto& wlayer) {
             auto [u, v] = gridspec.linearToUV<S>(idx);
-            wlayer *= cispi(-2 * (
-                u * static_cast<S>(gridspec.deltal) +
-                v * static_cast<S>(gridspec.deltam)
-            ));
+            wlayer *= cispi(-2 * (u * deltal + v * deltam));
         }, Iota(), wlayer);
 
         degridder<T, S>(wworkunits, wlayer, subtaperd, gridconf, degridop);

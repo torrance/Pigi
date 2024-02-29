@@ -1,6 +1,7 @@
 #pragma once
 
 #include <array>
+#include <optional>
 #include <tuple>
 
 #include <hip/hip_runtime.h>
@@ -12,21 +13,35 @@ struct GridSpec {
     double scaleuv;
     double deltal {};
     double deltam {};
+    long long deltalpx {};
+    long long deltampx {};
 
     bool operator==(const GridSpec& other) const {
         return (
             Nx == other.Nx && Ny == other.Ny &&
             scalelm == other.scalelm && scaleuv == other.scaleuv &&
-            deltal == other.deltal && deltam == other.deltam
+            deltal == other.deltal && deltam == other.deltam &&
+            deltalpx == other.deltalpx && deltampx == other.deltampx
         );
     }
 
-    static GridSpec fromScaleLM(long long Nx, long long Ny, double scalelm, double deltal = 0, double deltam = 0) {
-        return GridSpec {Nx, Ny, scalelm, 1 / (Nx * scalelm), deltal, deltam};
+    static GridSpec fromScaleLM(
+        long long Nx, long long Ny, double scalelm, double deltal = 0, double deltam = 0
+    ) {
+        return GridSpec {
+            Nx, Ny, scalelm, 1 / (Nx * scalelm), deltal, deltam,
+            std::llround(deltal / scalelm), std::llround(deltam / scalelm)
+        };
     }
 
-    static GridSpec fromScaleUV(long long Nx, long long Ny, double scaleuv, double deltal = 0, double deltam = 0) {
-        return GridSpec {Nx, Ny, 1 / (Nx * scaleuv), scaleuv, deltal, deltam};
+    static GridSpec fromScaleUV(
+        long long Nx, long long Ny, double scaleuv, double deltal = 0, double deltam = 0
+    ) {
+        auto scalelm = 1 / (Nx * scaleuv);
+        return GridSpec {
+            Nx, Ny, scalelm, scaleuv, deltal, deltam,
+            std::llround(deltal / scalelm), std::llround(deltam / scalelm)
+        };
     }
 
     __host__ __device__ inline auto size() const {
@@ -45,8 +60,31 @@ struct GridSpec {
         return std::make_tuple(xpx, ypx);
     }
 
+    inline auto linearToLMpx(const size_t idx) const {
+        // COLUMN MAJOR ordering
+        auto lpx { static_cast<long long>(idx) % Nx };
+        auto mpx { static_cast<long long>(idx) / Nx };
+
+        // Apply offset
+        lpx += deltalpx - Nx / 2;
+        mpx += deltampx - Ny / 2;
+
+        return std::make_tuple(lpx, mpx);
+    }
+
+    inline std::optional<size_t> LMpxToLinear(long long lpx, long long mpx) const {
+        lpx -= deltalpx - Nx / 2;
+        mpx -= deltampx - Ny / 2;
+
+        if (0 <= lpx && lpx < Nx && 0 <= mpx && mpx < Ny) {
+            return gridToLinear(lpx, mpx);
+        } else {
+            return {};
+        }
+    }
+
     __host__ __device__
-    inline auto gridToLinear(const long long x, const long long y) const {
+    inline size_t gridToLinear(const long long x, const long long y) const {
         // COLUMN MAJOR ordering
         return static_cast<size_t>(x) +
                static_cast<size_t>(y) * static_cast<size_t>(Nx);
@@ -98,7 +136,8 @@ struct std::hash<GridSpec> {
         return (
             hash<long long>()(key.Nx) ^ hash<long long>()(key.Ny) ^
             hash<double>()(key.scalelm) ^ hash<double>()(key.scaleuv) ^
-            hash<long>()(key.deltal) ^ hash<long>()(key.deltam)
+            hash<double>()(key.deltal) ^ hash<double>()(key.deltam) ^
+            hash<long long>()(key.deltalpx) ^ hash<long long>()(key.deltampx)
         );
     }
 };

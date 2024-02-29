@@ -3,6 +3,7 @@
 #include <array>
 #include <cmath>
 #include <chrono>
+#include <optional>
 #include <tuple>
 #include <type_traits>
 #include <unordered_map>
@@ -25,21 +26,62 @@
 
 namespace clean {
 
+using LMpx = std::tuple<long long, long long>;
+
+struct XYHash {
+    std::size_t operator()(const LMpx& xy) const noexcept {
+        auto& [x, y] = xy;
+        size_t hash = std::hash<long long>{}(x);
+        hash ^= std::hash<long long>{}(y) + 0x9e3779b9 + (hash << 6) + (hash >> 2);
+        return hash;
+    }
+};
+
+/**
+ * A utility function for finding which pixel 'belongs' to which field.
+ * Currently, we choose a field based on the distance to the center of the field.
+ * If 1. the field contains the pixel, and 2. its distance is shorter than other fields
+ * then we choose this field.
+ */
+std::optional<size_t> findnearestfield(const std::vector<GridSpec>& gridspecs, LMpx lmpx) {
+    auto [lpx, mpx] = lmpx;
+    std::size_t mindist {std::numeric_limits<size_t>::max()};
+    std::optional<size_t> nearestfieldid {};
+
+    for (size_t fieldid {}; auto& gridspec : gridspecs) {
+        auto idx = gridspec.LMpxToLinear(lpx, mpx);
+        if (idx) {
+            size_t dist = (
+                std::pow(gridspec.deltalpx - lpx, 2) + std::pow(gridspec.deltampx - mpx, 2)
+            );
+            if (dist < mindist) {
+                mindist = dist;
+                nearestfieldid = fieldid;
+            }
+        }
+        ++fieldid;
+    }
+
+    return nearestfieldid;
+}
+
 template <typename T>
-using ComponentMap = std::unordered_map<size_t, T>;
+using ComponentMap = std::unordered_map<LMpx, T, XYHash>;
 
 template <typename S, int N>
 auto _major(
     std::vector<double>& freqs,
-    std::vector<HostArray<StokesI<S>, 2>>& residuals,
-    const GridSpec imgGridspec,
-    std::vector<HostArray<thrust::complex<S>, 2>>& psfs,
+    std::vector<std::vector<HostArray<StokesI<S>, 2>>>& residualss,
+    const std::vector<GridSpec>& imgGridspecs,
+    std::vector<std::vector<HostArray<thrust::complex<S>, 2>>>& psfss,
     const double minorgain,
     const double majorgain,
     const double cleanThreshold,
     const double autoThreshold,
     const size_t niter
 ) {
+    // TODO: Enforce some input requirements
+
     std::chrono::nanoseconds maxFindingDuration {};
     std::chrono::nanoseconds psfSubtractionDuration {};
 
@@ -55,32 +97,48 @@ auto _major(
 
     // Estimate noise of image combined across all channel groups
     S noise {};
+    S maxVal {};
     {
-        HostArray<StokesI<S>, 2> imgCombined {imgGridspec.shape()};
-        for (auto& residual : residuals) {
-            imgCombined += residual;
-        }
-        imgCombined /= StokesI<S>(N);
+        // Combine all images into a single vector containing mean value across channels
+        // Where fields overlap, we use findnearestfield() to choose.
+        std::vector<S> imgCombined;
+        imgCombined.reserve(imgGridspecs.at(0).size());
 
+        for (size_t fieldid {}; fieldid < imgGridspecs.size(); ++fieldid) {
+            auto imgGridspec = imgGridspecs[fieldid];
+            auto& residuals = residualss[fieldid];
+
+            for (size_t i {}; i < imgGridspec.size(); ++i) {
+                // In the case of duplicate pixels, choose most central pixel
+                auto lmpx = imgGridspec.linearToLMpx(i);
+                if (fieldid == findnearestfield(imgGridspecs, lmpx).value()) {
+                    S val {};
+                    for (size_t n {}; n < N; ++n) val += residuals[n][i].I.real();
+                    imgCombined.push_back(val);
+                }
+            }
+        }
+        for (auto& val : imgCombined) val /= N;
+
+        // stddev = sqrt(variance) == sqrt(sum over N (val_N - mean)^2 / N)
+        // So we need caculate the mean and variance first
         S mean {};
-        for (auto& val : imgCombined) { mean += val.I.real(); }
+        for (auto& val : imgCombined) { mean += val; }
         mean /= imgCombined.size();
 
         S variance {};
-        for (auto& val : imgCombined) { variance += std::pow(val.I.real() - mean, 2); }
+        for (auto& val : imgCombined) { variance += std::pow(val - mean, 2); }
         variance /= imgCombined.size();
 
+        // Finally we have the noise estimate
         noise = std::sqrt(variance);
-    }
 
-    // Find initial maxVal
-    S maxVal {};
-    for (size_t idx {}; idx < imgGridspec.size(); ++idx) {
-        S val {};
-        for (auto& residual : residuals) {
-            val += residual[idx].I.real();
-        }
-        maxVal = std::max(maxVal, std::abs(val / N));
+        // Find initial maxVal
+        maxVal = std::abs(*std::max_element(
+            imgCombined.begin(), imgCombined.end(), [] (auto& lhs, auto& rhs) {
+                return std::abs(lhs) < std::abs(rhs);
+            }
+        ));
     }
 
     // Set threshold as max of the possible methods
@@ -98,31 +156,49 @@ auto _major(
     );
 
     // Reduce search space only to existing pixels above the threshold;
-    using Pixel = std::tuple<size_t, std::array<S, N>>;
-    std::vector<Pixel> pixels;
-    for (size_t i {}; i < imgGridspec.size(); ++i) {
-        std::array<S, N> vals;
-        for (size_t n {}; n < N; ++n) {
-            vals[n] = residuals[n][i].I.real();
-        }
+    // Additionally, reorder the pixels so that channel values are stored contiguously
+    using ChannelValues = std::array<S, N>;
+    std::vector<std::tuple<LMpx, ChannelValues>> pixels;
+    for (size_t fieldid {}; fieldid < imgGridspecs.size(); ++fieldid) {
+        auto imgGridspec = imgGridspecs[fieldid];
 
-        auto meanVal = std::apply([] (auto... vals) {
-            return ((vals + ...)) / N;
-        }, vals);
+        for (size_t i {}; i < imgGridspec.size(); ++i) {
+            auto lmpx = imgGridspec.linearToLMpx(i);
+            if (fieldid != findnearestfield(imgGridspecs, lmpx).value()) continue;
 
-        if (std::abs(meanVal) >= 0.9 * threshold) {
-            pixels.push_back({i, vals});
+            ChannelValues vals {};
+            for (size_t n {}; n < N; ++n) {
+                vals[n] = residualss[fieldid][n][i].I.real();
+            }
+
+            auto meanVal = std::apply([] (auto... vals) {
+                return ((vals + ...)) / N;
+            }, vals);
+
+            if (std::abs(meanVal) >= 0.9 * threshold) {
+                pixels.emplace_back(lmpx, vals);
+            }
         }
     }
 
-    // Combine PSFs so that N axis is dense
-    GridSpec psfGridspec {.Nx=psfs.front().size(0), .Ny=psfs.front().size(1)};
-    HostArray<std::array<S, N>, 2> psfsDense {psfGridspec.shape()};
-    for (size_t n {}; n < N; ++n) {
-        auto& psf = psfs[n];
-        for (size_t i {}; i < psfGridspec.size(); ++i) {
-            psfsDense[i][n] = psf[i].real();
+    // Rearrange PSFs so that channel values are stored contiguously
+    std::vector<GridSpec> psfGridspecs(psfss.size());
+    std::vector<HostArray<ChannelValues, 2>> psfsDense(psfss.size());
+
+    for (size_t fieldid {}; fieldid < psfss.size(); ++fieldid) {
+        psfGridspecs[fieldid] = {
+            .Nx=psfss.at(fieldid).at(0).size(0),
+            .Ny=psfss.at(fieldid).at(0).size(1)
+        };
+
+        HostArray<ChannelValues, 2> psfDense {psfGridspecs[fieldid].shape()};
+        for (size_t n {}; n < N; ++n) {
+            auto& psf = psfss[fieldid][n];
+            for (size_t i {}; i < psf.size(); ++i) {
+                psfDense[i][n] = psf[i].real();
+            }
         }
+        psfsDense[fieldid] = std::move(psfDense);
     }
 
     size_t iter {};
@@ -130,21 +206,23 @@ auto _major(
         auto start = std::chrono::steady_clock::now();
 
         // Find the maximum value
-        maxVal = 0;
-        Pixel maxPixel {};
-        for (auto& pixel : pixels) {
-            auto& [_, vals] = pixel;
-            auto meanVal = std::apply([] (auto... vals) {
-                return std::abs((vals + ...)) / N;
-            }, vals);
+        // We use std::accumulate as a left fold
+        auto [maxIdx, maxMeanVal, maxVals] = std::accumulate(
+            pixels.begin(), pixels.end(),
+            std::make_tuple(LMpx {}, S(0), ChannelValues {}),
+            [] (auto&& acc, auto& pixel) {
+                auto [lmpx, vals] = pixel;
+                auto meanVal = std::apply([] (auto... vals) {
+                    return std::abs((vals + ...)) / N;
+                }, vals);
 
-            if (meanVal > maxVal) {
-                maxVal = meanVal;
-                maxPixel = pixel;
+                if (meanVal > std::get<1>(acc)) {
+                    return std::make_tuple(lmpx, meanVal, vals);
+                } else {
+                    return acc;
+                }
             }
-        }
-
-        auto& [maxIdx, maxVals] = maxPixel;
+        );
 
         // Recalculate mean value with correct sign (for logging)
         maxVal = std::apply([] (auto... vals) { return ((vals + ...)) / N; }, maxVals);
@@ -173,30 +251,52 @@ auto _major(
             components[n][maxIdx] += StokesI<S>(maxVals[n]);
         }
 
-        // Find grid locations for max index
-        auto [xpeak, ypeak] = imgGridspec.linearToGrid(maxIdx);
+        // Separate peak grid location into components
+        auto [lpeak, mpeak] = maxIdx;
 
         // Subtract (component * psf) from pixels
-        for (auto& pixel : pixels) {
-            auto& [i, vals] = pixel;
+        for (auto& [lmpx, vals] : pixels) {
+            auto [xpx, ypx] = lmpx;
+
+            // Find the nearest PSF to pixel
+            std::ranges::iota_view<size_t, size_t> fieldids{0, psfGridspecs.size()};
+            size_t nearestfieldid = *std::min_element(
+                fieldids.begin(), fieldids.end(), [&] (size_t lhs, size_t rhs) {
+                    auto& lhsgridspec = psfGridspecs[lhs];
+                    auto& rhsgridspec = psfGridspecs[rhs];
+
+                    auto lhsdist = (
+                        std::pow(lhsgridspec.deltalpx - xpx, 2) +
+                        std::pow(lhsgridspec.deltampx - ypx, 2)
+                    );
+                    auto rhsdist = (
+                        std::pow(rhsgridspec.deltalpx - xpx, 2) +
+                        std::pow(rhsgridspec.deltampx - ypx, 2)
+                    );
+
+                    return lhsdist < rhsdist;
+                }
+            );
+
+            auto& psfGridspec = psfGridspecs[nearestfieldid];
+            auto& psfDense = psfsDense[nearestfieldid];
 
             // Calculate respective xpx, ypx in psf image
-            // First, get xy coordinates of pixel wrt img
-            auto [xpx, ypx] = imgGridspec.linearToGrid(i);
-
-            // Find offset from peak center
-            xpx -= xpeak;
-            ypx -= ypeak;
+            // First, find offset from peak center
+            xpx -= lpeak;
+            ypx -= mpeak;
 
             // Convert psf coordinates wrt to bottom left corner
             xpx += psfGridspec.Nx / 2;
             ypx += psfGridspec.Ny / 2;
 
             // Subtract component from pixel values if it maps to a valid psf pixel
+            // It is possible no psf maps to a pixel, since psfs have been heavily
+            // cropped in size to just their brightest pixels.
             if (0 <= xpx && xpx < psfGridspec.Nx && 0 <= ypx && ypx < psfGridspec.Ny) {
                 auto idx = psfGridspec.gridToLinear(xpx, ypx);
 
-                auto psf = psfsDense[idx];
+                auto psf = psfDense[idx];
                 for (size_t n {}; n < N; ++n) {
                     vals[n] -= maxVals[n] * psf[n];
                 }
@@ -205,6 +305,11 @@ auto _major(
 
         psfSubtractionDuration += std::chrono::duration_cast<std::chrono::nanoseconds>(
             std::chrono::steady_clock::now() - start
+        );
+
+        if (iter == 0) fmt::println(
+            "   [Initial iteration] {:.3f} Jy peak found; search space {} pixels",
+            maxVal, pixels.size()
         );
 
         if ((iter + 1) % 1000 == 0) {
@@ -246,9 +351,9 @@ auto _major(
 template <typename S>
 auto major(
     std::vector<double>& freqs,
-    std::vector<HostArray<StokesI<S>, 2>>& residuals,
-    const GridSpec imgGridspec,
-    std::vector<HostArray<thrust::complex<S>, 2>>& psfs,
+    std::vector<std::vector<HostArray<StokesI<S>, 2>>>& residualss,
+    const std::vector<GridSpec>& imgGridspecs,
+    std::vector<std::vector<HostArray<thrust::complex<S>, 2>>>& psfss,
     const double minorgain,
     const double majorgain,
     const double cleanThreshold,
@@ -258,61 +363,61 @@ auto major(
     switch (freqs.size()) {
     case 1:
         return clean::_major<S, 1>(
-            freqs, residuals, imgGridspec, psfs, minorgain, majorgain,
+            freqs, residualss, imgGridspecs, psfss, minorgain, majorgain,
             cleanThreshold, autoThreshold, niter
         );
         break;
     case 2:
         return clean::_major<S, 2>(
-            freqs, residuals, imgGridspec, psfs, minorgain, majorgain,
+            freqs, residualss, imgGridspecs, psfss, minorgain, majorgain,
             cleanThreshold, autoThreshold, niter
         );
         break;
     case 3:
         return clean::_major<S, 3>(
-            freqs, residuals, imgGridspec, psfs, minorgain, majorgain,
+            freqs, residualss, imgGridspecs, psfss, minorgain, majorgain,
             cleanThreshold, autoThreshold, niter
         );
         break;
     case 4:
         return clean::_major<S, 4>(
-            freqs, residuals, imgGridspec, psfs, minorgain, majorgain,
+            freqs, residualss, imgGridspecs, psfss, minorgain, majorgain,
             cleanThreshold, autoThreshold, niter
         );
         break;
     case 5:
         return clean::_major<S, 5>(
-            freqs, residuals, imgGridspec, psfs, minorgain, majorgain,
+            freqs, residualss, imgGridspecs, psfss, minorgain, majorgain,
             cleanThreshold, autoThreshold, niter
         );
         break;
     case 6:
         return clean::_major<S, 6>(
-            freqs, residuals, imgGridspec, psfs, minorgain, majorgain,
+            freqs, residualss, imgGridspecs, psfss, minorgain, majorgain,
             cleanThreshold, autoThreshold, niter
         );
         break;
     case 7:
         return clean::_major<S, 7>(
-            freqs, residuals, imgGridspec, psfs, minorgain, majorgain,
+            freqs, residualss, imgGridspecs, psfss, minorgain, majorgain,
             cleanThreshold, autoThreshold, niter
         );
         break;
     case 8:
         return clean::_major<S, 8>(
-            freqs, residuals, imgGridspec, psfs, minorgain, majorgain,
+            freqs, residualss, imgGridspecs, psfss, minorgain, majorgain,
             cleanThreshold, autoThreshold, niter
         );
         break;
     case 9:
         return clean::_major<S, 9>(
-            freqs, residuals, imgGridspec, psfs, minorgain, majorgain,
+            freqs, residualss, imgGridspecs, psfss, minorgain, majorgain,
             cleanThreshold, autoThreshold, niter
         );
         break;
     case 10:
         return clean::_major<S, 10>(
-            freqs, residuals, imgGridspec, psfs, minorgain, majorgain,
+            freqs, residualss, imgGridspecs, psfss, minorgain, majorgain,
             cleanThreshold, autoThreshold, niter
         );
         break;

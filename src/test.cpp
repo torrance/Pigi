@@ -642,8 +642,11 @@ TEST_CASE("Clean", "[clean]") {
     HostArray<StokesI<double>, 2> expectedSum {gridspec.Nx, gridspec.Ny};
 
     std::vector<double> freqs;
-    std::vector<HostArray<StokesI<double>, 2>> residuals;
-    std::vector<HostArray<thrust::complex<double>, 2>> psfs;
+    std::vector<std::vector<HostArray<StokesI<double>, 2>>> residualss(1);
+    std::vector<std::vector<HostArray<thrust::complex<double>, 2>>> psfss(1);
+
+    auto& residuals = residualss.front();
+    auto& psfs = psfss.front();
 
     // Convolve the models and populate each of input vectors
     for (int n {}; n < N; ++n) {
@@ -663,7 +666,7 @@ TEST_CASE("Clean", "[clean]") {
     };
 
     auto [components, iter, _] = clean::major(
-        freqs, residuals, gridspec, psfs, gridspec,
+        freqs, residualss, {gridspec}, psfss,
         0.01, 0.991, 0, 0, std::numeric_limits<size_t>::max()
     );
 
@@ -673,8 +676,10 @@ TEST_CASE("Clean", "[clean]") {
     HostArray<StokesI<double>, 2> restoredSum {gridspec.Nx, gridspec.Ny};
     for (auto& component : components) {
         HostArray<StokesI<double>, 2> componentMap {gridspec.Nx, gridspec.Ny};
-        for (auto& [idx, val] : component) {
-            componentMap[idx] += val;
+        for (auto& [lmpx, val] : component) {
+            auto [lpx, mpx] = lmpx;
+            auto idx = gridspec.LMpxToLinear(lpx, mpx);
+            if (idx) componentMap[*idx] += val;
         }
 
         restoredSum += convolve(componentMap, fittedPSF);

@@ -264,12 +264,13 @@ void gridder(
                 fftExec(plan, subgrid, HIPFFT_FORWARD);
 
                 // Reset deltal, deltam shift prior to adding to master grid
-                map([=] __device__ (auto idx, auto& subgrid) {
+                map([
+                    =,
+                    deltal=static_cast<S>(subgridspec.deltal),
+                    deltam=static_cast<S>(subgridspec.deltam)
+                ] __device__ (auto idx, auto& subgrid) {
                     auto [u, v] = subgridspec.linearToUV<S>(idx);
-                    subgrid *= cispi(-2 * (
-                        u * static_cast<S>(subgridspec.deltal) +
-                        v * static_cast<S>(subgridspec.deltam)
-                    ));
+                    subgrid *= cispi(-2 * (u * deltal + v * deltam));
                 }, Iota(), subgrid);
 
                 // Sync the stream before we send the subgrid back to the main thread

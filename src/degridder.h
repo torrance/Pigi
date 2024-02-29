@@ -200,6 +200,8 @@ void degridder(
     for (auto workunit : workunits) { workunitsChannel.push(workunit); }
     workunitsChannel.close();
 
+    auto subgridspec = gridconf.subgrid();
+
     std::vector<std::thread> threads;
     for (
         size_t i {};
@@ -229,12 +231,13 @@ void degridder(
                 auto subgrid = extractSubgrid(grid, *workunit, gridconf);
 
                 // Apply deltal, deltam shift to visibilities
-                map([=, subgridspec=gridconf.subgrid()] __device__ (auto idx, auto& subgrid) {
+                map([
+                    =,
+                    deltal=static_cast<S>(subgridspec.deltal),
+                    deltam=static_cast<S>(subgridspec.deltam)
+                ] __device__ (auto idx, auto& subgrid) {
                     auto [u, v] = subgridspec.linearToUV<S>(idx);
-                    subgrid *= cispi(2 * (
-                        u * static_cast<S>(subgridspec.deltal) +
-                        v * static_cast<S>(subgridspec.deltam)
-                    ));
+                    subgrid *= cispi(2 * (u * deltal + v * deltam));
                 }, Iota(), subgrid);
 
                 fftExec(plan, subgrid, HIPFFT_BACKWARD);

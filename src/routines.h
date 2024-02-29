@@ -55,9 +55,13 @@ void cleanQueen(const Config& config, boost::mpi::intercommunicator hive) {
 
     // Create a barrier object that does cleaning as part of its completion function.
     // This completion function is run just by one thread.
-    std::barrier cleanbarrier(gridconfs.size(), [&] () -> void {
+    std::barrier cleanbarrier(fieldids.size(), [&] () -> void {
+        std::vector<GridSpec> gridspecs;
+        gridspecs.reserve(gridconfs.size());
+        for (auto& gridconf : gridconfs) gridspecs.push_back(gridconf.grid());
+
         auto [_minorComponentsMaps, _iters, _finalMajor] = clean::major<P>(
-            freqs, residualss[0], gridconfs[0].grid(), psfss[0],
+            freqs, residualss, gridspecs, psfss,
             config.minorgain, config.majorgain, config.cleanThreshold,
             config.autoThreshold, config.nMinor - iminor
         );
@@ -155,15 +159,8 @@ void cleanQueen(const Config& config, boost::mpi::intercommunicator hive) {
                 cleanbarrier.arrive_and_wait();
 
                 // Send out clean components for subtraction from visibilities by workers
-                if (fieldid == 0) {
                 for (const int src : srcs) {
-                    HostArray<StokesI<P>, 2> minorComponents {gridconf.grid().shape()};
-                    for (auto [idx, val] : minorComponentsMaps[src]) {
-                        minorComponents[idx] = val;
-                    }
-
-                    hive.send(src, fieldid, minorComponents);
-                }
+                    hive.send(src, fieldid, minorComponentsMaps[src]);
                 }
 
                 // Gather new residuals from workers
@@ -379,10 +376,33 @@ void cleanWorker(
             // Clean loops
             for (int i {1}; again; ++i) {
                 // Predict
-                if (fieldid == 0) {
-                    HostArray<StokesI<P>, 2> minorComponents;
-                    queen.recv(0, fieldid, minorComponents);
-                    components += minorComponents;
+                {
+                    clean::ComponentMap<StokesI<P>> minorComponentsMap;
+                    queen.recv(0, fieldid, minorComponentsMap);
+
+                    std::vector<GridSpec> gridspecs;
+                    for (auto& gridconf : gridconfs) gridspecs.push_back(gridconf.grid());
+
+                    // Cleaning returns a minorComponentsMap that maps LMpx => Component
+                    // We need to paint component images with these components: one image
+                    // to be used in prediction, and the other as a cumulative map used
+                    // in the final image construction and convolution.
+                    HostArray<StokesI<P>, 2> minorComponents {gridspecs[fieldid].shape()};
+                    for (auto [lmpx, val] : minorComponentsMap) {
+                        auto [lpx, mpx] = lmpx;
+                        auto idx = gridspecs[fieldid].LMpxToLinear(lpx, mpx);
+
+                        // Ignore any out-of-field components
+                        if (!idx) continue;
+
+                        // Assign any valid component to the cumulative component map
+                        components[*idx] += val;
+
+                        // Assign only *our* field's components for prediction
+                        if (fieldid == clean::findnearestfield(gridspecs, lmpx).value()) {
+                            minorComponents[*idx] = val;
+                        }
+                    }
 
                     // Correct for beamPower
                     for (size_t i {}, I = gridconf.grid().size(); i < I; ++i) {
