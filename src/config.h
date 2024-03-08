@@ -369,7 +369,7 @@ struct Config {
 
             gridconfs.push_back({
                 .imgNx = field.size, .imgNy = field.size,
-                .imgScalelm = scalelm, .paddingfactor = this->paddingfactor,
+                .imgScalelm = scalelm, .paddingfactor = paddingfactor,
                 .kernelsize = kernelsize, .kernelpadding = kernelpadding,
                 .wstep = static_cast<double>(wstep),
                 .deltal = deltal, .deltam = deltam

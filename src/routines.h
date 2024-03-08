@@ -87,7 +87,10 @@ void cleanQueen(const Config& config, boost::mpi::intercommunicator hive) {
                 }
                 beamPowerCombined /= StokesI<P>(hivesize);
 
-                save(fmt::format("beam-field{:02d}.fits", fieldid + 1), beamPowerCombined);
+                save(
+                    fmt::format("beam-field{:02d}.fits", fieldid + 1), beamPowerCombined,
+                    gridconf.grid(), config.phasecenter.value()
+                );
             }
 
             auto& psfs = psfss[fieldid];
@@ -105,7 +108,10 @@ void cleanQueen(const Config& config, boost::mpi::intercommunicator hive) {
                     psfCombined += psf;
                 }
                 psfCombined /= thrust::complex<P>(hivesize);
-                save(fmt::format("psf-field{:02d}.fits", fieldid + 1), psfCombined);
+                save(
+                    fmt::format("psf-field{:02d}.fits", fieldid + 1), psfCombined,
+                    gridconf.grid(), config.phasecenter.value()
+                );
 
                 // Further crop psfs so that all pixels > 0.2 * (1 - majorgain)
                 // are included in cutout. We use this smaller window to speed up PSF fitting and
@@ -143,7 +149,10 @@ void cleanQueen(const Config& config, boost::mpi::intercommunicator hive) {
                 }
                 dirtyCombined /= StokesI<P>(hivesize);
 
-                save(fmt::format("dirty-field{:02d}.fits", fieldid + 1), dirtyCombined);
+                save(
+                    fmt::format("dirty-field{:02d}.fits", fieldid + 1), dirtyCombined,
+                    gridconf.grid(), config.phasecenter.value()
+                );
             }
 
             // Major clean loops
@@ -197,9 +206,18 @@ void cleanQueen(const Config& config, boost::mpi::intercommunicator hive) {
             imageCombined += residualCombined;
 
             fmt::println("Queen: (Field {}) Writing out files...", fieldid + 1);
-            save(fmt::format("residual-field{:02d}.fits", fieldid + 1), residualCombined);
-            save(fmt::format("components-field{:02d}.fits", fieldid + 1), componentsCombined);
-            save(fmt::format("image-field{:02d}.fits", fieldid + 1), imageCombined);
+            save(
+                fmt::format("residual-field{:02d}.fits", fieldid + 1), residualCombined,
+                gridconf.grid(), config.phasecenter.value()
+            );
+            save(
+                fmt::format("components-field{:02d}.fits", fieldid + 1), componentsCombined,
+                gridconf.grid(), config.phasecenter.value()
+            );
+            save(
+                fmt::format("image-field{:02d}.fits", fieldid + 1), imageCombined,
+                gridconf.grid(), config.phasecenter.value()
+            );
         });
     }
 
@@ -246,7 +264,7 @@ void cleanWorker(
         rad2deg(config.phasecenter.value().ra), rad2deg(config.phasecenter.value().dec)
     );
     for (auto& uvdatum : uvdata) {
-        phaserotate(uvdatum, *config.phasecenter);
+        phaserotate(uvdatum, config.phasecenter.value());
     }
 
     fmt::println("Worker [{}/{}]: Calculating visibility weights...", rank + 1, hivesize);
@@ -327,7 +345,8 @@ void cleanWorker(
 
             queen.send(0, fieldid, beamPower);
             if (hivesize > 1) save(
-                fmt::format("beam-field{:02d}-{:02d}.fits", fieldid + 1, rank + 1), beamPower
+                fmt::format("beam-field{:02d}-{:02d}.fits", fieldid + 1, rank + 1), beamPower,
+                gridconf.grid(), config.phasecenter.value()
             );
 
             // Create psf
@@ -342,7 +361,8 @@ void cleanWorker(
                 queen.send(0, fieldid, psf);
             };
             if (hivesize > 1) save(
-                fmt::format("psf-field{:02d}-{:02d}.fits", fieldid + 1, rank + 1), psf
+                fmt::format("psf-field{:02d}-{:02d}.fits", fieldid + 1, rank + 1), psf,
+                gridconf.grid(), config.phasecenter.value()
             );
 
             GridSpec gridspecPsf;
@@ -362,7 +382,7 @@ void cleanWorker(
             };
             if (hivesize > 1) save(fmt::format(
                 "dirty-field{:02d}-{:02d}.fits", fieldid + 1, rank + 1
-            ), residual);
+            ), residual, gridconf.grid(), config.phasecenter.value());
 
             // Pre-allocate the components array, used to sum components
             // from each major iteration
@@ -448,10 +468,10 @@ void cleanWorker(
             if (hivesize > 1) {
                 save(fmt::format(
                     "residual-field{:02d}-{:02d}.fits", fieldid + 1, rank + 1
-                ), residual);
+                ), residual, gridconf.grid(), config.phasecenter.value());
                 save(fmt::format(
                     "components-field{:02}-{:02d}.fits", fieldid + 1, rank + 1
-                ), components);
+                ), components, gridconf.grid(), config.phasecenter.value());
 
                 auto image = convolve(
                     components,
@@ -461,7 +481,7 @@ void cleanWorker(
 
                 save(fmt::format(
                     "image-field{:02}-{:02d}.fits", fieldid + 1, rank + 1
-                ), image);
+                ), image, gridconf.grid(), config.phasecenter.value());
             }
 
         });
