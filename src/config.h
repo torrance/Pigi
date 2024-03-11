@@ -50,6 +50,9 @@ struct Config {
             if (size < 1000) {
                 throw std::runtime_error("[[image.fields]].size must be >= 1000");
             }
+            if (size % 2 != 0) {
+                throw std::runtime_error("[[image.fields]].size must be even");
+            }
         }
 
         void from_toml(const toml::value& v) {
@@ -62,7 +65,7 @@ struct Config {
         toml::basic_value<toml::preserve_comments> into_toml() const {
             return {
                 {"size", {this->size, {
-                    " The image size (size x size). [1000 <= int: pixel]",
+                    " The image size (size x size). [1000 <= even int: pixel]",
                 }}},
                 {"projectioncenter", toml::basic_value<toml::preserve_comments>(
                     this->projectioncenter, {
@@ -130,6 +133,9 @@ struct Config {
         }
         if (kernelsize < 32) {
             throw std::runtime_error("idg.kernelsize must be >= 32");
+        }
+        if (kernelsize % 2 != 0) {
+            throw std::runtime_error("idg.kernelsize must be even");
         }
         if (kernelpadding < 0) {
             throw std::runtime_error("idg.kernelpadding must be >= 0");
@@ -231,7 +237,7 @@ struct Config {
                     " The low-resolution kernel use by IDG during (de)gridding. A-terms",
                     " will be sampled at this resolution. For A-terms with complex detail,",
                     " consider increasing this size. Typical sizes range from 64 - 128",
-                    " pixels. [32 <= int: pixel]",
+                    " pixels. [32 <= even int: pixel]",
                 }}},
                 {"kernelpadding", {this->kernelpadding, {
                     " The size of the boundary around the edge of IDG kernels that is",
