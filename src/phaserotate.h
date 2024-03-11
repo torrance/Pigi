@@ -37,18 +37,11 @@ void phaserotate(UVDatum<P>& uvdatum, const RaDec to) {
         + w * (sin_decfrom * sin_decto + cos_decfrom * cos_decto * cos_deltara)
     );
 
-    uvdatum.u = uprime;
-    uvdatum.v = vprime;
-    uvdatum.w = wprime;
-    uvdatum.data *= cispi(-2 * (wprime - w));
-
-    // Force w >= 0 since V(u, v, w) = *V(-u, -v, -w)
-    // TODO: Verify adjoint() versus simple conj()
-    if (uvdatum.w < 0) {
-        uvdatum.u = -uvdatum.u;
-        uvdatum.v = -uvdatum.v;
-        uvdatum.w = -uvdatum.w;
-        uvdatum.weights = uvdatum.weights.adjoint();
-        uvdatum.data = uvdatum.data.adjoint();
-    }
+    // We ensure the UVDatum<P> constructor is called to ensure w is made positive
+    // again after phase rotation
+    uvdatum = UVDatum<P>(
+        uvdatum.meta, uvdatum.chan,
+        uprime, vprime, wprime,
+        uvdatum.weights, uvdatum.data *= cispi(-2 * (wprime - w))
+    );
 }

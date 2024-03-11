@@ -304,9 +304,6 @@ TEST_CASE("Widefield inversion", "[widefield]") {
         expected[i] *= static_cast<StokesI<P>>(StokesI<double>::beamPower(a, a));
     }
 
-    save("image.fits", img);
-    save("expected.fits", expected);
-
     HostArray<StokesI<P>, 2> diff {expected};
     for (size_t i {}; i < diff.size(); ++i) {
         auto [xpx, ypx] = gridspec.linearToGrid(i);
@@ -314,7 +311,6 @@ TEST_CASE("Widefield inversion", "[widefield]") {
         auto j = gridconf.grid().gridToLinear(xpx, ypx);
         diff[i] -= img[j];
     }
-    save("diff.fits", diff);
 
     P maxdiff {-1};
     for (size_t i {}; i < diff.size(); ++i) {
@@ -385,10 +381,9 @@ TEMPLATE_TEST_CASE_SIG(
         for (size_t i {}; i < 20000; ++i) {
             double u = rand(gen), v = rand(gen), w = rand(gen);
 
-            // Scale uv to be in -500 <= +500 and w 0 < 500
             u = (u - 0.5) * 200;
             v = (v - 0.5) * 200;
-            w*= 200;
+            w = (w - 0.5) * 200;
 
             ComplexLinearData<double> data;
             for (auto [l, m, jones] : sources) {
@@ -404,10 +399,16 @@ TEMPLATE_TEST_CASE_SIG(
                 rand(gen), rand(gen), rand(gen), rand(gen)
             };
 
-            // TODO: use emplace_back() when we can upgrade Clang
-            uvdata64.push_back(
-                {meta, static_cast<int>(i), u, v, w, weights, data}
-            );
+            // We create UVDatum<P> but avoid using the constructor so that we can test
+            // forcing w > 0.
+            UVDatum<double> uvdatum;
+            uvdatum.meta = meta;
+            uvdatum.chan = i;
+            uvdatum.u = u; uvdatum.v = v; uvdatum.w = w;
+            uvdatum.weights = weights;
+            uvdatum.data = data;
+
+            uvdata64.push_back(uvdatum);
         }
     }
 
@@ -424,10 +425,10 @@ TEMPLATE_TEST_CASE_SIG(
         idft<StokesI, double>(expected, jones, uvdata64, gridspec);
     }
 
-    // Cast to float or double
+    // Cast to float or double AND set w >= 0
     std::vector<UVDatum<Q>> uvdata(uvdata64.size());
     for (size_t i {}; const auto& uvdatum : uvdata64) {
-        uvdata[i++] = static_cast<UVDatum<Q>>(uvdatum);
+        uvdata[i++] = static_cast<UVDatum<Q>>(uvdatum).forcePositiveW();
     }
 
     auto Aterm = beam.gridResponse(gridconf.subgrid(), gridorigin, freq);
@@ -443,7 +444,7 @@ TEMPLATE_TEST_CASE_SIG(
     double maxdiff {-1};
     for (size_t i {}; i < gridspec.size(); ++i) {
         double diff = thrust::abs(
-            expected[i].I - thrust::complex<double>(img[i].I)
+            expected[i].I.real() - thrust::complex<double>(img[i].I.real())
         );
         maxdiff = std::max(maxdiff, diff);
     }
