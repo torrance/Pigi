@@ -358,7 +358,7 @@ struct Config {
     }
 
     std::vector<GridConfig> gridconfs() const {
-        double scalelm = std::asin(deg2rad(this->scale / 3600.));
+        double scalelm = std::sin(deg2rad(this->scale / 3600.));
 
         std::vector<GridConfig> gridconfs;
         for (const auto& field : fields) {
