@@ -19,10 +19,10 @@
 
 #include "fft.h"
 #include "gridspec.h"
+#include "gslfit.h"
 #include "hip.h"
 #include "memory.h"
 #include "outputtypes.h"
-#include "polyfit.h"
 
 namespace clean {
 
@@ -201,6 +201,28 @@ auto _major(
         psfsDense[fieldid] = std::move(psfDense);
     }
 
+    // Creating fitting object
+    const int nparams = std::min(N, 2);
+    GSLFit fitter([] (const gsl_vector* params, void* data, gsl_vector* residual) -> int {
+        using Data = std::tuple<std::vector<double>, ChannelValues>;
+        auto& [freqs, vals] = *static_cast<Data*>(data);
+
+        for (size_t n {}; n < N; ++n) {
+            double model {};
+            for (size_t order {}; order < params->size; ++order) {
+                // TODO: Implement channel-averaged correction
+                model += gsl_vector_get(params, order) * std::pow(freqs[n], order);
+            }
+            gsl_vector_set(residual, n, vals[n] - model);
+        }
+
+        return GSL_SUCCESS;
+    }, nparams, N);
+
+    // Pre allocate objects used in fitting
+    std::vector<double> params0(nparams);
+    auto datapair = std::make_tuple(freqs, ChannelValues{});
+
     size_t iter {};
     for (; iter < niter; ++iter) {
         auto start = std::chrono::steady_clock::now();
@@ -231,17 +253,23 @@ auto _major(
             std::chrono::steady_clock::now() - start
         );
 
-        // Fit polynomial to output
-        // TODO: make root configurable
-        auto coeffs = polyfit<double, S>(freqs, maxVals, std::min(N, 2));
+        if (nparams == 1 || N == nparams) {
+            // No fit required; just apply gain
+            for (auto& val : maxVals) val *= static_cast<S>(minorgain);
+        } else {
+            // Fit polynomial to output
+            params0[0] = maxVal;
+            std::get<1>(datapair) = maxVals;
+            auto& coeffs = fitter.fit(params0, &datapair);
 
-        // Evalate polynomial model and apply gain
-        for (size_t n {}; n < N; ++n) {
-            maxVals[n] = 0;
-            for (size_t i {}; i < coeffs.size(); ++i) {
-                maxVals[n] += coeffs[i] * std::pow(freqs[n], i);
+            // Evalate polynomial model and apply gain
+            for (size_t n {}; n < N; ++n) {
+                maxVals[n] = 0;
+                for (size_t i {}; i < coeffs.size(); ++i) {
+                    maxVals[n] += coeffs[i] * std::pow(freqs[n], i);
+                }
+                maxVals[n] *= static_cast<S>(minorgain);
             }
-            maxVals[n] *= static_cast<S>(minorgain);
         }
 
         start = std::chrono::steady_clock::now();
