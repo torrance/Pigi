@@ -40,7 +40,7 @@ void cleanQueen(const Config& config, boost::mpi::intercommunicator hive) {
     const std::ranges::iota_view<int, int> srcs{0, hivesize};
     const std::ranges::iota_view<size_t, size_t> fieldids{0, gridconfs.size()};
 
-    std::vector<double> freqs(hivesize);
+    std::vector<MeasurementSet::FreqRange> freqs(hivesize);
     for (const int src : srcs) {
         hive.recv(src, boost::mpi::any_tag, freqs[src]);
     }
@@ -63,7 +63,7 @@ void cleanQueen(const Config& config, boost::mpi::intercommunicator hive) {
         auto [_minorComponentsMaps, _iters, _finalMajor] = clean::major<P>(
             freqs, residualss, gridspecs, psfss,
             config.minorgain, config.majorgain, config.cleanThreshold,
-            config.autoThreshold, config.nMinor - iminor
+            config.autoThreshold, config.nMinor - iminor, config.spectralparams
         );
 
         minorComponentsMaps = std::move(_minorComponentsMaps);
@@ -250,7 +250,7 @@ void cleanWorker(
         std::numeric_limits<double>::min(), std::numeric_limits<double>::max()
     );
 
-    queen.send(0, 0, mset.midfreq());
+    queen.send(0, 0, mset.freqrange());
 
     fmt::println(
         "Worker [{}/{}]: Reading data and writing to mmap-backed memory...",

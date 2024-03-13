@@ -108,6 +108,7 @@ struct Config {
     float autoThreshold {3.5};
     size_t nMajor {0};
     size_t nMinor {0};
+    int spectralparams {2};
 
     void validate() {
         if (precision != 32 && precision != 64) {
@@ -164,6 +165,9 @@ struct Config {
         if (nMinor < 0) {
             throw std::runtime_error("clean.nminor must be >= 0");
         }
+        if (spectralparams < 1) {
+            throw std::runtime_error("clean.spectralparams must be >= 1");
+        }
         if (!phasecenter) {
             // This should be set by main
             throw std::runtime_error("image.phasecenter must be set");
@@ -213,6 +217,7 @@ struct Config {
             this->nMinor = find_or(tbl, "nminor", this->nMinor);
             this->autoThreshold = find_or(tbl, "auto-threshold", this->autoThreshold);
             this->cleanThreshold = find_or(tbl, "threshold", this->cleanThreshold);
+            this->spectralparams = find_or(tbl, "spectralparams", this->spectralparams);
         }
 
         if (v.contains("beam")) {
@@ -275,6 +280,13 @@ struct Config {
                 }}},
             }},
             {"clean", {
+                {"spectralparams", {this->spectralparams, {
+                    " Fit clean peaks with clean.spectralparams Taylor terms (as a",
+                    " function of frequency). A value of 1 implies a constant term (i.e.",
+                    " the mean value across all channels), 2 implies a linear function,",
+                    " etc., whilst clean.spectralparams >= mset.channelsout implies no",
+                    " fitting. [1 >= int]",
+                }}},
                 {"threshold", {this->cleanThreshold, {
                     " Cleaning will terminate when the maximum (absolute) value remaining",
                     " in the residual image reaches this threshold value. [0 >= float: Jy]",

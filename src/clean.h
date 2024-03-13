@@ -22,6 +22,7 @@
 #include "gslfit.h"
 #include "hip.h"
 #include "memory.h"
+#include "mset.h"
 #include "outputtypes.h"
 
 namespace clean {
@@ -70,7 +71,7 @@ using ComponentMap = std::unordered_map<LMpx, T, XYHash>;
 
 template <typename S, int N>
 auto _major(
-    std::vector<double>& freqs,
+    std::vector<MeasurementSet::FreqRange>& freqs,
     std::vector<std::vector<HostArray<StokesI<S>, 2>>>& residualss,
     const std::vector<GridSpec>& imgGridspecs,
     std::vector<std::vector<HostArray<thrust::complex<S>, 2>>>& psfss,
@@ -78,7 +79,8 @@ auto _major(
     const double majorgain,
     const double cleanThreshold,
     const double autoThreshold,
-    const size_t niter
+    const size_t niter,
+    const int spectralparams
 ) {
     // TODO: Enforce some input requirements
 
@@ -202,16 +204,21 @@ auto _major(
     }
 
     // Creating fitting object
-    const int nparams = std::min(N, 2);
+    const int nparams = std::min(spectralparams, N); // cap nparams at N channels
     GSLFit fitter([] (const gsl_vector* params, void* data, gsl_vector* residual) -> int {
-        using Data = std::tuple<std::vector<double>, ChannelValues>;
+        using Data = std::tuple<std::vector<MeasurementSet::FreqRange>, ChannelValues>;
         auto& [freqs, vals] = *static_cast<Data*>(data);
 
         for (size_t n {}; n < N; ++n) {
+            auto& [freq_low, freq_high] = freqs[n];
             double model {};
-            for (size_t order {}; order < params->size; ++order) {
-                // TODO: Implement channel-averaged correction
-                model += gsl_vector_get(params, order) * std::pow(freqs[n], order);
+            for (size_t order {1}; order <= params->size; ++order) {
+                // This model is a polynomial fit over channel(s) having
+                // finite (i.e. not infinitesimal) bandwidth.
+                // See e.g. Offringa & Smirnoff 2017, section 2.1.
+                model += gsl_vector_get(params, order - 1) * (
+                    std::pow(freq_high, order) - std::pow(freq_low, order)
+                ) / (order * (freq_high - freq_low));
             }
             gsl_vector_set(residual, n, vals[n] - model);
         }
@@ -262,11 +269,15 @@ auto _major(
             std::get<1>(datapair) = maxVals;
             auto& coeffs = fitter.fit(params0, &datapair);
 
-            // Evalate polynomial model and apply gain
+            // Evalate the model and apply gain
             for (size_t n {}; n < N; ++n) {
                 maxVals[n] = 0;
-                for (size_t i {}; i < coeffs.size(); ++i) {
-                    maxVals[n] += coeffs[i] * std::pow(freqs[n], i);
+                auto& [freq_low, freq_high] = freqs[n];
+                for (size_t order {1}; order <= coeffs.size(); ++order) {
+                    // This is the same polynomial model as used in GSLFit() above.
+                    maxVals[n] +=  coeffs[order - 1] * (
+                        std::pow(freq_high, order) - std::pow(freq_low, order)
+                    ) / (order * (freq_high - freq_low));
                 }
                 maxVals[n] *= static_cast<S>(minorgain);
             }
@@ -378,7 +389,7 @@ auto _major(
 
 template <typename S>
 auto major(
-    std::vector<double>& freqs,
+    std::vector<MeasurementSet::FreqRange>& freqs,
     std::vector<std::vector<HostArray<StokesI<S>, 2>>>& residualss,
     const std::vector<GridSpec>& imgGridspecs,
     std::vector<std::vector<HostArray<thrust::complex<S>, 2>>>& psfss,
@@ -386,67 +397,68 @@ auto major(
     const double majorgain,
     const double cleanThreshold,
     const double autoThreshold,
-    const size_t niter
+    const size_t niter,
+    const int spectralparams
 ) {
     switch (freqs.size()) {
     case 1:
         return clean::_major<S, 1>(
             freqs, residualss, imgGridspecs, psfss, minorgain, majorgain,
-            cleanThreshold, autoThreshold, niter
+            cleanThreshold, autoThreshold, niter, spectralparams
         );
         break;
     case 2:
         return clean::_major<S, 2>(
             freqs, residualss, imgGridspecs, psfss, minorgain, majorgain,
-            cleanThreshold, autoThreshold, niter
+            cleanThreshold, autoThreshold, niter, spectralparams
         );
         break;
     case 3:
         return clean::_major<S, 3>(
             freqs, residualss, imgGridspecs, psfss, minorgain, majorgain,
-            cleanThreshold, autoThreshold, niter
+            cleanThreshold, autoThreshold, niter, spectralparams
         );
         break;
     case 4:
         return clean::_major<S, 4>(
             freqs, residualss, imgGridspecs, psfss, minorgain, majorgain,
-            cleanThreshold, autoThreshold, niter
+            cleanThreshold, autoThreshold, niter, spectralparams
         );
         break;
     case 5:
         return clean::_major<S, 5>(
             freqs, residualss, imgGridspecs, psfss, minorgain, majorgain,
-            cleanThreshold, autoThreshold, niter
+            cleanThreshold, autoThreshold, niter, spectralparams
         );
         break;
     case 6:
         return clean::_major<S, 6>(
             freqs, residualss, imgGridspecs, psfss, minorgain, majorgain,
-            cleanThreshold, autoThreshold, niter
+            cleanThreshold, autoThreshold, niter, spectralparams
         );
         break;
     case 7:
         return clean::_major<S, 7>(
             freqs, residualss, imgGridspecs, psfss, minorgain, majorgain,
-            cleanThreshold, autoThreshold, niter
+            cleanThreshold, autoThreshold, niter, spectralparams
         );
         break;
     case 8:
         return clean::_major<S, 8>(
             freqs, residualss, imgGridspecs, psfss, minorgain, majorgain,
-            cleanThreshold, autoThreshold, niter
+            cleanThreshold, autoThreshold, niter, spectralparams
         );
         break;
     case 9:
         return clean::_major<S, 9>(
             freqs, residualss, imgGridspecs, psfss, minorgain, majorgain,
-            cleanThreshold, autoThreshold, niter
+            cleanThreshold, autoThreshold, niter, spectralparams
         );
         break;
     case 10:
         return clean::_major<S, 10>(
             freqs, residualss, imgGridspecs, psfss, minorgain, majorgain,
-            cleanThreshold, autoThreshold, niter
+            cleanThreshold, autoThreshold, niter, spectralparams
         );
         break;
     default:

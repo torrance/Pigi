@@ -4,6 +4,7 @@
 #include <limits>
 #include <string>
 #include <stdexcept>
+#include <tuple>
 #include <utility>
 
 #include <casacore/ms/MeasurementSets.h>
@@ -355,6 +356,11 @@ public:
         return std::accumulate(
             freqs.begin(), freqs.end(), 0.
         ) / freqs.size();
+    }
+
+    using FreqRange = std::tuple<double, double>;
+    FreqRange freqrange() const {
+        return std::make_tuple(freqs.front(), freqs.back());
     }
 
     double midchan() const {

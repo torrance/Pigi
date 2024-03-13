@@ -642,7 +642,7 @@ TEST_CASE("Clean", "[clean]") {
 
     HostArray<StokesI<double>, 2> expectedSum {gridspec.Nx, gridspec.Ny};
 
-    std::vector<double> freqs;
+    std::vector<MeasurementSet::FreqRange> freqs;
     std::vector<std::vector<HostArray<StokesI<double>, 2>>> residualss(1);
     std::vector<std::vector<HostArray<thrust::complex<double>, 2>>> psfss(1);
 
@@ -654,7 +654,7 @@ TEST_CASE("Clean", "[clean]") {
         auto expected = convolve(models[n], dirtyPSF);
         expectedSum += expected;
 
-        freqs.push_back(1e6 * (n + 1));
+        freqs.push_back({1e6 * (n + 1), 1e6 * (n + 2)});
         psfs.emplace_back(dirtyPSF);
         residuals.push_back(std::move(expected));
     }
