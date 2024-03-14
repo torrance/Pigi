@@ -76,14 +76,6 @@ HostArray<T<S>, 2> invert(
     // The final image still has a taper applied. It's time to remove it.
     img /= kaiserbessel<S>(gridspec);
 
-    // Normalize image based on total weight
-    // Accumulation variable requires double precision
-    T<double> weightTotal {};
-    for (const auto& workunit : workunits) {
-        weightTotal += T<double>(workunit.template totalWeight<double>());
-    }
-    img /= T<S>(weightTotal);
-
     hipfftDestroy(plan);
 
     return resize(img, gridconf.padded(), gridconf.grid());

@@ -267,6 +267,8 @@ TEST_CASE("Widefield inversion", "[widefield]") {
 
     // Copy uvdata to vector, for use in both idg and dft
     auto uvdata = mset.data<P>();
+    Natural<P> weighter(uvdata, gridconf.padded());
+    applyWeights(weighter, uvdata);
 
     // Create beam
     auto delays = std::get<2>(mset.mwaDelays().front());

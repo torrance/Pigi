@@ -83,12 +83,4 @@ void idft(
     );
 
     copy(img, img_d);
-
-    // Normalize image based on total weight
-    // Accumulation variable requires double precision
-    T<double> weightTotal {};
-    for (const auto& uvdatum : uvdata) {
-        weightTotal += T<double>(uvdatum.weights);
-    }
-    img /= T<S>(weightTotal);
 }

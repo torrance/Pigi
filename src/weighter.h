@@ -40,27 +40,39 @@ public:
 };
 
 template <typename T, typename R>
-LinearData<T> applyWeights(const Weighter<T>& weighter, R& uvdata) {
-    LinearData<T> totalWeight {};
+void applyWeights(const Weighter<T>& weighter, R& uvdata) {
+    LinearData<double> totalWeight {};  // The sum requires double precision
 
     for (UVDatum<T>& uvdatum : uvdata) {
-        totalWeight += weighter(uvdatum);
+        totalWeight += static_cast<LinearData<double>>(weighter(uvdatum));
     }
 
-    return totalWeight;
+    // Normalize weight sum to unity
+    for (UVDatum<T>& uvdatum : uvdata) {
+        uvdatum.weights = static_cast<LinearData<T>>(
+            static_cast<LinearData<double>>(uvdatum.weights) /= totalWeight
+        );
+    }
 }
 
 template <typename T>
-LinearData<T> applyWeights(const Weighter<T>& weighter, std::vector<WorkUnit<T>>& workunits) {
-    LinearData<T> totalWeight {};
+void applyWeights(const Weighter<T>& weighter, std::vector<WorkUnit<T>>& workunits) {
+    LinearData<double> totalWeight {};  // The sum requires double precision
 
     for (WorkUnit<T>& workunit : workunits) {
         for (UVDatum<T>& uvdatum : workunit.data) {
-            totalWeight += weighter(uvdatum);
+            totalWeight += static_cast<LinearData<double>>(weighter(uvdatum));
         }
     }
 
-    return totalWeight;
+    // Normalize weight sum to unity
+    for (WorkUnit<T>& workunit : workunits) {
+        for (UVDatum<T>& uvdatum : workunit.data) {
+            uvdatum.weights = static_cast<LinearData<T>>(
+                static_cast<LinearData<double>>(uvdatum.weights) /= totalWeight
+            );
+        }
+    }
 }
 
 template <typename T>
