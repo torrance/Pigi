@@ -10,6 +10,7 @@
 #include <ranges>
 
 #include <boost/mpi.hpp>
+#include <fmt/format.h>
 
 #include "aterms.h"
 #include "beam.h"
@@ -18,6 +19,7 @@
 #include "fits.h"
 #include "gridspec.h"
 #include "invert.h"
+#include "logger.h"
 #include "mpi.h"
 #include "mset.h"
 #include "phaserotate.h"
@@ -32,7 +34,8 @@ namespace routines {
 
 template <typename P>
 void cleanQueen(const Config& config, boost::mpi::intercommunicator hive) {
-    fmt::println("Queen: All shall love me and despair.");
+    Logger::setName("Queen");
+    Logger::debug("All shall love me and despair");
 
     const int hivesize = hive.remote_size();
     const auto gridconfs = config.gridconfs();
@@ -74,6 +77,9 @@ void cleanQueen(const Config& config, boost::mpi::intercommunicator hive) {
     std::vector<std::thread> threads;
     for (size_t fieldid : fieldids) {
         threads.emplace_back([&, fieldid=fieldid] {
+            Logger::setName("Queen (field {}/{})", fieldid + 1, fieldids.size());
+            Logger::debug("Thread created");
+
             auto gridconf = gridconfs[fieldid];
 
             // Collect beams from workers
@@ -201,11 +207,11 @@ void cleanQueen(const Config& config, boost::mpi::intercommunicator hive) {
             residualCombined /= StokesI<P>(hivesize);
             componentsCombined /= StokesI<P>(hivesize);
 
-            fmt::println("Queen: (Field {}) Convolving final image...", fieldid + 1);
+            Logger::info("Convolving final image...");
             auto imageCombined = convolve(componentsCombined, psf.draw(gridconf.grid()));
             imageCombined += residualCombined;
 
-            fmt::println("Queen: (Field {}) Writing out files...", fieldid + 1);
+            Logger::info("Writing out files...");
             save(
                 fmt::format("residual-field{:02d}.fits", fieldid + 1), residualCombined,
                 gridconf.grid(), config.phasecenter.value()
@@ -233,7 +239,8 @@ void cleanWorker(
     const int rank = hive.rank();
     const int hivesize = hive.size();
 
-    fmt::println("Worker [{}/{}]: Reporting for duty!", rank + 1, hivesize);
+    Logger::setName("Worker {}/{}", rank + 1, hivesize);
+    Logger::debug("Reporting for duty!");
 
     const auto gridconfs = config.gridconfs();
 
@@ -252,22 +259,18 @@ void cleanWorker(
 
     queen.send(0, 0, mset.freqrange());
 
-    fmt::println(
-        "Worker [{}/{}]: Reading data and writing to mmap-backed memory...",
-        rank + 1, hivesize
-    );
+    Logger::info("Reading data and writing to mmap-backed memory...");
     auto uvdata = mset.data<P>();
 
-    fmt::println(
-        "Worker [{}/{}]: Phase rotating visibilities to RA {:.2f} Dec {:.2f}...",
-        rank + 1, hivesize,
+    Logger::info(
+        "Phase rotating visibilities to RA {:.2f} Dec {:.2f}...",
         rad2deg(config.phasecenter.value().ra), rad2deg(config.phasecenter.value().dec)
     );
     for (auto& uvdatum : uvdata) {
         phaserotate(uvdatum, config.phasecenter.value());
     }
 
-    fmt::println("Worker [{}/{}]: Calculating visibility weights...", rank + 1, hivesize);
+    Logger::info("Calculating visibility weights...");
     std::shared_ptr<Weighter<P>> weighter {};
     {
         // Use the padded grid of the largest field for weighting
@@ -296,10 +299,11 @@ void cleanWorker(
     std::vector<std::thread> threads;
     for (size_t fieldid {}; fieldid < gridconfs.size(); ++fieldid) {
         threads.emplace_back([&, fieldid=fieldid] {
-            fmt::println(
-                "Worker [{}/{}]: (Field {}) Thread created",
-                rank + 1, hivesize, fieldid + 1
+            Logger::setName(
+                "Worker {}/{} (field {}/{})",
+                rank + 1, hivesize, fieldid + 1, gridconfs.size()
             );
+            Logger::debug("Thread created");
             auto gridconf = gridconfs[fieldid];
 
             auto aterms = [&] {
@@ -313,10 +317,7 @@ void cleanWorker(
 
             // Partition data
             auto workunits = [&] {
-                fmt::println(
-                    "Worker [{}/{}]: (Field {}) Partitioning data...",
-                    rank + 1, hivesize, fieldid + 1
-                );
+                Logger::info("Partitioning data...");
                 auto workunits = partition(uvdata, gridconf, aterms);
 
                 // Print some stats about our partitioning
@@ -327,20 +328,16 @@ void cleanWorker(
                 auto median = sizes[sizes.size() / 2];
                 P sum = std::accumulate(sizes.begin(), sizes.end(), 0);
                 auto mean = sum / sizes.size();
-                fmt::println(
-                    "Worker [{}/{}]: (Field {}) Partitioning complete: {} workunits, "
+                Logger::info(
+                    "Partitioning complete: {} workunits, "
                     "size min {} < (mean {:.1f} median {}) < max {}",
-                    rank + 1, hivesize, fieldid + 1, sizes.size(), sizes.front(),
-                    mean, median, sizes.back()
+                    sizes.size(), sizes.front(),  mean, median, sizes.back()
                 );
 
                 return workunits;
             }();
 
-            fmt::println(
-                "Worker [{}/{}]: (Field {}) Constructing average beam...",
-                rank + 1, hivesize, fieldid + 1
-            );
+            Logger::info("Constructing average beam...");
             auto beamPower = mkAvgAtermPower<StokesI, P>(workunits, gridconf);
 
             queen.send(0, fieldid, beamPower);
@@ -353,10 +350,7 @@ void cleanWorker(
             HostArray<thrust::complex<P>, 2> psf;
             {
                 // mpi::Lock lock(hive);
-                fmt::println(
-                    "Worker [{}/{}]: (Field {}) Constructing PSF...",
-                    rank + 1, hivesize, fieldid + 1
-                );
+                Logger::info("Constructing PSF...");
                 psf = invert<thrust::complex, P>(workunits, gridconf, true);
                 queen.send(0, fieldid, psf);
             };
@@ -373,10 +367,7 @@ void cleanWorker(
             HostArray<StokesI<P>, 2> residual;
             {
                 // mpi::Lock lock(hive);
-                fmt::println(
-                    "Worker [{}/{}]: (Field {}) Constructing dirty image...",
-                    rank + 1, hivesize, fieldid + 1
-                );
+                Logger::info("Constructing dirty image...");
                 residual = invert<StokesI, P>(workunits, gridconf);
                 queen.send(0, fieldid, residual);
             };
@@ -434,10 +425,8 @@ void cleanWorker(
                     // calls occur sequentially
                     std::lock_guard l(writelock);
 
-                    fmt::println(
-                        "Worker [{}/{}]: (Field {}) Removing clean components "
-                        "from uvdata... (major cycle {})",
-                        rank + 1, hivesize, fieldid + 1, i
+                    Logger::info(
+                        "Removing clean components from uvdata... (major cycle {})", i
                     );
                     predict<StokesI<P>, P>(workunits, minorComponents, gridconf, DegridOp::Subtract);
                 }
@@ -449,11 +438,7 @@ void cleanWorker(
                 // Invert
                 {
                     // mpi::Lock lock(hive);
-                    fmt::println(
-                        "Worker [{}/{}]: (Field {}) Constructing "
-                        "residual image... (major cycle {})",
-                        rank + 1, hivesize, fieldid + 1, i
-                    );
+                    Logger::info("Constructing residual image... (major cycle {})", i);
                     residual = invert<StokesI, P>(workunits, gridconf);
                     queen.send(0, fieldid, residual);
                 }

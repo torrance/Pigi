@@ -6,6 +6,7 @@
 #include <vector>
 
 #include "beam.h"
+#include "logger.h"
 #include "memory.h"
 #include "mset.h"
 #include "outputtypes.h"
@@ -75,7 +76,7 @@ Aterms<P> mkAterms(
             }
         }
     } else {
-        fmt::println("Unkown telescope: defaulting to uniform beam");
+        Logger::warning("Unkown telescope: defaulting to uniform beam");
         auto jones = Beam::Uniform<P>().gridResponse(gridspec, gridorigin, mset.midfreq());
         aterms.push_back(std::make_tuple(
             Interval{

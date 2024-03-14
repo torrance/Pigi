@@ -200,8 +200,7 @@ HostArray<T, 2> rescale(
     const HostSpan<T, 2> img, const GridSpec from, const GridSpec to
 ) {
     if (from.scaleuv != to.scaleuv) {
-        fmt::println(stderr, "Resampling requires matching UV scales");
-        abort();
+        throw std::runtime_error("Resampling requires matching UV scales");
     };
 
     // Perform FFT on device

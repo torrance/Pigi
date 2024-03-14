@@ -11,6 +11,7 @@
 #include "gridspec.h"
 #include "gridder.h"
 #include "hip.h"
+#include "logger.h"
 #include "memory.h"
 #include "outputtypes.h"
 #include "taper.h"
@@ -43,8 +44,7 @@ HostArray<T<S>, 2> invert(
 
     int nwlayer {};
     for (const auto& [w0, wworkunits] : wlayers) {
-        fmt::print("\rProcessing {}/{} w-layer...", ++nwlayer, wlayers.size());
-        fflush(stdout);
+        Logger::verbose("Processing {}/{} w-layer...", ++nwlayer, wlayers.size());
 
         wlayerd.zero();
         gridder<T<S>, S>(wlayerd, wworkunits, subtaperd, gridconf, makePSF);
@@ -69,8 +69,6 @@ HostArray<T<S>, 2> invert(
             imgd += wlayerd;
         }, Iota(), imgd, wlayerd);
     }
-
-    fmt::println(" Done.");
 
     // Copy img to host
     HostArray<T<S>, 2> img {imgd};

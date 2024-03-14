@@ -12,6 +12,7 @@
 #pragma GCC diagnostic pop
 
 #include "gridspec.h"
+#include "logger.h"
 #include "mset.h"
 
 #define TOML11_COLORIZE_ERROR_MESSAGE = 1
@@ -37,6 +38,44 @@ namespace toml {
     struct into<std::optional<T>> {
         static toml::value into_toml(const std::optional<T>& opt) {
             return opt.value_or(T());
+        }
+    };
+
+    template <>
+    struct from<Logger::Level> {
+        static Logger::Level from_toml(const value& v) {
+            std::string label {get<string>(v)};
+            if (label == "none") return Logger::Level::none;
+            if (label == "error") return Logger::Level::error;
+            if (label == "warning") return Logger::Level::warning;
+            if (label == "info") return Logger::Level::info;
+            if (label == "debug") return Logger::Level::debug;
+            if (label == "verbose") return Logger::Level::verbose;
+
+            throw type_error(detail::format_underline(
+                "unknown logging level, expected: (none|error|warning|info|debug|verbose)",
+                {{v.location(), "unrecognised level"}}
+            ), v.location());
+        }
+    };
+
+    template <>
+    struct into<Logger::Level> {
+        static toml::value into_toml(const Logger::Level level) {
+            switch (level) {
+            case Logger::Level::none:
+                return "none";
+            case Logger::Level::error:
+                return "error";
+            case Logger::Level::warning:
+                return "warning";
+            case Logger::Level::info:
+                return "info";
+            case Logger::Level::debug:
+                return "debug";
+            case Logger::Level::verbose:
+                return "verbose";
+            }
         }
     };
 }
@@ -78,12 +117,14 @@ struct Config {
         }
     };
 
+    Logger::Level loglevel {Logger::Level::info};
+
     // Measurement set selection
     int chanlow {0};
     int chanhigh {-1};
     int channelsOut {1};
     double maxDuration {0};
-    std::vector<std::string> msets;
+    std::vector<std::string> msets {};
 
     // Data weighting
     std::string weight {"uniform"};
@@ -185,6 +226,8 @@ struct Config {
     }
 
     void from_toml(const toml::value& v) {
+        this->loglevel = find_or(v, "loglevel", this->loglevel);
+
         if (v.contains("mset")) {
             const auto tbl = toml::find(v, "mset");
             this->chanlow = find_or(tbl, "chanlow", this->chanlow);
@@ -366,6 +409,9 @@ struct Config {
                     " values provided in this configuration file. [array of paths]",
                 }}},
             }},
+            {"loglevel", {this->loglevel, {
+                " Maximum logging level. [none|error|warning|info|debug|verbose]"
+            }}},
         };
     }
 

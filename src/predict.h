@@ -10,6 +10,7 @@
 #include "fft.h"
 #include "gridspec.h"
 #include "hip.h"
+#include "logger.h"
 #include "memory.h"
 #include "workunit.h"
 
@@ -49,8 +50,7 @@ void predict(
 
     int nwlayer {};
     for (auto& [w0, wworkunits] : wlayers) {
-        fmt::print("\rProcessing {}/{} w-layer...", ++nwlayer, wlayers.size());
-        fflush(stdout);
+        Logger::verbose("Processing {}/{} w-layer...", ++nwlayer, wlayers.size());
 
         // Apply w-decorrection and copy to wlayer
         map([w0=w0, gridspec=gridspec] __device__ (auto idx, auto img, auto& wlayer) {
@@ -75,6 +75,4 @@ void predict(
     }
 
     hipfftDestroy(plan);
-
-    fmt::println(" Done.");
 }

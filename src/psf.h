@@ -11,6 +11,7 @@
 
 #include "gslfit.h"
 #include "gridspec.h"
+#include "logger.h"
 #include "memory.h"
 #include "util.h"
 
@@ -38,7 +39,7 @@ public:
         minor = f * params[1];
         pa = std::fmod(params[2], 2 * ::pi_v<double>);
 
-        fmt::println(
+        Logger::info(
             "PSF with Gaussian fit: {:.2f}' x {:.2f}' (pa {:.1f} degrees)",
             rad2deg(major) * 60, rad2deg(minor) * 60, rad2deg(pa)
         );
@@ -124,7 +125,7 @@ auto cropPsf(HostSpan<thrust::complex<P>, 2> psfDirty, GridSpec gridspec, double
                 std::abs(psfDirty[idx1].real()) > threshold ||
                 std::abs(psfDirty[idx2].real()) > threshold
             ) {
-                fmt::println(
+                Logger::info(
                     "Cropping PSF from {}x{} to {}x{}",
                     gridspec.Nx, gridspec.Ny,
                     gridspecWindowed.Nx, gridspecWindowed.Ny)
@@ -141,7 +142,7 @@ auto cropPsf(HostSpan<thrust::complex<P>, 2> psfDirty, GridSpec gridspec, double
                 std::abs(psfDirty[idx1].real()) > threshold ||
                 std::abs(psfDirty[idx2].real()) > threshold
             ) {
-                fmt::println(
+                Logger::info(
                     "Cropping PSF from {}x{} to {}x{}",
                     gridspec.Nx, gridspec.Ny,
                     gridspecWindowed.Nx, gridspecWindowed.Ny)
@@ -151,8 +152,7 @@ auto cropPsf(HostSpan<thrust::complex<P>, 2> psfDirty, GridSpec gridspec, double
         }
     }
 
-    fmt::println(
-        stderr,
+    Logger::warning(
         "An error occurred attempting to window PSF; using full {}x{} image (slower)",
         gridspec.Nx, gridspec.Ny
     );

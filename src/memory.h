@@ -188,11 +188,10 @@ using DeviceSpan = Span<T, N, DevicePointer<T>>;
 template <typename T, typename S, typename R, typename Q, int N>
 void shapecheck(const Span<T, N, S>& lhs, const Span<R, N, Q>& rhs) {
     if (lhs.shape() != rhs.shape()) {
-        fmt::println(
+        throw std::runtime_error(fmt::format(
             "Incompatible array shapes (lhs {} rhs {})",
             lhs.shape(), rhs.shape()
-        );
-        abort();
+        ));
     }
 }
 

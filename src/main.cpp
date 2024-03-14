@@ -4,6 +4,7 @@
 
 #include "config.h"
 #include "gridspec.h"
+#include "logger.h"
 #include "mset.h"
 #include "routines.h"
 
@@ -151,6 +152,9 @@ int main(int argc, char** argv) {
 
     // Broadcast the configuration
     boost::mpi::broadcast(world, config, 0);
+
+    // Set logging level
+    Logger::setLevel(config.loglevel);
 
     auto local = world.split(world.rank() == 0);
     boost::mpi::intercommunicator intercom(local, 0, world, world.rank() == 0);

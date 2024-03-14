@@ -211,19 +211,4 @@ private:
     FEEBeam* feebeam {};
 };
 
-template <typename P>
-std::unique_ptr<Beam<P>> getBeam(const MeasurementSet& mset) {
-    auto telescopeName = mset.telescopeName();
-
-    // For ease of initial implementation, we hardcode the possible beam types
-    if (telescopeName == "MWA") {
-        return std::make_unique<MWA<P>>(mset.midtime(), mset.mwaDelays());
-    } else {
-        fmt::println(
-            stderr, "Unknown telescope beam ({}); defaulting to uniform beam", telescopeName
-        );
-        return std::make_unique<Uniform<P>>();
-    }
-}
-
 }

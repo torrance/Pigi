@@ -21,6 +21,7 @@
 #include "gridspec.h"
 #include "gslfit.h"
 #include "hip.h"
+#include "logger.h"
 #include "memory.h"
 #include "mset.h"
 #include "outputtypes.h"
@@ -152,7 +153,7 @@ auto _major(
         finalMajor = true;
     }
 
-    fmt::println(
+    Logger::info(
         "Beginning{}major clean cycle: from {:.2g} Jy to {:.2g} Jy (est. noise {:.2g} Jy)",
         finalMajor ? " (final) " : " ", maxVal, threshold, noise
     );
@@ -346,8 +347,8 @@ auto _major(
             std::chrono::steady_clock::now() - start
         );
 
-        if (iter == 0) fmt::println(
-            "   [Initial iteration] {:.3f} Jy peak found; search space {} pixels",
+        if (iter == 0) Logger::info(
+            "[Initial iteration] {:.3f} Jy peak found; search space {} pixels",
             maxVal, pixels.size()
         );
 
@@ -361,8 +362,8 @@ auto _major(
                 return std::abs(meanVal) < 0.9 * threshold;
             });
 
-            fmt::println(
-                "   [{} iteration] {:.3f} Jy peak found; search space {} pixels",
+            Logger::info(
+                "[{} iteration] {:.3f} Jy peak found; search space {} pixels",
                 iter + 1, maxVal, pixels.size()
             );
         }
@@ -378,7 +379,7 @@ auto _major(
     }
     subtractedFlux /= N;
 
-    fmt::println(
+    Logger::info(
         "Clean cycle complete ({} iterations this major cycle; {:.2f} s peak finding; {:.2f} s PSF subtraction). Subtracted flux: {:.4g} Jy",
         iter, maxFindingDuration.count() / 1e9,
         psfSubtractionDuration.count() / 1e9, subtractedFlux
@@ -462,10 +463,7 @@ auto major(
         );
         break;
     default:
-        fmt::println(
-            stderr, "Too many channel groups (maximum: 10)"
-        );
-        abort();
+        throw std::runtime_error("Too many channel groups (maximum: 10)");
     }
 }
 

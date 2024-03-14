@@ -29,6 +29,7 @@ namespace boost {
     namespace serialization {
         template <typename Archive>
         void serialize(Archive& ar, Config& payload, const unsigned) {
+            ar & payload.loglevel;
             ar & payload.precision;
             ar & payload.chanlow;
             ar & payload.chanhigh;

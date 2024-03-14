@@ -13,6 +13,7 @@
 #include "channel.h"
 #include "coordinates.h"
 #include "constants.h"
+#include "logger.h"
 #include "memmap.h"
 #include "outputtypes.h"
 #include "uvdatum.h"
@@ -37,8 +38,12 @@ public:
             // Ensure our expectations about the size of cells are valid.
             // Cells selected using the slice are guaranteed to be correct and we don't need to
             // check again here.
-            if (uvwCol.shape(0) != casacore::IPosition{3}) abort();
-            if (weightCol.shape(0) != casacore::IPosition {4}) abort();
+            if (uvwCol.shape(0) != casacore::IPosition{3}) throw std::runtime_error(
+                "Unexpected UVW column shape"
+            );
+            if (weightCol.shape(0) != casacore::IPosition {4}) throw std::runtime_error(
+                "Unexpected WEIGHT column shape"
+            );
 
             // Convert freqs -> lambdas
             for (auto& x : lambdas) { x = Constants::c / x; };  // Convert to lambdas (m)
@@ -322,15 +327,12 @@ public:
             casacore::Slicer::endIsLast
         }).tovector();
 
-        fmt::println("Measurement set(s) opened");
-        fmt::println(
-            "   Channels {} - {} ({:.1f} - {:.1f} MHz) Times {:.0f} - {:.0f} selected from",
+        Logger::info(
+            "Measurement set(s) opened: "
+            "Channels {} - {} ({:.1f} - {:.1f} MHz) Times {:.0f} - {:.0f} selected",
             this->chanlow, this->chanhigh, freqs.front() / 1e6, freqs.back() / 1e6,
             this->timelow, this->timehigh
         );
-        for (auto& fname : fnames) {
-            fmt::println("      - {}", fname);
-        }
     }
 
     MeasurementSet(const MeasurementSet&) = delete;
