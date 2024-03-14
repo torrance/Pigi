@@ -20,200 +20,13 @@
 
 class MeasurementSet {
 public:
-    class Iterator {
-    public:
-        Iterator(const MeasurementSet& mset, long nstart = 0) :
-            mset(mset), lambdas(mset.freqs), nstart(nstart),
-            uvwCol(mset.ms, "UVW"),
-            timeCol(mset.ms, "TIME_CENTROID"),
-            ant1Col(mset.ms, "ANTENNA1"),
-            ant2Col(mset.ms, "ANTENNA2"),
-            flagrowCol(mset.ms, "FLAG_ROW"),
-            flagCol(mset.ms, "FLAG"),
-            weightCol(mset.ms, "WEIGHT"),
-            weightspectrumCol(mset.ms, "WEIGHT_SPECTRUM"),
-            dataCol(mset.ms, "CORRECTED_DATA"),
-            phaseCenterCol(mset.fieldtbl, "PHASE_DIR") {
-
-            // Ensure our expectations about the size of cells are valid.
-            // Cells selected using the slice are guaranteed to be correct and we don't need to
-            // check again here.
-            if (uvwCol.shape(0) != casacore::IPosition{3}) throw std::runtime_error(
-                "Unexpected UVW column shape"
-            );
-            if (weightCol.shape(0) != casacore::IPosition {4}) throw std::runtime_error(
-                "Unexpected WEIGHT column shape"
-            );
-
-            // Convert freqs -> lambdas
-            for (auto& x : lambdas) { x = Constants::c / x; };  // Convert to lambdas (m)
-
-            rebuild_cache();
-        }
-
-        auto& operator*() const { return *cache_current; }
-
-        auto& operator++() {
-            if (++cache_current == cache.end()) rebuild_cache();
-            return *this;
-        }
-
-        bool operator==(const Iterator& other) const {
-            return nstart == other.nstart;
-        }
-
-        bool operator!=(const Iterator& other) const { return !(*this == other); }
-
-    private:
-        const MeasurementSet& mset;
-        std::vector<double> lambdas;
-        std::vector<UVDatum<double>> cache;
-        std::vector<UVDatum<double>>::iterator cache_current;
-        long nstart {};
-
-        casacore::ArrayColumn<double> uvwCol;
-        casacore::ScalarColumn<double> timeCol;
-        casacore::ScalarColumn<int> ant1Col;
-        casacore::ScalarColumn<int> ant2Col;
-        casacore::ScalarColumn<bool> flagrowCol;
-        casacore::ArrayColumn<bool> flagCol;
-        casacore::ArrayColumn<float> weightCol;
-        casacore::ArrayColumn<float> weightspectrumCol;
-        casacore::ArrayColumn<std::complex<float>> dataCol;
-        casacore::ArrayColumn<double> phaseCenterCol;
-
-        casacore::Array<double> uvwArray;
-        casacore::Vector<double> timeArray;
-        casacore::Vector<int> ant1Array;
-        casacore::Vector<int> ant2Array;
-        casacore::Vector<bool> flagrowArray;
-        casacore::Array<bool> flagArray;
-        casacore::Array<float> weightArray;
-        casacore::Array<float> weightspectrumArray;
-        casacore::Array<std::complex<float>> dataArray;
-        casacore::Array<double> phaseCenterArray;
-
-        void rebuild_cache() {
-            // Clear the cache
-            cache.clear();
-
-            // Hardcode the batchsize for now
-            const long batchsize = 100;
-
-            // Early return if we've finished the table
-            if (nstart == -1 || nstart >= static_cast<long>(mset.ms.nrow())) {
-                nstart = -1;
-                return;
-            }
-
-            // Note: nend is inclusive, so subtract 1
-            long nend = std::min(
-                nstart + batchsize,
-                static_cast<long>(mset.ms.nrow())
-            ) - 1;
-
-            // Set up slicers
-            casacore::Slicer rowSlice {
-                casacore::IPosition {nstart},
-                casacore::IPosition {nend},
-                casacore::Slicer::endIsLast
-            };
-
-            casacore::Slicer arraySlice {
-                casacore::IPosition {0, mset.chanlow},
-                casacore::IPosition {3, mset.chanhigh},
-                casacore::Slicer::endIsLast
-            };
-
-            // Fetch row data in arrays
-            uvwCol.getColumnRange(rowSlice, uvwArray, true);
-            timeCol.getColumnRange(rowSlice, timeArray, true);
-            ant1Col.getColumnRange(rowSlice, ant1Array, true);
-            ant2Col.getColumnRange(rowSlice, ant2Array, true);
-            weightCol.getColumnRange(rowSlice, weightArray, true);
-            flagrowCol.getColumnRange(rowSlice, flagrowArray, true);
-            flagCol.getColumnRange(rowSlice, arraySlice, flagArray, true);
-            weightspectrumCol.getColumnRange(rowSlice, arraySlice, weightspectrumArray, true);
-            dataCol.getColumnRange(rowSlice, arraySlice, dataArray, true);
-            phaseCenterCol.getColumnRange(rowSlice, phaseCenterArray, true);
-
-            // Create iterators
-            auto uvwIter = uvwArray.begin();
-            auto timeIter = timeArray.begin();
-            auto ant1Iter = ant1Array.begin();
-            auto ant2Iter = ant2Array.begin();
-            auto flagrowIter = flagrowArray.begin();
-            auto weightIter = weightArray.begin();
-            auto dataIter = dataArray.begin();
-            auto weightspectrumIter = weightspectrumArray.begin();
-            auto flagIter = flagArray.begin();
-            auto phaseCenterIter = phaseCenterArray.begin();
-
-            for (long nrow {nstart}; nrow <= nend; ++nrow) {
-                double u_m = *uvwIter; ++uvwIter;
-                double v_m = -(*uvwIter); ++uvwIter;  // Invert v for MWA observations only (?)
-                double w_m = *uvwIter; ++uvwIter;
-
-                double time = *timeIter / 86400.; ++timeIter;
-                int ant1 = *ant1Iter; ++ant1Iter;
-                int ant2 = *ant2Iter; ++ant2Iter;
-
-                bool flagrow = *flagrowIter; ++flagrowIter;
-
-                double ra0 = *phaseCenterIter; ++phaseCenterIter;
-                double dec0 = *phaseCenterIter; ++phaseCenterIter;
-
-                auto rowmeta = makesharedhost<UVMeta>(
-                    nrow, time, ant1, ant2, RaDec{ra0, dec0}
-                );
-
-                for (int ncol {}; ncol < static_cast<int>(lambdas.size()); ++ncol) {
-                    double u = u_m / lambdas[ncol];
-                    double v = v_m / lambdas[ncol];
-                    double w = w_m / lambdas[ncol];
-
-                    LinearData<double> weights;
-                    weights.xx = *weightspectrumIter; ++weightspectrumIter;
-                    weights.xy = *weightspectrumIter; ++weightspectrumIter;
-                    weights.yx = *weightspectrumIter; ++weightspectrumIter;
-                    weights.yy = *weightspectrumIter; ++weightspectrumIter;
-
-                    // Negate the flags so that flagged data = 0 when used as a weight
-                    LinearData<bool> flags;
-                    flags.xx = !*flagIter; ++flagIter;
-                    flags.xy = !*flagIter; ++flagIter;
-                    flags.yx = !*flagIter; ++flagIter;
-                    flags.yy = !*flagIter; ++flagIter;
-
-                    // Flags have the effect to set weights to 0
-                    (weights *= !flagrow) *= flags;
-
-                    ComplexLinearData<double> data;
-                    data.xx = *dataIter; ++dataIter;
-                    data.xy = *dataIter; ++dataIter;
-                    data.yx = *dataIter; ++dataIter;
-                    data.yy = *dataIter; ++dataIter;
-
-                    if (!weights.isfinite() || !data.isfinite()) {
-                        data = {};
-                        weights = {};
-                    }
-
-                    cache.push_back(UVDatum<double> {
-                        rowmeta, ncol, u, v, w, weights, data
-                    });
-                }  // chan iteration
-            }  // nrow iteration
-
-            cache_current = cache.begin(); // Reset iterator, as it may have changed
-            nstart += batchsize;
-        }
-    };
+    enum class DataColumn {automatic, data, corrected, model};
 
     MeasurementSet() = default;
 
     MeasurementSet(
         const std::vector<std::string>& fnames,
+        const DataColumn datacolumnname,
         const int chanlow,
         const int chanhigh,
         const double timelow = std::numeric_limits<double>::min(),
@@ -301,6 +114,51 @@ public:
             ms
         ).table();
 
+        // Load chosen datacolumn
+        auto hascol = [] (const auto& ms, const auto& colname) -> bool {
+            for (const auto& othercolname : ms.tableDesc().columnNames()) {
+                if (colname == othercolname) return true;
+            }
+            return false;
+        };
+
+        switch (datacolumnname) {
+        case DataColumn::automatic:
+            if (hascol(ms, "CORRECTED_DATA")) {
+                Logger::info("Found CORRECTED_DATA column");
+                datacolumn = casacore::MSMainColumns(ms).correctedData();
+            } else if (hascol(ms, "DATA")) {
+                Logger::info("No CORRECTED_DATA column found; using DATA instead");
+                datacolumn = casacore::MSMainColumns(ms).data();
+            } else {
+                throw std::runtime_error(
+                    "datacolumn=auto but neither DATA or CORRECTED_DATA exist"
+                );
+            }
+            break;
+        case DataColumn::data:
+            if (hascol(ms, "DATA")) {
+                datacolumn = casacore::MSMainColumns(ms).data();
+            } else {
+                throw std::runtime_error("DATA column not found");
+            }
+            break;
+        case DataColumn::corrected:
+            if (hascol(ms, "CORRECTED_DATA")) {
+                datacolumn = casacore::MSMainColumns(ms).correctedData();
+            } else {
+                throw std::runtime_error("CORRECTED_DATA column not found");
+            }
+            break;
+        case DataColumn::model:
+            if (hascol(ms, "MODEL_DATA")) {
+                datacolumn = casacore::MSMainColumns(ms).modelData();
+            } else {
+                throw std::runtime_error("MODEL_DATA column not found");
+            }
+            break;
+        }
+
         // Set actual timelow and timehigh
         casacore::Vector<double> timeCol(
             (casacore::ScalarColumn<double> {ms, "TIME_CENTROID"}).getColumn()
@@ -346,9 +204,6 @@ public:
         tbls.markForDelete();
     }
 
-    auto begin() const { return Iterator(*this); }
-    auto end() const { return Iterator(*this, -1); }
-
     auto channelrange() const {
         return std::make_tuple(chanlow, chanhigh);
     }
@@ -379,12 +234,131 @@ public:
         return ms.nrow() * (chanhi - chanlo + 1);
     }
 
-    template <typename P>
-    std::vector<UVDatum<P>, MMapAllocator<UVDatum<P>>> data() const {
-        std::vector<UVDatum<P>, MMapAllocator<UVDatum<P>>> uvdata(this->size());
-        for (size_t i {}; auto& uvdatum : *this) {
-            uvdata[i++] = static_cast<UVDatum<P>>(uvdatum);
-        }
+    template <typename P, typename Alloc=MMapAllocator<UVDatum<P>>>
+    std::vector<UVDatum<P>, Alloc> data() const {
+        // Pre-allocate the uvdata vector to avoid resizing operations
+        // which MMapAllocator doesn't handle well
+        std::vector<UVDatum<P>, Alloc> uvdata;
+        uvdata.reserve(this->size());
+
+        std::vector<double> lambdas = freqs;
+        for (auto& x : lambdas) { x = Constants::c / x; };  // Convert to lambdas (m)
+
+        casacore::MSMainColumns mscols(ms);
+
+        // Pre-allocated array objects, since their memory allocation
+        // can be reused between batches
+        casacore::Array<double> uvwArray;
+        casacore::Vector<double> timeArray;
+        casacore::Vector<int> ant1Array;
+        casacore::Vector<int> ant2Array;
+        casacore::Vector<bool> flagrowArray;
+        casacore::Array<bool> flagArray;
+        casacore::Array<float> weightArray;
+        casacore::Array<float> weightspectrumArray;
+        casacore::Array<std::complex<float>> dataArray;
+        casacore::Array<double> phaseCenterArray;
+
+        // Process nbatch rows at a time
+        const long batchsize = 100;
+        for (long nstart {}; nstart < static_cast<long>(ms.nrow()); nstart += batchsize) {
+            // Note: nend is inclusive, so subtract 1
+            long nend = std::min<long>(nstart + batchsize, ms.nrow()) - 1;
+
+            // Set up slicers
+            casacore::Slicer rowSlice {
+                casacore::IPosition {nstart},
+                casacore::IPosition {nend},
+                casacore::Slicer::endIsLast
+            };
+
+            casacore::Slicer arraySlice {
+                casacore::IPosition {0, chanlow},
+                casacore::IPosition {3, chanhigh},
+                casacore::Slicer::endIsLast
+            };
+
+            // Fetch row data in arrays
+            mscols.uvw().getColumnRange(rowSlice, uvwArray, true);
+            mscols.timeCentroid().getColumnRange(rowSlice, timeArray, true);
+            mscols.antenna1().getColumnRange(rowSlice, ant1Array, true);
+            mscols.antenna2().getColumnRange(rowSlice, ant2Array, true);
+            mscols.weight().getColumnRange(rowSlice, weightArray, true);
+            mscols.flagRow().getColumnRange(rowSlice, flagrowArray, true);
+            mscols.flag().getColumnRange(rowSlice, arraySlice, flagArray, true);
+            mscols.weightSpectrum().getColumnRange(rowSlice, arraySlice, weightspectrumArray, true);
+            datacolumn.getColumnRange(rowSlice, arraySlice, dataArray, true);
+            casacore::ArrayColumn<double>(fieldtbl, "PHASE_DIR")
+                .getColumnRange(rowSlice, phaseCenterArray, true);
+
+            // Create iterators
+            auto uvwIter = uvwArray.begin();
+            auto timeIter = timeArray.begin();
+            auto ant1Iter = ant1Array.begin();
+            auto ant2Iter = ant2Array.begin();
+            auto flagrowIter = flagrowArray.begin();
+            auto weightIter = weightArray.begin();
+            auto dataIter = dataArray.begin();
+            auto weightspectrumIter = weightspectrumArray.begin();
+            auto flagIter = flagArray.begin();
+            auto phaseCenterIter = phaseCenterArray.begin();
+
+            for (long nrow {nstart}; nrow <= nend; ++nrow) {
+                double u_m = *uvwIter; ++uvwIter;
+                double v_m = -(*uvwIter); ++uvwIter;  // Invert v for MWA observations only (?)
+                double w_m = *uvwIter; ++uvwIter;
+
+                double time = *timeIter / 86400.; ++timeIter;
+                int ant1 = *ant1Iter; ++ant1Iter;
+                int ant2 = *ant2Iter; ++ant2Iter;
+
+                bool flagrow = *flagrowIter; ++flagrowIter;
+
+                double ra0 = *phaseCenterIter; ++phaseCenterIter;
+                double dec0 = *phaseCenterIter; ++phaseCenterIter;
+
+                auto rowmeta = makesharedhost<UVMeta>(
+                    nrow, time, ant1, ant2, RaDec{ra0, dec0}
+                );
+
+                for (int ncol {}; ncol < static_cast<int>(lambdas.size()); ++ncol) {
+                    double u = u_m / lambdas[ncol];
+                    double v = v_m / lambdas[ncol];
+                    double w = w_m / lambdas[ncol];
+
+                    LinearData<double> weights;
+                    weights.xx = *weightspectrumIter; ++weightspectrumIter;
+                    weights.xy = *weightspectrumIter; ++weightspectrumIter;
+                    weights.yx = *weightspectrumIter; ++weightspectrumIter;
+                    weights.yy = *weightspectrumIter; ++weightspectrumIter;
+
+                    // Negate the flags so that flagged data = 0 when used as a weight
+                    LinearData<bool> flags;
+                    flags.xx = !*flagIter; ++flagIter;
+                    flags.xy = !*flagIter; ++flagIter;
+                    flags.yx = !*flagIter; ++flagIter;
+                    flags.yy = !*flagIter; ++flagIter;
+
+                    // Flags have the effect to set weights to 0
+                    (weights *= !flagrow) *= flags;
+
+                    ComplexLinearData<double> data;
+                    data.xx = *dataIter; ++dataIter;
+                    data.xy = *dataIter; ++dataIter;
+                    data.yx = *dataIter; ++dataIter;
+                    data.yy = *dataIter; ++dataIter;
+
+                    if (!weights.isfinite() || !data.isfinite()) {
+                        data = {};
+                        weights = {};
+                    }
+
+                    UVDatum<double> uvdatum {rowmeta, ncol, u, v, w, weights, data};
+                    uvdata.push_back(static_cast<UVDatum<P>>(uvdatum));
+                }  // chan iteration
+            }  // nrow iteration
+        }  // batch iteration
+
         return uvdata;
     }
 
@@ -442,6 +416,7 @@ private:
     casacore::MeasurementSet ms;
     casacore::Table fieldtbl;
     std::vector<double> freqs;
+    casacore::ArrayColumn<std::complex<float>> datacolumn;
     int chanlow;
     int chanhigh;
     double timelow;  // stored as native mset value; i.e. mjd in _seconds_

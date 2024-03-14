@@ -78,6 +78,38 @@ namespace toml {
             }
         }
     };
+
+    template <>
+    struct from<MeasurementSet::DataColumn> {
+        static MeasurementSet::DataColumn from_toml(const value& v) {
+            std::string label {get<string>(v)};
+            if (label == "auto") return MeasurementSet::DataColumn::automatic;
+            if (label == "data") return MeasurementSet::DataColumn::data;
+            if (label == "corrected") return MeasurementSet::DataColumn::corrected;
+            if (label == "model") return MeasurementSet::DataColumn::model;
+
+            throw type_error(detail::format_underline(
+                "unknown datacolumn selected, expected: (auto|data|corrected|model)",
+                {{v.location(), "unrecognised name"}}
+            ), v.location());
+        }
+    };
+
+    template <>
+    struct into<MeasurementSet::DataColumn> {
+        static toml::value into_toml(const MeasurementSet::DataColumn datacol) {
+            switch (datacol) {
+            case MeasurementSet::DataColumn::automatic:
+                return "auto";
+            case MeasurementSet::DataColumn::data:
+                return "data";
+            case MeasurementSet::DataColumn::corrected:
+                return "corrected";
+            case MeasurementSet::DataColumn::model:
+                return "model";
+            }
+        }
+    };
 }
 
 struct Config {
@@ -120,6 +152,7 @@ struct Config {
     Logger::Level loglevel {Logger::Level::info};
 
     // Measurement set selection
+    MeasurementSet::DataColumn datacolumn {MeasurementSet::DataColumn::automatic};
     int chanlow {0};
     int chanhigh {-1};
     int channelsOut {1};
@@ -235,6 +268,7 @@ struct Config {
             this->channelsOut = find_or(tbl, "channelsout", this->channelsOut);
             this->maxDuration = find_or(tbl, "maxduration", this->maxDuration);
             this->msets = find_or(tbl, "paths", this->msets);
+            this->datacolumn = find_or(tbl, "datacolumn", this->datacolumn);
         }
 
         if (v.contains("weight")) {
@@ -402,6 +436,11 @@ struct Config {
                     " Each segment will be independently imaged. Cleaning will perform",
                     " peak-finding across the full channel range, but the PSF will be fit",
                     " and subtracted per-channel. [1 <= int]",
+                }}},
+                {"datacolumn", {this->datacolumn, {
+                    " The data column to be used for imaging. If set to auto, the",
+                    " CORRECTED_DATA column will be imaged if it exists, otherwise the",
+                    " DATA column will be used. [auto|data|corrected|model]",
                 }}},
                 {"paths", {toml::value(this->msets), std::vector<std::string>{
                     " Paths to the measurement sets used in imaging. These paths can also",

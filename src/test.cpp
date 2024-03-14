@@ -143,14 +143,10 @@ TEMPLATE_TEST_CASE("Phase rotation", "[phaserotation]", float, double) {
     if (!TESTDATA) { SKIP("TESTDATA path not provided"); }
 
     MeasurementSet mset(
-        {TESTDATA}, 0, 11, 0, std::numeric_limits<double>::max()
+        {TESTDATA}, MeasurementSet::DataColumn::data, 0, 11, 0, std::numeric_limits<double>::max()
     );
 
-    std::vector<UVDatum<TestType>> uvdata;
-    for (auto& uvdatum : mset) {
-        uvdata.push_back(static_cast<UVDatum<TestType>>(uvdatum));
-    }
-
+    auto uvdata = mset.data<TestType, std::allocator<UVDatum<TestType>>>();
     std::vector<UVDatum<TestType>> expected(uvdata);
 
     RaDec original = uvdata.front().meta->phasecenter;
@@ -224,7 +220,7 @@ TEST_CASE("Measurement Set & Partition", "[mset]") {
     auto aterm = beam.gridResponse(gridconf.subgrid(), {0, 0}, 0);
 
     MeasurementSet mset(
-        {TESTDATA}, 0, 11, 0, std::numeric_limits<double>::max()
+        {TESTDATA}, MeasurementSet::DataColumn::data, 0, 11, 0, std::numeric_limits<double>::max()
     );
 
     auto uvdata = mset.data<double>();
@@ -267,7 +263,7 @@ TEST_CASE("Widefield inversion", "[widefield]") {
     const int oversample {6};
     REQUIRE( gridconf.imgNx % oversample == 0 );
 
-    MeasurementSet mset({TESTDATA}, 0, 11);
+    MeasurementSet mset({TESTDATA}, MeasurementSet::DataColumn::data, 0, 11);
 
     // Copy uvdata to vector, for use in both idg and dft
     auto uvdata = mset.data<P>();
@@ -668,7 +664,7 @@ TEST_CASE("Clean", "[clean]") {
 
     auto [components, iter, _] = clean::major(
         freqs, residualss, {gridspec}, psfss,
-        0.01, 0.991, 0, 0, std::numeric_limits<size_t>::max()
+        0.01, 0.991, 0, 0, std::numeric_limits<size_t>::max(), 2
     );
 
     auto fittedPSF = PSF<double>(dirtyPSF, gridspec).draw(gridspec);

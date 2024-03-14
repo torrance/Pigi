@@ -78,7 +78,8 @@ TEST_CASE("MSet reading and paritioning", "[io]") {
     Aterm.fill({1, 0, 0, 1});
 
     MeasurementSet mset(
-        {TESTDATA}, 0, 191, 0, std::numeric_limits<double>::max()
+        {TESTDATA}, MeasurementSet::DataColumn::data,
+        0, 191, 0, std::numeric_limits<double>::max()
     );
 
     auto uvdata = simple_benchmark("MSet read", 5, [&] {
@@ -102,7 +103,8 @@ TEMPLATE_TEST_CASE("Invert", "[invert]", float, double) {
     Aterm.fill({1, 0, 0, 1});
 
     MeasurementSet mset(
-        {TESTDATA}, 0, 383, 0, std::numeric_limits<double>::max()
+        {TESTDATA}, MeasurementSet::DataColumn::data,
+        0, 383, 0, std::numeric_limits<double>::max()
     );
 
     // Convert to TestType precision
@@ -134,7 +136,8 @@ TEMPLATE_TEST_CASE("Predict", "[predict]", float, double) {
     Aterm.fill({1, 0, 0, 1});
 
     MeasurementSet mset(
-        {TESTDATA}, 0, 383, 0, std::numeric_limits<double>::max()
+        {TESTDATA}, MeasurementSet::DataColumn::data,
+        0, 383, 0, std::numeric_limits<double>::max()
     );
 
     auto uvdata = mset.data<TestType>();
