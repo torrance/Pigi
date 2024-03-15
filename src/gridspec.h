@@ -7,10 +7,12 @@
 #include <hip/hip_runtime.h>
 
 struct GridSpec {
-    long long Nx;
-    long long Ny;
-    double scalelm;
-    double scaleuv;
+    long long Nx {};
+    long long Ny {};
+    double scalel {};
+    double scalem {};
+    double scaleu {};
+    double scalev {};
     double deltal {};
     double deltam {};
     long long deltalpx {};
@@ -19,7 +21,8 @@ struct GridSpec {
     bool operator==(const GridSpec& other) const {
         return (
             Nx == other.Nx && Ny == other.Ny &&
-            scalelm == other.scalelm && scaleuv == other.scaleuv &&
+            scalel == other.scalel && scalem == other.scalem &&
+            scaleu == other.scaleu && scalev == other.scalev &&
             deltal == other.deltal && deltam == other.deltam &&
             deltalpx == other.deltalpx && deltampx == other.deltampx
         );
@@ -29,18 +32,19 @@ struct GridSpec {
         long long Nx, long long Ny, double scalelm, double deltal = 0, double deltam = 0
     ) {
         return GridSpec {
-            Nx, Ny, scalelm, 1 / (Nx * scalelm), deltal, deltam,
+            Nx, Ny, scalelm, scalelm, 1 / (Nx * scalelm), 1 / (Ny * scalelm), deltal, deltam,
             std::llround(deltal / scalelm), std::llround(deltam / scalelm)
         };
     }
 
     static GridSpec fromScaleUV(
-        long long Nx, long long Ny, double scaleuv, double deltal = 0, double deltam = 0
+        long long Nx, long long Ny, double scaleu, double scalev, double deltal = 0, double deltam = 0
     ) {
-        auto scalelm = 1 / (Nx * scaleuv);
+        auto scalel = 1 / (Nx * scaleu);
+        auto scalem = 1 / (Ny * scalev);
         return GridSpec {
-            Nx, Ny, scalelm, scaleuv, deltal, deltam,
-            std::llround(deltal / scalelm), std::llround(deltam / scalelm)
+            Nx, Ny, scalel, scalem, scaleu, scalev, deltal, deltam,
+            std::llround(deltal / scalel), std::llround(deltam / scalem)
         };
     }
 
@@ -96,8 +100,8 @@ struct GridSpec {
         auto [lpx, mpx] = linearToGrid(idx);
 
         return std::make_tuple(
-            (lpx - Nx / 2) * static_cast<S>(scalelm) + static_cast<S>(deltal),
-            (mpx - Ny / 2) * static_cast<S>(scalelm) + static_cast<S>(deltam)
+            (lpx - Nx / 2) * static_cast<S>(scalel) + static_cast<S>(deltal),
+            (mpx - Ny / 2) * static_cast<S>(scalem) + static_cast<S>(deltam)
         );
     }
 
@@ -107,24 +111,24 @@ struct GridSpec {
         auto [upx, vpx] = linearToGrid(idx);
 
         return std::make_tuple(
-            (upx - Nx / 2) * static_cast<S>(scaleuv),
-            (vpx - Ny / 2) * static_cast<S>(scaleuv)
+            (upx - Nx / 2) * static_cast<S>(scaleu),
+            (vpx - Ny / 2) * static_cast<S>(scalev)
         );
     }
 
     template <typename S>
     inline auto UVtoGrid(S u, S v) const {
         return std::make_tuple(
-            static_cast<S>(u / scaleuv + Nx / 2),
-            static_cast<S>(v / scaleuv + Ny / 2)
+            static_cast<S>(u / scaleu + Nx / 2),
+            static_cast<S>(v / scalev + Ny / 2)
         );
     }
 
     template <typename S>
     inline auto gridToUV(auto upx, auto vpx) const {
         return std::make_tuple(
-            static_cast<S>((upx - Nx / 2) * scaleuv),
-            static_cast<S>((vpx - Ny / 2) * scaleuv)
+            static_cast<S>((upx - Nx / 2) * scaleu),
+            static_cast<S>((vpx - Ny / 2) * scalev)
         );
     }
 };
@@ -135,7 +139,8 @@ struct std::hash<GridSpec> {
         using std::hash;
         return (
             hash<long long>()(key.Nx) ^ hash<long long>()(key.Ny) ^
-            hash<double>()(key.scalelm) ^ hash<double>()(key.scaleuv) ^
+            hash<double>()(key.scalel) ^ hash<double>()(key.scalem) ^
+            hash<double>()(key.scaleu) ^ hash<double>()(key.scalev) ^
             hash<double>()(key.deltal) ^ hash<double>()(key.deltam) ^
             hash<long long>()(key.deltalpx) ^ hash<long long>()(key.deltampx)
         );
@@ -168,7 +173,7 @@ struct GridConfig {
 
     GridSpec subgrid() const {
         return GridSpec::fromScaleUV(
-            kernelsize, kernelsize, padded().scaleuv, deltal, deltam
+            kernelsize, kernelsize, padded().scaleu, padded().scalev, deltal, deltam
         );
     }
 };

@@ -34,7 +34,8 @@ public:
         );
 
         // Convert psf xsigma and ysigma to FWHM angular values
-        double f = 2 * std::sqrt(2 * std::log(2)) * std::asin(gridspec.scalelm);
+        // TODO: Correct for case when scalel != scalem
+        double f = 2 * std::sqrt(2 * std::log(2)) * std::asin(gridspec.scalel);
         major = f * params[0];
         minor = f * params[1];
         pa = std::fmod(params[2], 2 * ::pi_v<double>);
@@ -50,7 +51,8 @@ public:
 
         // Convert major, minor from radians to pixels
         // and FWHM to sigma
-        double f = 1 / (2 * std::sqrt(2 * std::log(2)) * std::asin(gridspec.scalelm));
+        // TODO: Correct for case when scalel != scalem
+        double f = 1 / (2 * std::sqrt(2 * std::log(2)) * std::asin(gridspec.scalel));
         double xsigma {f * major};
         double ysigma {f * minor};
 
@@ -78,7 +80,7 @@ private:
      */
     static int minimizationFn(const gsl_vector* params, void* data, gsl_vector* residual) {
         auto psfDirty = static_cast<HostSpan<thrust::complex<P>, 2>*>(data);
-        GridSpec gridspec {psfDirty->size(0), psfDirty->size(1), 0, 0};
+        GridSpec gridspec {.Nx=psfDirty->size(0), .Ny=psfDirty->size(1)};
 
         // Get current model params
         double xsigma = gsl_vector_get(params, 0);
@@ -89,8 +91,8 @@ private:
             auto [xpx, ypx] = gridspec.linearToGrid(idx);
 
             // Set origin to centre pixel
-            xpx -= psfDirty->size(0) / 2;
-            ypx -= psfDirty->size(1) / 2;
+            xpx -= gridspec.Nx / 2;
+            ypx -= gridspec.Ny / 2;
 
             // Rotate xpx, ypx by position angle
             double x {xpx * std::cos(pa) - ypx * std::sin(pa)};
@@ -111,10 +113,11 @@ template <typename P>
 auto cropPsf(HostSpan<thrust::complex<P>, 2> psfDirty, GridSpec gridspec, double threshold) {
     for (long long edge {}; edge < std::min(psfDirty.size(0), psfDirty.size(1)) / 2; ++edge) {
         // Prepare windowed gridspec to use for resize()
+        // TODO: Correct for case when scalel != scalem
         auto gridspecWindowed = GridSpec::fromScaleLM(
             psfDirty.size(0) - 2 * std::max(edge - 1, 0ll),
             psfDirty.size(1) - 2 * std::max(edge - 1, 0ll),
-            gridspec.scalelm
+            gridspec.scalel
         );
 
         // Top and bottom

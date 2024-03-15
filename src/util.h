@@ -141,7 +141,7 @@ auto resize(HostSpan<T, 2> src, GridSpec srcGridspec, GridSpec dstGridspec) {
 
     // Copy row by row
     for (long long nyDst {ymin}; nyDst < ymax; ++nyDst) {
-        long long nySrc = nyDst - edgeX;
+        long long nySrc = nyDst - edgeY;
 
         long long nxDst = std::max(0ll, edgeX);
         long long nxSrc = std::max(0ll, -edgeX);
@@ -159,7 +159,7 @@ HostArray<T, 2> convolve(const HostSpan<T, 2> img, const HostSpan<S, 2> kernel) 
     shapecheck(img, kernel);
 
     // Pad img and kernel with zeros
-    GridSpec gridspec {img.size(0), img.size(1), 0, 0};
+    GridSpec gridspec {.Nx=img.size(0), .Ny=img.size(1)};
     GridSpec gridspecPadded {2 * img.size(0), 2 * img.size(1), 0, 0};
 
     auto imgPadded = resize(img, gridspec, gridspecPadded);
@@ -199,7 +199,7 @@ template <typename T>
 HostArray<T, 2> rescale(
     const HostSpan<T, 2> img, const GridSpec from, const GridSpec to
 ) {
-    if (from.scaleuv != to.scaleuv) {
+    if (from.scaleu != to.scaleu || from.scalev != to.scalev) {
         throw std::runtime_error("Resampling requires matching UV scales");
     };
 

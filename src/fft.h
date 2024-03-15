@@ -28,10 +28,10 @@ void _fftshift(DeviceSpan<T, 2> grid, GridSpec gridspec) {
 template<typename T>
 void fftshift(DeviceSpan<T, 2> grid) {
     // Create dummy GridSpec so that we have access to linearToGrid() method
-    GridSpec gridspec {grid.size(0), grid.size(1), 0, 0};
+    GridSpec gridspec {.Nx=grid.size(0), .Ny=grid.size(1)};
 
     auto [nblocks, nthreads] = getKernelConfig(
-        _fftshift<T>, gridspec.Nx * gridspec.Ny
+        _fftshift<T>, gridspec.size()
     );
 
     hipLaunchKernelGGL(

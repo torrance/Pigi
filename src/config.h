@@ -114,20 +114,34 @@ namespace toml {
 
 struct Config {
     struct Field {
-        int size {1000};
+        long Nx {1000};
+        long Ny {1000};
         std::optional<RaDec> projectioncenter {};
 
-        void validate() const {
-            if (size < 1000) {
-                throw std::runtime_error("[[image.fields]].size must be >= 1000");
-            }
-            if (size % 2 != 0) {
-                throw std::runtime_error("[[image.fields]].size must be even");
-            }
-        }
+        void validate() const {}
 
         void from_toml(const toml::value& v) {
-            this->size = find_or(v, "size", this->size);
+            this->Nx = find_or(v, "width", this->Nx);
+            this->Ny = find_or(v, "height", this->Ny);
+
+            if (this->Nx < 1000) throw std::runtime_error(toml::format_error(
+                "[error] Image width must be at least 1000 px",
+                v.at("width"), "must be at least 1000"
+            ));
+            if (this->Nx % 2 != 0) throw std::runtime_error(toml::format_error(
+                "[error] Image width must be evenly sized",
+                v.at("width"), "must be even"
+            ));
+
+            if (this->Ny < 1000) throw std::runtime_error(toml::format_error(
+                "[error] Image height must be at least 1000 px",
+                v.at("height"), "must be at least 1000"
+            ));
+            if (this->Ny % 2 != 0) throw std::runtime_error(toml::format_error(
+                "[error] Image height must be evenly sized",
+                v.at("height"), "must be even"
+            ));
+
             if (v.contains("projectioncenter")) {
                 this->projectioncenter = toml::find<RaDec>(v, "projectioncenter");
             }
@@ -135,8 +149,13 @@ struct Config {
 
         toml::basic_value<toml::preserve_comments> into_toml() const {
             return {
-                {"size", {this->size, {
-                    " The image size (size x size). [1000 <= even int: pixel]",
+                {"width", {this->Nx, {
+                    " The image size in the horizontal direction.",
+                    " [1000 <= even int: pixel]",
+                }}},
+                {"height", {this->Ny, {
+                    " The image size in the vertical direction.",
+                    " [1000 <= even int: pixel]",
                 }}},
                 {"projectioncenter", toml::basic_value<toml::preserve_comments>(
                     this->projectioncenter, {
@@ -166,7 +185,7 @@ struct Config {
     // Image
     double scale {15}; // arcseconds
     std::optional<RaDec> phasecenter {};
-    std::vector<Field> fields {{.size = 1000}};
+    std::vector<Field> fields {{.Nx = 1000, .Ny = 1000}};
 
     // IDG
     int precision {32};
@@ -471,7 +490,7 @@ struct Config {
             deltam = deltampx * scalelm;
 
             gridconfs.push_back({
-                .imgNx = field.size, .imgNy = field.size,
+                .imgNx = field.Nx, .imgNy = field.Ny,
                 .imgScalelm = scalelm, .paddingfactor = paddingfactor,
                 .kernelsize = kernelsize, .kernelpadding = kernelpadding,
                 .wstep = static_cast<double>(wstep),

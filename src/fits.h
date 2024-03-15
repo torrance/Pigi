@@ -65,8 +65,8 @@ void save(
         wcs.crval[1] = phasecenter.dec;
         wcs.crpix[0] = (gridspec.Nx / 2) - gridspec.deltalpx + 1; // 1-indexed
         wcs.crpix[1] = (gridspec.Ny / 2) - gridspec.deltampx + 1; // 1-indexed
-        wcs.cdelt[0] = -std::asin(gridspec.scalelm);
-        wcs.cdelt[1] = std::asin(gridspec.scalelm);
+        wcs.cdelt[0] = -std::asin(gridspec.scalel);
+        wcs.cdelt[1] = std::asin(gridspec.scalem);
         std::strncpy(wcs.cunit[0], "rad", 72);
         std::strncpy(wcs.cunit[1], "rad", 72);
         std::strncpy(wcs.ctype[0], "RA---SIN", 72);

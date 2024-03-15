@@ -118,9 +118,26 @@ TEST_CASE("Coordinates", "[coordinates]") {
     REQUIRE(std::abs(m - (mpx - N / 2) * scalelm) < 1e-9);
 }
 
+TEST_CASE("GridSpec", "[gridspec]") {
+    auto gridspec = GridSpec::fromScaleLM(1000, 1200, 0.01);
+
+    bool ok {true};
+    for (size_t idx {}; idx < gridspec.size(); ++idx) {
+        auto [xpx, ypx] = gridspec.linearToGrid(idx);
+        ok &= 0 <= xpx && xpx < 1000 && 0 <= ypx && ypx < 1200;
+        ok &= idx == gridspec.gridToLinear(xpx, ypx);
+
+        auto [u, v] = gridspec.gridToUV<double>(xpx, ypx);
+        auto [upx, vpx] = gridspec.UVtoGrid<double>(u, v);
+        ok &= (upx - xpx) < 1e-10 && (vpx - ypx) < 1e-10;
+    }
+
+    REQUIRE(ok);
+}
+
 TEST_CASE("Utility functions", "[utility]") {
-    auto smallGridspec = GridSpec::fromScaleUV(128, 128, 1);
-    auto largeGridspec = GridSpec::fromScaleUV(1000, 1000, 1);
+    auto smallGridspec = GridSpec::fromScaleUV(128, 128, 1, 1);
+    auto largeGridspec = GridSpec::fromScaleUV(1000, 1000, 1, 1);
 
     PSF<double> psf(deg2rad(25.), deg2rad(20.), deg2rad(31.));
     auto smallGaussian = psf.draw(smallGridspec);
@@ -287,9 +304,9 @@ TEST_CASE("Widefield inversion", "[widefield]") {
     fmt::println("Direct DT imaging...");
 
     auto gridspec = GridSpec::fromScaleLM(
-        gridconf.grid().Nx / oversample,
-        gridconf.grid().Ny / oversample,
-        gridconf.grid().scalelm * oversample
+        gridconf.imgNx / oversample,
+        gridconf.imgNy / oversample,
+        gridconf.imgScalelm * oversample
     );
     auto aterm = beam.gridResponse(gridspec, gridorigin, mset.midfreq());
 
@@ -337,7 +354,7 @@ TEMPLATE_TEST_CASE_SIG(
 ) {
     // Config
     const GridConfig gridconf {
-        .imgNx = 1000, .imgNy = 1000, .imgScalelm = std::sin(deg2rad(2. / 60)),
+        .imgNx = 1000, .imgNy = 1050, .imgScalelm = std::sin(deg2rad(2. / 60)),
         .paddingfactor = 1.5, .kernelsize = 96, .kernelpadding = 18, .wstep = 25,
         .deltal = 0.02, .deltam = -0.01
     };
@@ -463,7 +480,7 @@ TEMPLATE_TEST_CASE_SIG(
     (double, (MWABeam<double>), 3, -5)
 ) {
     const GridConfig gridconf {
-        .imgNx = 2000, .imgNy = 2000, .imgScalelm = 1. / (4000 * 20), .paddingfactor = 2,
+        .imgNx = 2000, .imgNy = 1800, .imgScalelm = 1. / (4000 * 20), .paddingfactor = 2,
         .kernelsize = 96, .kernelpadding = 17, .wstep = 25, .deltal = 0.015, .deltam = -0.01
     };
     const GridSpec gridspec = gridconf.grid();
