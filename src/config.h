@@ -118,6 +118,8 @@ struct Config {
         long Ny {1000};
         std::optional<RaDec> projectioncenter {};
 
+        bool operator==(const Field&) const = default;
+
         void validate() const {}
 
         void from_toml(const toml::value& v) {
@@ -169,6 +171,8 @@ struct Config {
     };
 
     Logger::Level loglevel {Logger::Level::info};
+
+    bool operator==(const Config&) const = default;
 
     // Measurement set selection
     MeasurementSet::DataColumn datacolumn {MeasurementSet::DataColumn::automatic};

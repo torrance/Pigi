@@ -78,7 +78,7 @@ target_link_libraries(main PRIVATE pthread ${Lcasa_casa} ${Lcasa_tables} ${Lcasa
 
 add_executable(test src/test.cpp)
 target_compile_options(test PRIVATE ${hipcxxflags})
-target_include_directories(test PRIVATE ${Igenerator} ${Ifmt} ${Igsl} ${Icfitsio} ${Iwcslib} ${Icasa} ${Ihyperbeam})
+target_include_directories(test PRIVATE ${Igenerator} ${Ifmt} ${Igsl} ${Icfitsio} ${Iwcslib} ${Icasa} ${Ihyperbeam} ${Itoml11})
 target_link_libraries(test PRIVATE pthread ${Lcasa_casa} ${Lcasa_tables} ${Lcasa_measures} ${Lcasa_ms} ${Lgsl} ${Lcfitsio} ${Lwcslib} ${Lfmt} ${Lhipfft} ${Lhyperbeam} ${Lcufft} Catch2::Catch2WithMain)
 
 add_executable(benchmark src/benchmark.cpp)

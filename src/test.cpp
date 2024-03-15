@@ -12,6 +12,7 @@
 #include "aterms.h"
 #include "beam.h"
 #include "clean.h"
+#include "config.h"
 #include "dft.h"
 #include "degridder.h"
 #include "fits.h"
@@ -84,6 +85,33 @@ TEST_CASE("Matrix tests", "[matrix]") {
         thrust::abs(C.xy - thrust::complex<double>{0.0162539, -0.000773994}) < 1e-5 &&
         thrust::abs(C.yy - thrust::complex<double>{-0.0472136, -0.0704334}) < 1e-5
     ));
+}
+
+TEST_CASE("Toml configuration", "[toml]") {
+    // For now, we just test that:
+    // 1. the config object can be converted to toml
+    // 2. the toml can be converted back to Config
+    // 3. and all parameter values are retained
+
+    Config config1 {
+        .loglevel = Logger::Level::debug,
+        .chanlow = 33, .chanhigh = 56, .channelsOut = 5, .maxDuration = 32,
+        .msets = {"/path1.fits", "/path2.fits"},
+        .weight = "briggs", .robust = 1.3,
+        .scale = 25, .phasecenter = RaDec{0.5, 0.5},
+        .fields = {{.Nx = 1234, .Ny = 4568, .projectioncenter = RaDec{0.5, 0.5}}},
+        .precision = 64, .kernelsize = 156, .kernelpadding = 9, .paddingfactor = 1.23,
+        .wstep = 33, .majorgain = 0.354, .minorgain = 0.2343,
+        .cleanThreshold = 543154, .autoThreshold = 431.54, .nMajor = 432, .nMinor = 5426543,
+        .spectralparams = 123
+    };
+
+    auto configtext = std::istringstream(toml::format(
+        toml::basic_value<toml::preserve_comments>(config1)
+    ));
+    Config config2 = toml::get<Config>(toml::parse(configtext));
+
+    REQUIRE(config1 == config2);
 }
 
 TEST_CASE("Coordinates", "[coordinates]") {

@@ -18,15 +18,7 @@ struct GridSpec {
     long long deltalpx {};
     long long deltampx {};
 
-    bool operator==(const GridSpec& other) const {
-        return (
-            Nx == other.Nx && Ny == other.Ny &&
-            scalel == other.scalel && scalem == other.scalem &&
-            scaleu == other.scaleu && scalev == other.scalev &&
-            deltal == other.deltal && deltam == other.deltam &&
-            deltalpx == other.deltalpx && deltampx == other.deltampx
-        );
-    }
+    bool operator==(const GridSpec&) const = default;
 
     static GridSpec fromScaleLM(
         long long Nx, long long Ny, double scalelm, double deltal = 0, double deltam = 0
