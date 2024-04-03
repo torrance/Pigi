@@ -117,7 +117,7 @@ public:
         // Load chosen datacolumn
         auto hascol = [] (const auto& ms, const auto& colname) -> bool {
             for (const auto& othercolname : ms.tableDesc().columnNames()) {
-                if (colname == othercolname) return true;
+                if (casacore::String(colname) == othercolname) return true;
             }
             return false;
         };
