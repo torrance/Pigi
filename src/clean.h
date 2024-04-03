@@ -4,6 +4,7 @@
 #include <cmath>
 #include <chrono>
 #include <optional>
+#include <ranges>
 #include <tuple>
 #include <type_traits>
 #include <unordered_map>

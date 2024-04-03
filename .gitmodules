@@ -1,6 +1,3 @@
-[submodule "external/generator"]
-	path = external/generator
-	url = https://github.com/lewissbaker/generator.git
 [submodule "external/toml11"]
 	path = external/toml11
 	url = https://github.com/ToruNiina/toml11.git
