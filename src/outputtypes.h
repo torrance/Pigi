@@ -163,7 +163,7 @@ struct StokesI {
     StokesI() = default;
 
     template <typename S>
-    __host__ __device__ StokesI(const S& I) : I{I} {}
+    __host__ __device__ StokesI(const S& I) : I(I) {}
 
     template <typename S>
     __host__ __device__

@@ -30,6 +30,9 @@ elseif(${platform} STREQUAL nvidia)
     set(CMAKE_SHARED_LIBRARY_RUNTIME_CXX_FLAG "-Xlinker=-rpath,")
 endif()
 
+# Setting as system header suppresses errors from including, in particular wrt toml11
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -isystem ${CMAKE_CURRENT_SOURCE_DIR}/external")
+
 separate_arguments(hipcxxflags UNIX_COMMAND ${hipcxxflags})
 
 project(Pigi)

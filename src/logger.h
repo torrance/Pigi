@@ -37,6 +37,8 @@ public:
         case Level::none:
             color = fmt::color::slate_gray;
             break;
+        default:
+            throw std::runtime_error("Invalid Logger::Level value");
         }
 
         std::lock_guard l(writelock);

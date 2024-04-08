@@ -51,7 +51,8 @@ void save(
         // called just once, without race condition
         [[maybe_unused]] static int _ = wcserr_enable(true);
 
-        wcsprm wcs {.flag = -1};
+        wcsprm wcs;
+        wcs.flag = -1;
         if (wcsinit(true, 2, &wcs, 0, 0, 0) != 0) {
             auto msg = fmt::format(
                 "An error occurred creating a FITS file: {}", wcs.err->msg

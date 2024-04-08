@@ -157,6 +157,8 @@ public:
                 throw std::runtime_error("MODEL_DATA column not found");
             }
             break;
+        default:
+            throw std::runtime_error("Invalid MeasurementSet::DataColumn value");
         }
 
         // Set actual timelow and timehigh

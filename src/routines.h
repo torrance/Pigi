@@ -162,7 +162,7 @@ void cleanQueen(const Config& config, boost::mpi::intercommunicator hive) {
 
             // Major clean loops
             for (
-                size_t imajor {}, iminor {};
+                long imajor {}, iminor {};
                 imajor < config.nMajor && iminor < config.nMinor;
                 ++imajor
             ) {
@@ -415,8 +415,8 @@ void cleanWorker(
                     }
 
                     // Correct for beamPower
-                    for (size_t i {}, I = gridconf.grid().size(); i < I; ++i) {
-                        minorComponents[i] /= beamPower[i];
+                    for (size_t j {}, J = gridconf.grid().size(); j < J; ++j) {
+                        minorComponents[j] /= beamPower[j];
                     }
 
                     // mpi::Lock lock(hive);

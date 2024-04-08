@@ -5,17 +5,12 @@
 #include <string>
 #include <vector>
 
-// toml11 emits a lot of -Wswitch-enum warnings; temporarily suppress these
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wswitch-enum"
+#define TOML11_COLORIZE_ERROR_MESSAGE = 1
 #include <toml11/toml.hpp>
-#pragma GCC diagnostic pop
 
 #include "gridspec.h"
 #include "logger.h"
 #include "mset.h"
-
-#define TOML11_COLORIZE_ERROR_MESSAGE = 1
 
 namespace toml {
     template <>
@@ -75,6 +70,8 @@ namespace toml {
                 return "debug";
             case Logger::Level::verbose:
                 return "verbose";
+            default:
+                throw std::runtime_error("Invalid Logger::Level value");
             }
         }
     };
@@ -107,6 +104,8 @@ namespace toml {
                 return "corrected";
             case MeasurementSet::DataColumn::model:
                 return "model";
+            default:
+                throw std::runtime_error("Invalid MeasurementSet::DataColumn value");
             }
         }
     };
@@ -203,8 +202,8 @@ struct Config {
     float minorgain {0.1};
     float cleanThreshold {0};
     float autoThreshold {3.5};
-    size_t nMajor {0};
-    size_t nMinor {0};
+    long nMajor {0};
+    long nMinor {0};
     int spectralparams {2};
 
     void validate() {
