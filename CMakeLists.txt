@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.18)
+cmake_minimum_required(VERSION 3.25)
 
 find_program(CMAKE_CXX_COMPILER "hipcc" PATHS "/opt/rocm/bin")
 
@@ -70,17 +70,22 @@ find_library(Lhipfft NAMES hipfft PATHS ${hippath}/lib REQUIRED)
 find_path(Ihyperbeam NAMES mwa_hyperbeam.h REQUIRED)
 find_library(Lhyperbeam NAMES mwa_hyperbeam REQUIRED)
 find_path(Itoml11 NAMES toml11/toml.hpp PATHS ${CMAKE_CURRENT_SOURCE_DIR}/external REQUIRED)
-find_path(Ithrust NAMES thrust/complex.h PATHS ${hippath}/include REQUIRED)
-find_path(Irocprim NAMES rocprim/rocprim.hpp PATHS ${hippath}/include REQUIRED)
+
+if(${platform} STREQUAL amd)
+    find_path(Ithrust NAMES thrust/complex.h PATHS ${hippath}/include REQUIRED)
+    find_path(Irocprim NAMES rocprim/rocprim.hpp PATHS ${hippath}/include REQUIRED)
+endif()
 
 if(${platform} STREQUAL nvidia)
+    find_path(Ithrust NAMES thrust/complex.h PATHS /usr/local/cuda/include REQUIRED)
     find_library(Lcufft NAMES cufft PATHS /usr/local/cuda/lib64 REQUIRED)
 endif()
 
 add_executable(main src/main.cpp)
 target_compile_options(main PRIVATE ${hipcxxflags})
-target_include_directories(main PRIVATE ${Ifmt} ${Igsl} ${Icfitsio} ${Iwcslib} ${Icasa} ${Ihyperbeam} ${MPI_C_INCLUDE_DIRS} ${Itoml11} ${Ihipfft} ${Ithrust} ${Irocprim})
-target_link_libraries(main PRIVATE pthread ${Lcasa_casa} ${Lcasa_tables} ${Lcasa_measures} ${Lcasa_ms} ${Lgsl} ${Lcfitsio} ${Lwcslib} ${Lfmt} ${Lhipfft} ${Lhyperbeam} ${Lcufft} ${MPI_C_LIBRARIES} BLAS::BLAS Boost::mpi Boost::program_options Boost::serialization)
+target_include_directories(main PRIVATE ${Ifmt} ${Igsl} ${Icfitsio} ${Iwcslib} ${Icasa} ${Ihyperbeam} ${MPI_C_INCLUDE_DIRS} ${Itoml11} ${Ihipfft} ${Ithrust} ${Irocprim} ${Boost_INCLUDE_DIRS})
+target_link_directories(main PRIVATE ${Boost_LIBRARY_DIRS})
+target_link_libraries(main PRIVATE pthread ${Lcasa_casa} ${Lcasa_tables} ${Lcasa_measures} ${Lcasa_ms} ${Lgsl} ${Lcfitsio} ${Lwcslib} ${Lfmt} ${Lhipfft} ${Lhyperbeam} ${Lcufft} ${MPI_C_LIBRARIES} BLAS::BLAS boost_mpi boost_program_options boost_serialization)
 
 add_executable(test src/test.cpp)
 target_compile_options(test PRIVATE ${hipcxxflags})

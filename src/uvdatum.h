@@ -5,6 +5,13 @@
 #include "sharedhostptr.h"
 
 struct UVMeta {
+    // Even though this is a POD datatype, we seem to require an explicit
+    // constructor to allow compatibility with makeSharedHostPtr().
+    UVMeta(
+        const long row, const double time,
+        const long ant1, const long ant2, const RaDec phasecenter
+    ) : row(row), time(time), ant1(ant1), ant2(ant2), phasecenter(phasecenter) {}
+
     long row;
     double time;
     long ant1;
