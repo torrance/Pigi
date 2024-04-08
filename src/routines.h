@@ -241,6 +241,10 @@ void cleanWorker(
     Logger::setName("Worker {}/{}", rank + 1, hivesize);
     Logger::debug("Reporting for duty!");
 
+    // Set GPU for worker
+    GPU::getInstance().setID(rank % GPU::getInstance().getCount());
+    Logger::debug("Selecting default GPU to ID={}", GPU::getInstance().getID());
+
     const auto gridconfs = config.gridconfs();
 
     // Be careful in these channel boundary calculations to remember that the
@@ -303,6 +307,9 @@ void cleanWorker(
                 rank + 1, hivesize, fieldid + 1, gridconfs.size()
             );
             Logger::debug("Thread created");
+
+            GPU::getInstance().resetDevice(); // needs to be reset for each new thread
+
             auto gridconf = gridconfs[fieldid];
 
             auto aterms = [&] {

@@ -1,5 +1,7 @@
 #pragma once
 
+#include <mutex>
+
 #include <fmt/format.h>
 
 #include <hip/hip_runtime.h>
@@ -26,6 +28,48 @@ inline void hipfftcheck(hipfftResult res, const char* file, int line) {
         ));
     }
 }
+
+class GPU {
+public:
+    GPU(const GPU&) = delete;
+    GPU(GPU&&) = delete;
+    GPU& operator=(const GPU&) = delete;
+    GPU& operator=(GPU&&) = delete;
+
+    static GPU& getInstance() {
+        static GPU instance;
+        return instance;
+    }
+
+    int getID() {
+        std::lock_guard l(m);
+        return id;
+    }
+
+    GPU& setID(int id) {
+        std::lock_guard l(m);
+        this->id = id;
+        resetDevice();
+        return *this;
+    }
+
+    GPU& resetDevice() {
+        std::lock_guard l(m);
+        HIPCHECK( hipSetDevice(id) );
+        return *this;
+    }
+
+    int getCount() {
+        int gpucount;
+        HIPCHECK( hipGetDeviceCount(&gpucount) );
+        return gpucount;
+    }
+
+private:
+    GPU() = default;
+    std::recursive_mutex m;
+    int id {};
+};
 
 template <typename T>
 auto getKernelConfig(T fn, int N, size_t sharedMem=0) {

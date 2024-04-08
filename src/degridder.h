@@ -209,6 +209,8 @@ void degridder(
         ++i
     ) {
         threads.emplace_back([&] {
+            GPU::getInstance().resetDevice(); // needs to be reset for each new thread
+
             // Make fft plan for each thread
             auto plan = fftPlan<ComplexLinearData<S>>(gridconf.subgrid());
 

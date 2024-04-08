@@ -227,6 +227,8 @@ void gridder(
         ++i
     ) {
         threads.emplace_back([&] {
+            GPU::getInstance().resetDevice(); // needs to be reset for each new thread
+
             // Make FFT plan for each thread
             auto plan = fftPlan<T>(subgridspec);
 
