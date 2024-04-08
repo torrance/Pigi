@@ -133,7 +133,7 @@ public:
 
         ComplexLinearData<double> jones;
 
-        auto err = calc_jones(
+        auto err = fee_calc_jones(
             feebeam,
             azel.az,
             pi_v<double> / 2 - azel.el,
@@ -172,7 +172,7 @@ public:
         // Allocate double precision array
         HostArray<ComplexLinearData<double>, 2> beam {gridspec.Nx, gridspec.Ny};
 
-        auto err = calc_jones_array(
+        auto err = fee_calc_jones_array(
             feebeam,
             gridspec.size(),
             azs.data(),
