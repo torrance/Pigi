@@ -2,6 +2,9 @@
 
 #include <hip/hip_runtime.h>
 
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wuse-after-free"
+
 /**
  * A shared pointer that only performs reference counting and deallocation on the host.
  * On the device, this simply acts as a pointer.
@@ -17,17 +20,17 @@ public:
     __host__ __device__
     SharedHostPtr(T* ptr) : ptr(ptr) {
 #ifndef __HIP_DEVICE_COMPILE__
-        this->counter = new int {};
-        ++(*this->counter);
+        counter = new int {};
+        ++(*counter);
 #endif
     }
 
     __host__ __device__
     SharedHostPtr(const SharedHostPtr& other) {
-        this->ptr = other.ptr;
-        this->counter = other.counter;
+        ptr = other.ptr;
+        counter = other.counter;
 #ifndef __HIP_DEVICE_COMPILE__
-        if (this->counter) ++(*this->counter);
+        if (counter) ++(*counter);
 #endif
     }
 
@@ -39,30 +42,30 @@ public:
     __host__ __device__
     SharedHostPtr& operator=(const SharedHostPtr& other) {
 #ifndef __HIP_DEVICE_COMPILE__
-        if (this->counter && --(*this->counter) == 0) {
+        if (counter && --(*counter) == 0) {
             delete ptr;
             delete counter;
         }
         if (other.counter) ++(*other.counter);
 #endif
 
-        this->ptr = other.ptr;
-        this->counter = other.counter;
+        ptr = other.ptr;
+        counter = other.counter;
         return *this;
     }
 
     __host__ __device__
     SharedHostPtr& operator=(SharedHostPtr&& other) {
         using std::swap;
-        swap(this->ptr, other.ptr);
-        swap(this->counter, other.counter);
+        swap(ptr, other.ptr);
+        swap(counter, other.counter);
         return *this;
     }
 
     __host__ __device__
     ~SharedHostPtr() {
 #ifndef __HIP_DEVICE_COMPILE__
-        if (this->counter && --(*this->counter) == 0) {
+        if (counter && --(*counter) == 0) {
             delete ptr;
             delete counter;
         }
@@ -81,3 +84,5 @@ SharedHostPtr<T> makesharedhost(Args... args) {
     T* ptr = new T(std::forward<Args>(args)...);
     return SharedHostPtr<T>(ptr);
 }
+
+#pragma GCC diagnostic pop
