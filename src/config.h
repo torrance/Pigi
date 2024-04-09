@@ -169,9 +169,9 @@ struct Config {
         }
     };
 
-    Logger::Level loglevel {Logger::Level::info};
-
     bool operator==(const Config&) const = default;
+
+    Logger::Level loglevel {Logger::Level::info};
 
     // Measurement set selection
     MeasurementSet::DataColumn datacolumn {MeasurementSet::DataColumn::automatic};
