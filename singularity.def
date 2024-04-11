@@ -1,0 +1,136 @@
+# Singularity definition file for building calibrate images
+# bootstrap: debootstrap
+# OSVersion: bookworm
+# MirrorURL: http://ftp.au.debian.org/debian/
+
+bootstrap: docker
+From: debian:bookworm
+
+%post
+
+# Install build/runtime dependencies
+apt update && apt upgrade -y
+DEBIAN_FRONTEND=noninteractive apt install -y \
+    libboost-all-dev \
+    wget \
+    curl \
+    unzip \
+    git \
+    flex \
+    bison \
+    libhdf5-dev \
+    libgsl-dev \
+    libfftw3-dev \
+    libcfitsio-dev \
+    libreadline-dev \
+    libncurses-dev \
+    libopenmpi-dev \
+    wcslib-dev \
+    build-essential \
+    cmake \
+    libblas-dev \
+    liblapack-dev \
+    locales \
+
+# Set locale
+sed -i -e 's/# en_US.UTF-8 UTF-8/en_US.UTF-8 UTF-8/' /etc/locale.gen
+dpkg-reconfigure --frontend=noninteractive locales
+update-locale LANG=en_US.UTF-8
+
+# Install Catch2
+cd $HOME
+git clone -b v3.5.3 https://github.com/catchorg/Catch2.git
+mkdir -p Catch2/build
+cd Catch2/build
+cmake -DCMAKE_INSTALL_PREFIX=/usr/local ..
+make -j && make install
+
+# Install fmt
+cd $HOME
+wget https://github.com/fmtlib/fmt/releases/download/10.2.0/fmt-10.2.0.zip && unzip fmt-10.2.0.zip
+mkdir -p fmt-10.2.0/build && cd fmt-10.2.0/build
+cmake -DCMAKE_INSTALL_PREFIX=/usr/local ..
+make -j && make install
+
+# Install Rust
+cd $HOME
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
+. "$HOME/.cargo/env"
+
+# Install mwa-hyperbeam
+cd $HOME
+git clone https://github.com/MWATelescope/mwa_hyperbeam.git
+cd mwa_hyperbeam
+cargo build --release
+cp include/* /usr/local/include
+cp target/release/*.so /usr/local/lib
+
+# Download ephemerides casacore data
+mkdir -p /usr/local/share/casacore/data
+cd /usr/local/share/casacore/data
+wget ftp://ftp.astron.nl/outgoing/Measures/WSRT_Measures.ztar
+tar -xzf WSRT_Measures.ztar
+rm WSRT_Measures.ztar
+
+# Install casacore
+# We currently require strictly > 3.5 for C++20 support
+cd $HOME
+git clone https://github.com/casacore/casacore
+mkdir -p casacore/build
+cd casacore/build
+cmake -DDATA_DIR=/usr/local/share/casacore/data \
+      -DUSE_OPENMP=OFF \
+      -DUSE_HDF5=OFF \
+      -DBUILD_PYTHON=OFF \
+      -DBUILD_PYTHON3=OFF \
+      -DUSE_THREADS=ON \
+      -DCMAKE_INSTALL_PREFIX=/usr/local ..
+make -j && make install -j
+
+# Install CUDA runtime
+cd $HOME
+wget https://developer.download.nvidia.com/compute/cuda/repos/debian12/x86_64/cuda-keyring_1.1-1_all.deb
+dpkg -i cuda-keyring_1.1-1_all.deb
+# sudo add-apt-repository contrib
+apt update
+apt install -y cuda-toolkit
+
+# https://rocm.docs.amd.com/projects/HIP/en/latest/developer_guide/build.html
+export ROCM_BRANCH=rocm-6.0.x
+cd $HOME
+git clone -b "$ROCM_BRANCH" https://github.com/ROCm-Developer-Tools/hip.git
+git clone -b "$ROCM_BRANCH" https://github.com/ROCm-Developer-Tools/clr.git
+git clone -b "$ROCM_BRANCH" https://github.com/ROCm-Developer-Tools/HIPCC.git
+git clone -b "$ROCM_BRANCH" https://github.com/ROCm/hipother.git
+export HIP_DIR="$HOME/hip"
+export CLR_DIR="$HOME/clr"
+export HIPCC_DIR="$HOME/HIPCC"
+export HIPNV_DIR="$HOME/hipother/hipnv"
+
+# Build HIPCC runtime
+cd "$HIPCC_DIR"
+mkdir -p build && cd build && cmake .. && make -j
+
+# Build HIP
+cd "$CLR_DIR"
+mkdir -p build && cd build
+cmake -DHIP_COMMON_DIR=$HIP_DIR \
+      -DHIP_PLATFORM=nvidia \
+      -DCMAKE_INSTALL_PREFIX=/usr/local \
+      -DHIPCC_BIN_DIR=$HIPCC_DIR/build \
+      -DHIPNV_DIR=$HIPNV_DIR \
+      -DHIP_CATCH_TEST=0 \
+      -DCLR_BUILD_HIP=ON \
+      -DCLR_BUILD_OCL=OFF ..
+make -j && make install
+
+# Install hipfft
+cd $HOME
+git clone -b rocm-6.0.2 https://github.com/ROCm/hipFFT.git
+mkdir -p hipFFT/build && cd hipFFT/build
+HIP_PLATFORM=nvidia cmake -DCMAKE_CXX_COMPILER=g++ \
+                          -DCMAKE_BUILD_TYPE=Release \
+                          -DCMAKE_INSTALL_PREFIX=/usr/local \
+                          -DBUILD_WITH_LIB=CUDA -L ..
+make -j && make install
+
