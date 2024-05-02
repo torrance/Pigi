@@ -5,6 +5,8 @@
 #include <unordered_map>
 #include <vector>
 
+#include <boost/functional/hash.hpp>
+
 #include "aterms.h"
 #include "gridspec.h"
 #include "memmap.h"
@@ -41,6 +43,28 @@ struct WorkUnit {
     }
 };
 
+/**
+ * PartitionKey is used as a key in a std::unordered_map during partition to reduce
+ * the search sapce. We define it here so that we can make it hashable.
+ */
+template <typename S>
+using PartitionKey = std::tuple<
+    double,
+    std::shared_ptr<HostArray<ComplexLinearData<S>, 2>>,
+    std::shared_ptr<HostArray<ComplexLinearData<S>, 2>>
+>;
+
+template <typename S>
+struct PartitionKeyHasher {
+    std::size_t operator()(const PartitionKey<S>& key) const {
+        size_t seed {};
+        boost::hash_combine(seed, std::get<0>(key));
+        boost::hash_combine(seed, std::get<1>(key));
+        boost::hash_combine(seed, std::get<2>(key));
+        return seed;
+    }
+};
+
 template <typename S>
 auto partition(
     auto&& uvdata,
@@ -51,7 +75,11 @@ auto partition(
     auto gridspec = gridconf.padded();
 
     // Temporarily store workunits in a map to reduce search space during partitioning
-    std::unordered_map<double, std::vector<WorkUnit<S>>> wlayers;
+    std::unordered_map<
+        PartitionKey<S>,
+        std::vector<WorkUnit<S>>,
+        PartitionKeyHasher<S>
+    > wlayers;
     long long radius {gridconf.kernelsize / 2 - gridconf.kernelpadding};
 
     for (auto& uvdatum : uvdata) {
@@ -74,15 +102,13 @@ auto partition(
 
         // Search through existing workunits to see if our UVDatum is included in an
         // existing workunit.
-        auto& wworkunits = wlayers[w0];
+        auto& wworkunits = wlayers[{w0, Aleft, Aright}];
 
         bool found {false};
         for (auto& workunit : wworkunits) {
             // The +0.5 accounts for the off-center central pixel of an even grid
             // TODO: add one to upper bound
             if (
-                workunit.Aleft == Aleft &&
-                workunit.Aright == Aright &&
                 -radius <= upx - workunit.u0px + 0.5 &&
                 upx - workunit.u0px + 0.5 <= radius &&
                 -radius <= vpx - workunit.v0px + 0.5 &&
@@ -109,13 +135,7 @@ auto partition(
     // Flatten workunits
     std::vector<WorkUnit<S>> workunits;
     for (auto& [_, wworkunits] : wlayers) {
-        for (auto& workunit : wworkunits) {
-            workunits.push_back({
-                workunit.u0px, workunit.v0px,
-                workunit.u0, workunit.v0, workunit.w0,
-                workunit.Aleft, workunit.Aright, std::move(workunit.data)
-            });
-        }
+        std::move(wworkunits.begin(), wworkunits.end(), std::back_inserter(workunits));
     }
 
     return workunits;
