@@ -69,11 +69,11 @@ TEST_CASE("MSet reading and paritioning", "[io]") {
     if (!TESTDATA) { SKIP("TESTDATA path not provided"); }
 
     GridConfig gridconf {
-        .imgNx = 8000, .imgNy = 8000, .imgScalelm = std::sin(deg2rad(15. / 3600)),
+        .imgNx = 16000, .imgNy = 16000, .imgScalelm = std::sin(deg2rad(15. / 3600)),
         .kernelsize = 96, .kernelpadding = 18, .wstep = 25
     };
 
-    HostArray<ComplexLinearData<double>, 2> Aterm {gridconf.grid().shape()};
+    HostArray<ComplexLinearData<double>, 2> Aterm {gridconf.subgrid().shape()};
     Aterm.fill({1, 0, 0, 1});
 
     MeasurementSet mset(
@@ -81,12 +81,14 @@ TEST_CASE("MSet reading and paritioning", "[io]") {
         0, 191, 0, std::numeric_limits<double>::max()
     );
 
-    auto uvdata = simple_benchmark("MSet read", 5, [&] {
+    auto uvdata = simple_benchmark("MSet read", 1, [&] {
         return mset.data<double>();
     });
 
-    auto workunits = simple_benchmark("Partition", 5, [&] {
-        return partition(uvdata, gridconf, Aterms<double>(Aterm));
+    Aterms<double> aterms(Aterm);
+
+    auto workunits = simple_benchmark("Partition", 3, [&] {
+        return partition<double>(uvdata, gridconf, aterms);
     });
 }
 
