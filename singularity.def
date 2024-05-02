@@ -1,12 +1,12 @@
-# Singularity definition file for building calibrate images
-# bootstrap: debootstrap
-# OSVersion: bookworm
-# MirrorURL: http://ftp.au.debian.org/debian/
-
+# Singularity definition file
+# Build: singularity build --fakeroot --build-arg platform=nvidia|amd singularity.sif singularity.def
 bootstrap: docker
-From: debian:bookworm
+From: ubuntu:22.04
 
 %post
+
+# Either: nvidia|amd
+export HIP_PLATFORM={{ platform }}
 
 # Install build/runtime dependencies
 apt update && apt upgrade -y
@@ -87,50 +87,62 @@ cmake -DDATA_DIR=/usr/local/share/casacore/data \
       -DCMAKE_INSTALL_PREFIX=/usr/local ..
 make -j && make install -j
 
-# Install CUDA runtime
-cd $HOME
-wget https://developer.download.nvidia.com/compute/cuda/repos/debian12/x86_64/cuda-keyring_1.1-1_all.deb
-dpkg -i cuda-keyring_1.1-1_all.deb
-# sudo add-apt-repository contrib
-apt update
-apt install -y cuda-toolkit
+if [ "$HIP_PLATFORM" = "nvidia" ]; then
+      # Install CUDA runtime
+      cd $HOME
+      wget https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2204/x86_64/cuda-keyring_1.1-1_all.deb
+      dpkg -i cuda-keyring_1.1-1_all.deb
+      # sudo add-apt-repository contrib
+      apt update
+      apt install -y cuda-toolkit
 
-# https://rocm.docs.amd.com/projects/HIP/en/latest/developer_guide/build.html
-export ROCM_BRANCH=rocm-6.0.x
-cd $HOME
-git clone -b "$ROCM_BRANCH" https://github.com/ROCm-Developer-Tools/hip.git
-git clone -b "$ROCM_BRANCH" https://github.com/ROCm-Developer-Tools/clr.git
-git clone -b "$ROCM_BRANCH" https://github.com/ROCm-Developer-Tools/HIPCC.git
-git clone -b "$ROCM_BRANCH" https://github.com/ROCm/hipother.git
-export HIP_DIR="$HOME/hip"
-export CLR_DIR="$HOME/clr"
-export HIPCC_DIR="$HOME/HIPCC"
-export HIPNV_DIR="$HOME/hipother/hipnv"
+      # https://rocm.docs.amd.com/projects/HIP/en/latest/developer_guide/build.html
+      export ROCM_BRANCH=rocm-6.1.x
+      cd $HOME
+      git clone -b "$ROCM_BRANCH" https://github.com/ROCm-Developer-Tools/hip.git
+      git clone -b "$ROCM_BRANCH" https://github.com/ROCm-Developer-Tools/clr.git
+      git clone -b "$ROCM_BRANCH" https://github.com/ROCm-Developer-Tools/HIPCC.git
+      git clone -b "$ROCM_BRANCH" https://github.com/ROCm/hipother.git
+      export HIP_DIR="$HOME/hip"
+      export CLR_DIR="$HOME/clr"
+      export HIPCC_DIR="$HOME/HIPCC"
+      export HIPNV_DIR="$HOME/hipother/hipnv"
 
-# Build HIPCC runtime
-cd "$HIPCC_DIR"
-mkdir -p build && cd build && cmake .. && make -j
+      # Build HIPCC runtime
+      cd "$HIPCC_DIR"
+      mkdir -p build && cd build && cmake .. && make -j
 
-# Build HIP
-cd "$CLR_DIR"
-mkdir -p build && cd build
-cmake -DHIP_COMMON_DIR=$HIP_DIR \
-      -DHIP_PLATFORM=nvidia \
-      -DCMAKE_INSTALL_PREFIX=/usr/local \
-      -DHIPCC_BIN_DIR=$HIPCC_DIR/build \
-      -DHIPNV_DIR=$HIPNV_DIR \
-      -DHIP_CATCH_TEST=0 \
-      -DCLR_BUILD_HIP=ON \
-      -DCLR_BUILD_OCL=OFF ..
-make -j && make install
+      # Build HIP
+      cd "$CLR_DIR"
+      mkdir -p build && cd build
+      cmake -DHIP_COMMON_DIR=$HIP_DIR \
+            -DHIP_PLATFORM=nvidia \
+            -DCMAKE_INSTALL_PREFIX=/usr/local \
+            -DHIPCC_BIN_DIR=$HIPCC_DIR/build \
+            -DHIPNV_DIR=$HIPNV_DIR \
+            -DHIP_CATCH_TEST=0 \
+            -DCLR_BUILD_HIP=ON \
+            -DCLR_BUILD_OCL=OFF ..
+      make -j && make install
 
-# Install hipfft
-cd $HOME
-git clone -b rocm-6.0.2 https://github.com/ROCm/hipFFT.git
-mkdir -p hipFFT/build && cd hipFFT/build
-HIP_PLATFORM=nvidia cmake -DCMAKE_CXX_COMPILER=g++ \
-                          -DCMAKE_BUILD_TYPE=Release \
-                          -DCMAKE_INSTALL_PREFIX=/usr/local \
-                          -DBUILD_WITH_LIB=CUDA -L ..
-make -j && make install
+      # Install hipfft
+      cd $HOME
+      git clone -b rocm-6.1.0 https://github.com/ROCm/hipFFT.git
+      mkdir -p hipFFT/build && cd hipFFT/build
+      HIP_PLATFORM=nvidia cmake -DCMAKE_CXX_COMPILER=g++ \
+                              -DCMAKE_BUILD_TYPE=Release \
+                              -DCMAKE_INSTALL_PREFIX=/usr/local \
+                              -DBUILD_WITH_LIB=CUDA -L ..
+      make -j && make install
+fi
 
+if [ "$HIP_PLATFORM" = "amd" ]; then
+      # https://rocm.docs.amd.com/projects/HIP/en/latest/developer_guide/build.html
+      # Limit version to 5.6 as random locks occur on 6.x
+      # See: https://github.com/ROCm/hipFFT/issues/91
+
+      # 5.6.1
+      wget https://repo.radeon.com/amdgpu-install/5.6.1/ubuntu/jammy/amdgpu-install_5.6.50601-1_all.deb
+      apt install -y ./amdgpu-install_5.6.50601-1_all.deb
+      apt update && apt install -y rocm-hip-sdk
+fi
