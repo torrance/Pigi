@@ -3,6 +3,7 @@
 #include <hip/hip_runtime.h>
 
 #pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wunknown-warning-option"
 #pragma GCC diagnostic ignored "-Wuse-after-free"
 
 /**
