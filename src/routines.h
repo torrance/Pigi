@@ -321,6 +321,10 @@ void cleanWorker(
                 );
             }();
 
+            // Let fieldid=0 partition and sort data first, since sorting manipulates
+            // the underlying data
+            if (fieldid != 0) barrier.arrive_and_wait();
+
             // Partition data
             auto workunits = [&] {
                 Logger::info("Partitioning data...");
@@ -342,6 +346,13 @@ void cleanWorker(
 
                 return workunits;
             }();
+
+            // Sort uvdata optimally for field 0 only
+            if (fieldid == 0) {
+                Logger::info("Optimizing order of uvdata");
+                uvsort(workunits);
+                barrier.arrive_and_wait(); // Wait for data sorting to finish
+            }
 
             Logger::info("Constructing average beam...");
             auto beamPower = mkAvgAtermPower<StokesI, P>(workunits, gridconf);

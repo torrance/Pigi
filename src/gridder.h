@@ -238,12 +238,27 @@ void gridder(
 
                 const UVWOrigin origin {workunit->u0, workunit->v0, workunit->w0};
 
-                // Assemble uvdata from pointers and transfer to host
-                HostArray<UVDatum<S>, 1> uvdata_h(workunit->data.size());
-                for (size_t i {}; const auto uvdatumptr : workunit->data) {
-                    uvdata_h[i++] = *uvdatumptr;
+                // Allocate memory for uvdata on device
+                DeviceArray<UVDatum<S>, 1> uvdata_d(workunit->data.size());
+
+                // Transfer uvdata host -> device using optimal strategy
+                if (workunit->iscontiguous()) {
+                    // If uvdata is sorted, we can avoid a bunch of pointer lookups,
+                    // and perform a memcopy on the contiguous memory segment.
+                    HostSpan<UVDatum<S>, 1> uvdata_h(
+                        {static_cast<long long>(workunit->data.size())},
+                        workunit->data.front()
+                    );
+                    copy(uvdata_d, uvdata_h);
+                } else {
+                    // Otherise assemble uvdata from (out of order) pointers
+                    // and transfer to host
+                    HostArray<UVDatum<S>, 1> uvdata_h(workunit->data.size());
+                    for (size_t i {}; const auto uvdatumptr : workunit->data) {
+                        uvdata_h[i++] = *uvdatumptr;
+                    }
+                    copy(uvdata_d, uvdata_h);
                 }
-                const DeviceArray<UVDatum<S>, 1> uvdata_d {uvdata_h};
 
                 // Retrieve A terms that have already been sent to device
                 const auto& Aleft = Aterms.at(workunit->Aleft);

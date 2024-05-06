@@ -218,12 +218,27 @@ void degridder(
                 // maybe is a std::optional; let's get the value
                 auto workunit = *maybe;
 
-                // Assemble uvdata from pointers and transfer to host
-                HostArray<UVDatum<S>, 1> uvdata_h(workunit->data.size());
-                for (size_t i {}; const auto uvdatumptr : workunit->data) {
-                    uvdata_h[i++] = *uvdatumptr;
+                // Allocate memory for uvdata on device
+                DeviceArray<UVDatum<S>, 1> uvdata_d(workunit->data.size());
+
+                // Transfer uvdata data host->device
+                bool iscontiguous = workunit->iscontiguous();
+                if (iscontiguous) {
+                    // If uvdata is sorted, we can avoid a bunch of pointer lookups,
+                    // and perform a memcopy on the contiguous memory segment.
+                    HostSpan<UVDatum<S>, 1> uvdata_h(
+                        {static_cast<long long>(workunit->data.size())},
+                        workunit->data.front()
+                    );
+                    copy(uvdata_d, uvdata_h);
+                } else {
+                    // Assemble uvdata from (out of order) pointers and transfer to host
+                    HostArray<UVDatum<S>, 1> uvdata_h(workunit->data.size());
+                    for (size_t i {}; const auto uvdatumptr : workunit->data) {
+                        uvdata_h[i++] = *uvdatumptr;
+                    }
+                    copy(uvdata_d, uvdata_h);
                 }
-                const DeviceArray<UVDatum<S>, 1> uvdata_d {uvdata_h};
 
                 // Retrieve A terms that have already been sent to device
                 const auto& Aleft = Aterms.at(workunit->Aleft);
@@ -255,10 +270,19 @@ void degridder(
                     subgrid, gridconf.subgrid(), degridop
                 );
 
-                // Transfer data back to host
-                copy(uvdata_h, uvdata_d);
-                for (size_t i {}; const auto& uvdatum : uvdata_h) {
-                    *(workunit->data[i++]) = uvdatum;
+                // Transfer data back to host, once again using the optimal strategy
+                // depending on whether host data is contiguous
+                if (iscontiguous) {
+                    HostSpan<UVDatum<S>, 1> uvdata_h(
+                        {static_cast<long long>(workunit->data.size())},
+                        workunit->data.front()
+                    );
+                    copy(uvdata_h, uvdata_d);
+                } else {
+                    HostArray<UVDatum<S>, 1> uvdata_h {uvdata_d};
+                    for (size_t i {}; const auto& uvdatum : uvdata_h) {
+                        *(workunit->data[i++]) = uvdatum;
+                    }
                 }
             }
 

@@ -321,11 +321,11 @@ TEST_CASE("Widefield inversion", "[widefield]") {
     auto gridorigin = mset.phaseCenter();
 
     fmt::println("IDG imaging...");
-    auto workunits = partition(
+    auto workunits = uvsort(partition(
         uvdata,
         gridconf,
         Aterms<P>{beam.gridResponse(gridconf.subgrid(), gridorigin, mset.midfreq())}
-    );
+    ));
     auto img = invert<StokesI, P>(workunits, gridconf);
 
     fmt::println("Direct DT imaging...");
@@ -474,7 +474,7 @@ TEMPLATE_TEST_CASE_SIG(
     }
 
     auto Aterm = beam.gridResponse(gridconf.subgrid(), gridorigin, freq);
-    auto workunits = partition(uvdata, gridconf, Aterms<Q>(Aterm));
+    auto workunits = uvsort(partition(uvdata, gridconf, Aterms<Q>(Aterm)));
     auto img = invert<StokesI, Q>(workunits, gridconf);
 
     // Correct for beam
@@ -604,9 +604,9 @@ TEMPLATE_TEST_CASE_SIG(
     // Predict using IDG
     auto aterm = beam.gridResponse(gridconf.subgrid(), phaseCenter, freq);
 
-    auto workunits = partition(
+    auto workunits = uvsort(partition(
         uvdata, gridconf, Aterms<Q>(aterm)
-    );
+    ));
 
     predict<StokesI<Q>, Q>(
         workunits, skymap, gridconf, DegridOp::Replace
