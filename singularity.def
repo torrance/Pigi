@@ -101,7 +101,7 @@ if [ "$HIP_PLATFORM" = "nvidia" ]; then
       cd $HOME
       git clone -b "$ROCM_BRANCH" https://github.com/ROCm-Developer-Tools/hip.git
       git clone -b "$ROCM_BRANCH" https://github.com/ROCm-Developer-Tools/clr.git
-      git clone -b "$ROCM_BRANCH" https://github.com/ROCm-Developer-Tools/HIPCC.git
+      git clone -b "rocm-6.0.x" https://github.com/ROCm-Developer-Tools/HIPCC.git
       git clone -b "$ROCM_BRANCH" https://github.com/ROCm/hipother.git
       export HIP_DIR="$HOME/hip"
       export CLR_DIR="$HOME/clr"
