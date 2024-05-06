@@ -156,7 +156,7 @@ auto partition(
  * use of MMapAllocator.
  */
 template <typename S>
-auto& uvsort(std::vector<WorkUnit<S>>& workunits) {
+void uvsort(std::vector<WorkUnit<S>>& workunits) {
     // Find base pointer to block allocation
     // and flatten ptrs into single vector
     UVDatum<S>* initptr = workunits.front().data.front();
@@ -196,6 +196,4 @@ auto& uvsort(std::vector<WorkUnit<S>>& workunits) {
             ++offset;
         }
     }
-
-    return workunits;
 }

@@ -110,7 +110,8 @@ TEMPLATE_TEST_CASE("Invert", "[invert]", float, double) {
 
     // Convert to TestType precision
     auto uvdata = mset.data<TestType>();
-    auto workunits = uvsort(partition(uvdata, gridconf, Aterms<TestType>(Aterm)));
+    auto workunits = partition(uvdata, gridconf, Aterms<TestType>(Aterm));
+    uvsort(workunits);
 
     // Trigger precalculation of kernel configuration
     {
@@ -142,7 +143,8 @@ TEMPLATE_TEST_CASE("Predict", "[predict]", float, double) {
     );
 
     auto uvdata = mset.data<TestType>();
-    auto workunits = uvsort(partition(uvdata, gridconf, Aterms<TestType>(Aterm)));
+    auto workunits = partition(uvdata, gridconf, Aterms<TestType>(Aterm));
+    uvsort(workunits);
 
     // Create skymap
     HostArray<StokesI<TestType>, 2> skymap {gridconf.grid().shape()};
