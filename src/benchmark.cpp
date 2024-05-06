@@ -69,7 +69,7 @@ TEST_CASE("MSet reading and paritioning", "[io]") {
     if (!TESTDATA) { SKIP("TESTDATA path not provided"); }
 
     GridConfig gridconf {
-        .imgNx = 16000, .imgNy = 16000, .imgScalelm = std::sin(deg2rad(15. / 3600)),
+        .imgNx = 8000, .imgNy = 8000, .imgScalelm = std::sin(deg2rad(15. / 3600)),
         .kernelsize = 96, .kernelpadding = 18, .wstep = 25
     };
 
@@ -85,7 +85,7 @@ TEST_CASE("MSet reading and paritioning", "[io]") {
         return mset.data<double>();
     });
 
-    Aterms<double> aterms(Aterm);
+    auto aterms = mkAterms<double>(mset, gridconf.subgrid(), 30, mset.phaseCenter());
 
     auto workunits = simple_benchmark("Partition", 3, [&] {
         return partition<double>(uvdata, gridconf, aterms);
