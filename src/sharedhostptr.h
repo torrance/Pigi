@@ -2,10 +2,6 @@
 
 #include <hip/hip_runtime.h>
 
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wunknown-warning-option"
-#pragma GCC diagnostic ignored "-Wuse-after-free"
-
 /**
  * A shared pointer that only performs reference counting and deallocation on the host.
  * On the device, this simply acts as a pointer.
@@ -85,5 +81,3 @@ SharedHostPtr<T> makesharedhost(Args... args) {
     T* ptr = new T(std::forward<Args>(args)...);
     return SharedHostPtr<T>(ptr);
 }
-
-#pragma GCC diagnostic pop
