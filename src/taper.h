@@ -8,21 +8,21 @@
 #include "util.h"
 
 template <typename T>
-long double kbalpha() {
+double kbalpha() {
     static_assert(static_cast<int>(sizeof(T)) == -1);
     return 0;
 }
 
 template <>
-long double kbalpha<float>() { return 4.2; }
+double kbalpha<float>() { return 4.2; }
 
 template <>
-long double kbalpha<double>() { return 10; }
+double kbalpha<double>() { return 10; }
 
 std::mutex kblock;
 
 template <typename T>
-const auto& kaiserbessel(const GridSpec gridspec, const long double alpha = kbalpha<T>()) {
+const auto& kaiserbessel(const GridSpec gridspec, const double alpha = kbalpha<T>()) {
     std::lock_guard l(kblock);
 
     // Memoise output
@@ -32,16 +32,15 @@ const auto& kaiserbessel(const GridSpec gridspec, const long double alpha = kbal
     }
 
     // Create one-dimensional tapers first. The 2D taper is a product of these 1D tapers.
-    // All intermediate calculations are performed at long double precision.
-    std::vector<long double> xDim(gridspec.Nx);
-    std::vector<long double> yDim(gridspec.Ny);
+    std::vector<double> xDim(gridspec.Nx);
+    std::vector<double> yDim(gridspec.Ny);
 
-    long double pi {::pi_v<long double>};
-    long double norm = std::cyl_bessel_i(0, pi * alpha);
+    double pi {::pi_v<double>};
+    double norm = std::cyl_bessel_i(0, pi * alpha);
 
     for (auto oneDim : {&xDim, &yDim}) {
         for (size_t i {}; i < oneDim->size(); ++i) {
-            long double x {static_cast<long double>(i) / oneDim->size() - 0.5};
+            double x {static_cast<double>(i) / oneDim->size() - 0.5};
             (*oneDim)[i] = std::cyl_bessel_i(
                 0, pi * alpha * std::sqrt(1 - 4 * x * x)
             ) / norm;
