@@ -476,7 +476,7 @@ TEMPLATE_TEST_CASE_SIG(
 
     auto Aterm = beam.gridResponse(gridconf.subgrid(), gridorigin, freq);
     auto workunits = partition(uvdata, gridconf, Aterms<Q>(Aterm));
-    uvsrot(workunits);
+    uvsort(workunits);
     auto img = invert<StokesI, Q>(workunits, gridconf);
 
     // Correct for beam
@@ -614,14 +614,6 @@ TEMPLATE_TEST_CASE_SIG(
     predict<StokesI<Q>, Q>(
         workunits, skymap, gridconf, DegridOp::Replace
     );
-
-    // Flatten workunits back into uvdata and sort back to original order
-    // using the chan attribute
-    for (const auto& workunit : workunits) {
-        for (const auto uvdatumptr : workunit.data) {
-            uvdata[uvdatumptr->chan] = *uvdatumptr;
-        }
-    }
 
     // Create images to compare diff
     auto fullAterms = beam.gridResponse(gridspec, phaseCenter, freq);
