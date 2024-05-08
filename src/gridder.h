@@ -27,10 +27,8 @@ void _gpudift(
     const GridSpec subgridspec
 ) {
     // Set up the shared mem cache
-    const size_t cachesize {256};
-    constexpr int ratio {sizeof(UVDatum<S>) / sizeof(float4)};
-
-    __shared__ float4 _cache[cachesize * ratio];
+    const size_t cachesize {128};
+    __shared__ char _cache[cachesize * sizeof(UVDatum<S>)];
     auto cache = reinterpret_cast<UVDatum<S>*>(_cache);
 
     for (
@@ -47,11 +45,8 @@ void _gpudift(
             const size_t N = min(cachesize, uvdata.size() - i);
 
             // Populate cache
-            // We cast to float4 to allow coalesced memory access to global memory,
-            // and to avoid bank conflicts when writing to shared memory.
-            auto _uvdata = reinterpret_cast<const float4*>(uvdata.data());
-            for (size_t j = threadIdx.x, ibase = i * ratio; j < N * ratio; j += blockDim.x) {
-                _cache[j] = _uvdata[ibase + j];
+            for (size_t j = threadIdx.x; j < N; j += blockDim.x) {
+                cache[j] = uvdata[i + j];
             }
             __syncthreads();
 
@@ -125,7 +120,7 @@ void gpudift(
 ) {
     if (makePSF) {
         auto fn = _gpudift<T, S, true>;
-        int nthreads {256}; // hardcoded to match the cache size
+        int nthreads {128}; // hardcoded to match the cache size
         int nblocks = cld<size_t>(subgridspec.size(), nthreads);
         hipLaunchKernelGGL(
             fn, nblocks, nthreads, 0, hipStreamPerThread,
@@ -134,7 +129,7 @@ void gpudift(
         );
     } else {
         auto fn = _gpudift<T, S, false>;
-        int nthreads {256}; // hardcoded to match the cache size
+        int nthreads {128}; // hardcoded to match the cache size
         int nblocks = cld<size_t>(subgridspec.size(), nthreads);
         hipLaunchKernelGGL(
             fn, nblocks, nthreads, 0, hipStreamPerThread,
@@ -223,7 +218,7 @@ void gridder(
     std::vector<std::thread> threads;
     for (
         size_t i {};
-        i < std::min<size_t>(workunits.size(), std::thread::hardware_concurrency());
+        i < std::min<size_t>(workunits.size(), 4);
         ++i
     ) {
         threads.emplace_back([&] {

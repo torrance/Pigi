@@ -48,9 +48,7 @@ void _gpudft(
 ) {
     // Set up the shared mem cache
     const size_t cachesize {256};
-    constexpr int ratio {sizeof(ComplexLinearData<T>) / sizeof(float4)};
-
-    __shared__ float4 _cache[cachesize * ratio];
+    __shared__ char _cache[cachesize * sizeof(ComplexLinearData<T>)];
     auto cache = reinterpret_cast<ComplexLinearData<T>*>(_cache);
 
     for (
@@ -67,11 +65,8 @@ void _gpudft(
             const size_t N = min(cachesize, subgridspec.size() - i);
 
             // Populate cache
-            // We cast to float4 to allow coalesced memory access to global memory,
-            // and to avoid bank conflicts when writing to shared memory.
-            auto _subgrid = reinterpret_cast<const float4*>(subgrid.data());
-            for (size_t j = threadIdx.x, ibase = i * ratio; j < N * ratio; j += blockDim.x) {
-                _cache[j] = _subgrid[ibase + j];
+            for (size_t j = threadIdx.x; j < N; j += blockDim.x) {
+                cache[j] = subgrid[i + j];
             }
             __syncthreads();
 
@@ -205,7 +200,7 @@ void degridder(
     std::vector<std::thread> threads;
     for (
         size_t i {};
-        i < std::min<size_t>(workunits.size(), std::thread::hardware_concurrency());
+        i < std::min<size_t>(workunits.size(), 4);
         ++i
     ) {
         threads.emplace_back([&] {
