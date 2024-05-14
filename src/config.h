@@ -125,18 +125,18 @@ struct Config {
             this->Nx = find_or(v, "width", this->Nx);
             this->Ny = find_or(v, "height", this->Ny);
 
-            if (this->Nx < 1000) throw std::runtime_error(toml::format_error(
-                "[error] Image width must be at least 1000 px",
-                v.at("width"), "must be at least 1000"
+            if (this->Nx < 256) throw std::runtime_error(toml::format_error(
+                "[error] Image width must be at least 256 px",
+                v.at("width"), "must be at least 256"
             ));
             if (this->Nx % 2 != 0) throw std::runtime_error(toml::format_error(
                 "[error] Image width must be evenly sized",
                 v.at("width"), "must be even"
             ));
 
-            if (this->Ny < 1000) throw std::runtime_error(toml::format_error(
-                "[error] Image height must be at least 1000 px",
-                v.at("height"), "must be at least 1000"
+            if (this->Ny < 256) throw std::runtime_error(toml::format_error(
+                "[error] Image height must be at least 256 px",
+                v.at("height"), "must be at least 256"
             ));
             if (this->Ny % 2 != 0) throw std::runtime_error(toml::format_error(
                 "[error] Image height must be evenly sized",
@@ -152,11 +152,11 @@ struct Config {
             return {
                 {"width", {this->Nx, {
                     " The image size in the horizontal direction.",
-                    " [1000 <= even int: pixel]",
+                    " [256 <= even int: pixel]",
                 }}},
                 {"height", {this->Ny, {
                     " The image size in the vertical direction.",
-                    " [1000 <= even int: pixel]",
+                    " [256 <= even int: pixel]",
                 }}},
                 {"projectioncenter", toml::basic_value<toml::preserve_comments>(
                     this->projectioncenter, {
