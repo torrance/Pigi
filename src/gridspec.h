@@ -155,12 +155,20 @@ struct GridConfig {
     }
 
     GridSpec padded() const {
-        // Upscale to nearest _even_ value
-        return GridSpec::fromScaleLM(
-            imgNx * paddingfactor + int(int(imgNx * paddingfactor) % 2 == 1),
-            imgNy * paddingfactor + int(int(imgNy * paddingfactor) % 2 == 1),
-            imgScalelm, deltal, deltam
-        );
+        long long paddedNx = imgNx * paddingfactor;
+        long long paddedNy = imgNy * paddingfactor;
+
+        // Upscale to nearest 5-smooth number
+        auto issmooth = [] (auto x) -> bool {
+            for (auto p : {2, 3, 5}) {
+                while (x % p == 0) x /= p;
+            }
+            return x == 1;
+        };
+        while (!issmooth(paddedNx)) ++paddedNx;
+        while (!issmooth(paddedNy)) ++paddedNy;
+
+        return GridSpec::fromScaleLM(paddedNx, paddedNy, imgScalelm, deltal, deltam);
     }
 
     GridSpec subgrid() const {
