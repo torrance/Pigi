@@ -86,6 +86,27 @@ TEST_CASE("Matrix tests", "[matrix]") {
     ));
 }
 
+TEST_CASE("FFT and central shifts", "[fft]") {
+    for (auto Nx : {1022, 1024, 1026, 1028}) {
+        for (auto Ny : {1022, 1024, 1026, 1028}) {
+            GridSpec gridspec {.Nx=Nx, .Ny=Ny};
+
+            HostArray<thrust::complex<double>, 2> arr(gridspec.Nx, gridspec.Ny);
+            arr[gridspec.gridToLinear(gridspec.Nx / 2, gridspec.Ny / 2)] = 1;
+            DeviceArray<thrust::complex<double>, 2> arr_d {arr};
+
+            auto plan = fftPlan<thrust::complex<double>>(gridspec);
+            fftExec(plan, arr_d, HIPFFT_FORWARD);
+            copy(arr, arr_d);
+            hipfftDestroy(plan);
+
+            REQUIRE( std::all_of(arr.begin(), arr.end(), [] (auto x) {
+                return std::abs(x.real() - 1) < 1e-14 && std::abs(x.imag() - 0) < 1e-14;
+            }) );
+        }
+    }
+}
+
 TEST_CASE("Toml configuration", "[toml]") {
     // For now, we just test that:
     // 1. the config object can be converted to toml

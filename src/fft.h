@@ -10,25 +10,39 @@
 
 template <typename T>
 __global__
-void _fftshift(DeviceSpan<T, 2> grid, GridSpec gridspec) {
+void _fftshift(DeviceSpan<T, 2> grid, GridSpec gridspec, long long lpx0, long long mpx0) {
     for (
         size_t idx = blockIdx.x * blockDim.x + threadIdx.x;
         idx < gridspec.size();
         idx += blockDim.x * gridDim.x
     ) {
+        // Get grid pixel values and offset to origin
         auto [lpx, mpx] = gridspec.linearToGrid(idx);
+        lpx -= lpx0;
+        mpx -= mpx0;
 
-        auto lfactor {1 - 2 * (lpx % 2)};
-        auto mfactor {1 - 2 * (mpx % 2)};
-
-        grid[idx] *= (lfactor * mfactor);
+        auto factor {1 - 2 * ((lpx + mpx) & 1)};
+        grid[idx] *= factor;
     }
 }
 
+enum class FFTShift { pre, post };
+
 template<typename T>
-void fftshift(DeviceSpan<T, 2> grid) {
+void fftshift(DeviceSpan<T, 2> grid, FFTShift stage) {
     // Create dummy GridSpec so that we have access to linearToGrid() method
     GridSpec gridspec {.Nx=grid.size(0), .Ny=grid.size(1)};
+
+    // In Fourier domain where the power is centered, the checkerboard pattern must
+    // be centered with +1 on the central pixel. However, in the image domain, this
+    // the checkerboard pattern is simply with respect to the 0th pixel. (In practice, it
+    // doesn't matter which domain is which, as long as one of them is offset with respect
+    // to the central pixel).
+    long long lpx0 {}, mpx0 {};
+    if (stage == FFTShift::pre) {
+        lpx0 = gridspec.Nx / 2;
+        mpx0 = gridspec.Ny / 2;
+    }
 
     auto [nblocks, nthreads] = getKernelConfig(
         _fftshift<T>, gridspec.size()
@@ -36,7 +50,7 @@ void fftshift(DeviceSpan<T, 2> grid) {
 
     hipLaunchKernelGGL(
         _fftshift<T>, nblocks, nthreads, 0, hipStreamPerThread,
-        grid, gridspec
+        grid, gridspec, lpx0, mpx0
     );
 }
 
@@ -140,67 +154,67 @@ hipfftHandle fftPlan<StokesI<double>>(const GridSpec gridspec) {
 }
 
 void fftExec(hipfftHandle plan, DeviceSpan<thrust::complex<float>, 2> grid, int direction) {
-    fftshift(grid);
+    fftshift(grid, FFTShift::pre);
     hipfftExecC2C(
         plan,
         (hipfftComplex*) grid.data(),
         (hipfftComplex*) grid.data(),
         direction
     );
-    fftshift(grid);
+    fftshift(grid, FFTShift::post);
 }
 
 void fftExec(hipfftHandle plan, DeviceSpan<thrust::complex<double>, 2> grid, int direction) {
-    fftshift(grid);
+    fftshift(grid, FFTShift::pre);
     hipfftExecZ2Z(
         plan,
         (hipfftDoubleComplex*) grid.data(),
         (hipfftDoubleComplex*) grid.data(),
         direction
     );
-    fftshift(grid);
+    fftshift(grid, FFTShift::post);
 }
 
 void fftExec(hipfftHandle plan, DeviceSpan<ComplexLinearData<float>, 2> grid, int direction) {
-    fftshift(grid);
+    fftshift(grid, FFTShift::pre);
     hipfftExecC2C(
         plan,
         (hipfftComplex*) grid.data(),
         (hipfftComplex*) grid.data(),
         direction
     );
-    fftshift(grid);
+    fftshift(grid, FFTShift::post);
 }
 
 void fftExec(hipfftHandle plan, DeviceSpan<ComplexLinearData<double>, 2> grid, int direction) {
-    fftshift(grid);
+    fftshift(grid, FFTShift::pre);
     hipfftExecZ2Z(
         plan,
         (hipfftDoubleComplex*) grid.data(),
         (hipfftDoubleComplex*) grid.data(),
         direction
     );
-    fftshift(grid);
+    fftshift(grid, FFTShift::post);
 }
 
 void fftExec(hipfftHandle plan, DeviceSpan<StokesI<float>, 2> grid, int direction) {
-    fftshift(grid);
+    fftshift(grid, FFTShift::pre);
     hipfftExecC2C(
         plan,
         (hipfftComplex*) grid.data(),
         (hipfftComplex*) grid.data(),
         direction
     );
-    fftshift(grid);
+    fftshift(grid, FFTShift::post);
 }
 
 void fftExec(hipfftHandle plan, DeviceSpan<StokesI<double>, 2> grid, int direction) {
-    fftshift(grid);
+    fftshift(grid, FFTShift::pre);
     hipfftExecZ2Z(
         plan,
         (hipfftDoubleComplex*) grid.data(),
         (hipfftDoubleComplex*) grid.data(),
         direction
     );
-    fftshift(grid);
+    fftshift(grid, FFTShift::post);
 }
