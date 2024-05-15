@@ -158,15 +158,19 @@ struct GridConfig {
         long long paddedNx = imgNx * paddingfactor;
         long long paddedNy = imgNy * paddingfactor;
 
-        // Upscale to nearest 5-smooth number
+        // Force even padding >= existing size
+        paddedNx = paddedNx + (paddedNx & 1);
+        paddedNy = paddedNy + (paddedNy & 1);
+
+        // Upscale to nearest even 5-smooth number
         auto issmooth = [] (auto x) -> bool {
             for (auto p : {2, 3, 5}) {
                 while (x % p == 0) x /= p;
             }
             return x == 1;
         };
-        while (!issmooth(paddedNx)) ++paddedNx;
-        while (!issmooth(paddedNy)) ++paddedNy;
+        while (!issmooth(paddedNx)) paddedNx += 2;
+        while (!issmooth(paddedNy)) paddedNy += 2;
 
         return GridSpec::fromScaleLM(paddedNx, paddedNy, imgScalelm, deltal, deltam);
     }

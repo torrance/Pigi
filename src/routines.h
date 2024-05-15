@@ -311,6 +311,9 @@ void cleanWorker(
             GPU::getInstance().resetDevice(); // needs to be reset for each new thread
 
             auto gridconf = gridconfs[fieldid];
+            Logger::debug(
+                "Using padded grid {} x {} px", gridconf.padded().Nx, gridconf.padded().Ny
+            );
 
             auto aterms = [&] {
                 // Segfaults occur without out this lock - due to Casacore issues
