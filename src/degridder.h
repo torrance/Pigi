@@ -165,14 +165,12 @@ void _extractSubgrid(
 }
 
 template <typename T, typename S>
-auto extractSubgrid(
+void extractSubgrid(
+    const DeviceSpan<ComplexLinearData<S>, 2> subgrid,
     const DeviceSpan<T, 2> grid,
     const WorkUnit<S>& workunit,
     const GridConfig gridconf
 ) {
-    // Allocate subgrid matrix
-    DeviceArray<ComplexLinearData<S>, 2> subgrid {gridconf.subgrid().shape()};
-
     auto fn = _extractSubgrid<T, S>;
     auto [nblocks, nthreads] = getKernelConfig(
         fn, subgrid.size()
@@ -181,8 +179,6 @@ auto extractSubgrid(
         fn, nblocks, nthreads, 0, hipStreamPerThread,
         subgrid, gridconf.subgrid(), grid, gridconf.padded(), workunit.u0px, workunit.v0px
     );
-
-    return subgrid;
 }
 
 template <typename T, typename S>
@@ -203,9 +199,13 @@ void degridder(
         Aterms.try_emplace(workunit->Aright, *workunit->Aright);
     }
 
-    // Create and enqueue the work units
+    // Create and enqueue the work units, and note the largest allocation
     Channel<WorkUnit<S>*> workunitsChannel;
-    for (auto workunit : workunits) { workunitsChannel.push(workunit); }
+    size_t largestN {};
+    for (auto workunit : workunits) {
+        largestN = std::max(largestN, workunit->data.size());
+        workunitsChannel.push(workunit);
+    }
     workunitsChannel.close();
 
     auto subgridspec = gridconf.subgrid();
@@ -222,12 +222,21 @@ void degridder(
             // Make fft plan for each thread
             auto plan = fftPlan<ComplexLinearData<S>>(gridconf.subgrid());
 
+            // Allocate memory for uvdata on device capable of storing up to the
+            // largest workunit
+            DeviceArray<UVDatum<S>, 1> uvdata_d(largestN);
+
+            // Allocate subgrid on device
+            DeviceArray<ComplexLinearData<S>, 2> subgrid {subgridspec.shape()};
+
             while (auto maybe = workunitsChannel.pop()) {
                 // maybe is a std::optional; let's get the value
                 auto workunit = *maybe;
 
-                // Allocate memory for uvdata on device
-                DeviceArray<UVDatum<S>, 1> uvdata_d(workunit->data.size());
+                // Create span with uvdata_d as backing memory
+                DeviceSpan<UVDatum<S>, 1> uvdata_s(
+                    {static_cast<long long>(workunit->data.size())}, uvdata_d.pointer()
+                );
 
                 // Transfer uvdata data host->device
                 bool iscontiguous = workunit->iscontiguous();
@@ -238,22 +247,22 @@ void degridder(
                         {static_cast<long long>(workunit->data.size())},
                         workunit->data.front()
                     );
-                    copy(uvdata_d, uvdata_h);
+                    copy(uvdata_s, uvdata_h);
                 } else {
                     // Assemble uvdata from (out of order) pointers and transfer to host
                     HostArray<UVDatum<S>, 1> uvdata_h(workunit->data.size());
                     for (size_t i {}; const auto uvdatumptr : workunit->data) {
                         uvdata_h[i++] = *uvdatumptr;
                     }
-                    copy(uvdata_d, uvdata_h);
+                    copy(uvdata_s, uvdata_h);
                 }
 
                 // Retrieve A terms that have already been sent to device
                 const auto& Aleft = Aterms.at(workunit->Aleft);
                 const auto& Aright = Aterms.at(workunit->Aright);
 
-                // Allocate subgrid and extract from grid
-                auto subgrid = extractSubgrid(grid, *workunit, gridconf);
+                // Read the subgrid from grid
+                extractSubgrid(subgrid, grid, *workunit, gridconf);
 
                 // Apply deltal, deltam shift to visibilities
                 map([
@@ -273,7 +282,7 @@ void degridder(
                 }, subgrid, Aleft, Aright, subtaper);
 
                 gpudft<S>(
-                    uvdata_d,
+                    uvdata_s,
                     {workunit->u0, workunit->v0, workunit->w0},
                     subgrid, gridconf.subgrid(), degridop
                 );
@@ -285,9 +294,9 @@ void degridder(
                         {static_cast<long long>(workunit->data.size())},
                         workunit->data.front()
                     );
-                    copy(uvdata_h, uvdata_d);
+                    copy(uvdata_h, uvdata_s);
                 } else {
-                    HostArray<UVDatum<S>, 1> uvdata_h {uvdata_d};
+                    HostArray<UVDatum<S>, 1> uvdata_h {uvdata_s};
                     for (size_t i {}; const auto& uvdatum : uvdata_h) {
                         *(workunit->data[i++]) = uvdatum;
                     }

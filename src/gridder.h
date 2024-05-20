@@ -183,14 +183,14 @@ template <typename T>
 void addsubgrid(
     DeviceSpan<T, 2> grid, const DeviceSpan<T, 2> subgrid,
     const GridSpec gridspec, const GridSpec subgridspec,
-    const long long u0px, const long long v0px
+    const long long u0px, const long long v0px, hipStream_t stream = hipStreamPerThread
 ) {
     auto fn = _addsubgrid<T>;
     auto [nblocks, nthreads] = getKernelConfig(
         fn, subgridspec.size()
     );
     hipLaunchKernelGGL(
-        fn, nblocks, nthreads, 0, hipStreamPerThread,
+        fn, nblocks, nthreads, 0, stream,
         grid, gridspec, subgrid, subgridspec, u0px, v0px
     );
 }
@@ -218,23 +218,41 @@ void gridder(
 
     using Pair = std::tuple<DeviceArray<T, 2>, const WorkUnit<S>*>;
     Channel<const WorkUnit<S>*> workunitsChannel;
-    Channel<Pair> subgridsChannel;
 
-    // Enqueue the work units
-    for (const auto workunit : workunits) { workunitsChannel.push(workunit); }
+    // Enqueue the work units, and note the largest allocation
+    size_t largestN {};
+    for (const auto workunit : workunits) {
+        largestN = std::max(largestN, workunit->data.size());
+        workunitsChannel.push(workunit);
+    }
     workunitsChannel.close();
+
+    hipStream_t baseStream;
+    HIPCHECK( hipStreamCreate(&baseStream) );
 
     std::vector<std::thread> threads;
     for (
         size_t i {};
-        i < std::min<size_t>(workunits.size(), 4);
+        i < std::min<size_t>(workunits.size(), 3);
         ++i
     ) {
         threads.emplace_back([&] {
             GPU::getInstance().resetDevice(); // needs to be reset for each new thread
 
+            // Create an event object to record when the addsubgrid() kernel has
+            // finished, to avoid overwriting the subgrid array before it is fully
+            // read.
+            hipEvent_t addsubgridDone;
+            HIPCHECK( hipEventCreateWithFlags(&addsubgridDone, hipEventBlockingSync) );
+
             // Make FFT plan for each thread
             auto plan = fftPlan<T>(subgridspec);
+
+            // Allocate device data capable of storing up to the largest workunit
+            DeviceArray<UVDatum<S>, 1> uvdata_d(largestN);
+
+            // Allocate subgrid
+            DeviceArray<T, 2> subgrid {subgridspec.Nx, subgridspec.Ny};
 
             while (auto  maybe = workunitsChannel.pop()) {
                 // maybe is a std::optional; let's get the value
@@ -242,8 +260,10 @@ void gridder(
 
                 const UVWOrigin origin {workunit->u0, workunit->v0, workunit->w0};
 
-                // Allocate memory for uvdata on device
-                DeviceArray<UVDatum<S>, 1> uvdata_d(workunit->data.size());
+                // Create span backed by uvdata_d
+                DeviceSpan<UVDatum<S>, 1> uvdata_s{
+                    {static_cast<long long>(workunit->data.size())}, uvdata_d.pointer()
+                };
 
                 // Transfer uvdata host -> device using optimal strategy
                 if (workunit->iscontiguous()) {
@@ -253,27 +273,25 @@ void gridder(
                         {static_cast<long long>(workunit->data.size())},
                         workunit->data.front()
                     );
-                    copy(uvdata_d, uvdata_h);
+                    copy(uvdata_s, uvdata_h);
                 } else {
-                    // Otherise assemble uvdata from (out of order) pointers
+                    // Otherwise assemble uvdata from (out of order) pointers
                     // and transfer to host
                     HostArray<UVDatum<S>, 1> uvdata_h(workunit->data.size());
                     for (size_t i {}; const auto uvdatumptr : workunit->data) {
                         uvdata_h[i++] = *uvdatumptr;
                     }
-                    copy(uvdata_d, uvdata_h);
+                    copy(uvdata_s, uvdata_h);
                 }
 
                 // Retrieve A terms that have already been sent to device
                 const auto& Aleft = Aterms.at(workunit->Aleft);
                 const auto& Aright = Aterms.at(workunit->Aright);
 
-                // Allocate subgrid
-                DeviceArray<T, 2> subgrid {subgridspec.Nx, subgridspec.Ny};
-
-                // DFT
+                // Perform DFT, but first ensure addsubgrid() has completed
+                HIPCHECK( hipEventSynchronize(addsubgridDone) );
                 gpudift<T, S>(
-                    subgrid, Aleft, Aright, origin, uvdata_d, subgridspec, makePSF
+                    subgrid, Aleft, Aright, origin, uvdata_s, subgridspec, makePSF
                 );
 
                 // Apply taper and perform FFT normalization
@@ -294,21 +312,23 @@ void gridder(
                     subgrid *= cispi(-2 * (u * deltal + v * deltam));
                 }, Iota(), subgrid);
 
-                // Sync the stream before we send the subgrid back to the main thread
+                // Sync the stream before we send the subgrid to addsubgrid()
+                // on the steam baseStream
                 HIPCHECK( hipStreamSynchronize(hipStreamPerThread) );
 
-                subgridsChannel.push({std::move(subgrid), workunit});
+                addsubgrid<T>(
+                    grid, subgrid, gridspec, subgridspec,
+                    workunit->u0px, workunit->v0px,
+                    baseStream
+                );
+                HIPCHECK( hipEventRecord(addsubgridDone, baseStream) );
             }
 
             HIPFFTCHECK( hipfftDestroy(plan) );
+            HIPCHECK( hipEventDestroy(addsubgridDone) );
         });
     }
 
-    // Meanwhile, process subgrids and add back to the main grid as the become available
-    for (size_t i {}; i < workunits.size(); ++i) {
-        const auto [subgrid, workunit] = subgridsChannel.pop().value();
-        addsubgrid<T>(grid, subgrid, gridspec, subgridspec, workunit->u0px, workunit->v0px);
-    }
-
     for (auto& t : threads) { t.join(); }
+    HIPCHECK( hipStreamDestroy(baseStream) );
 }
