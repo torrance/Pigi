@@ -46,7 +46,31 @@ void _gpudift(
 
             // Populate cache
             for (size_t j = threadIdx.x; j < N; j += blockDim.x) {
+                // Copy global value to shared memory cache
                 cache[j] = uvdata[i + j];
+
+                // Precompute some values that will be used by all threads
+                UVDatum<S>& uvdatum = cache[j];
+
+                // If making a PSF, replace data with single
+                // point source at image center
+                if constexpr(makePSF) {
+                    // Predict PSF into projection center
+                    S deltal = subgridspec.deltal, deltam = subgridspec.deltam;
+                    S deltan = ndash<S>(deltal, deltam);
+                    auto val = cispi(-2 * (
+                        uvdatum.u * deltal + uvdatum.v * deltam + uvdatum.w * deltan
+                    ));
+                    uvdatum.data = {val, val, val, val};
+                }
+
+                // Offset u, v, w
+                uvdatum.u -= origin.u0;
+                uvdatum.v -= origin.v0;
+                uvdatum.w -= origin.w0;
+
+                // Apply weights to data
+                uvdatum.data *= uvdatum.weights;
             }
             __syncthreads();
 
@@ -58,24 +82,9 @@ void _gpudift(
                 UVDatum<S> uvdatum = cache[j];
 
                 auto phase = cispi(
-                    2 * (
-                        (uvdatum.u - origin.u0) * l +
-                        (uvdatum.v - origin.v0) * m +
-                        (uvdatum.w - origin.w0) * n
-                    )
+                    2 * (uvdatum.u * l + uvdatum.v * m + uvdatum.w * n)
                 );
 
-                if constexpr(makePSF) {
-                    // Predict PSF into projection center
-                    S deltal = subgridspec.deltal, deltam = subgridspec.deltam;
-                    S deltan = ndash<S>(deltal, deltam);
-                    auto val = cispi(-2 * (
-                        uvdatum.u * deltal + uvdatum.v * deltam + uvdatum.w * deltan
-                    ));
-                    uvdatum.data = {val, val, val, val};
-                }
-
-                uvdatum.data *= uvdatum.weights;
                 uvdatum.data *= phase;
                 cell += uvdatum.data;
             }
