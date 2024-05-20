@@ -48,8 +48,12 @@ void _gpudft(
 ) {
     // Set up the shared mem cache
     const size_t cachesize {256};
-    __shared__ char _cache[cachesize * sizeof(ComplexLinearData<T>)];
+    __shared__ char _cache[
+        cachesize * sizeof(ComplexLinearData<T>) +
+        cachesize * sizeof(std::array<T, 3>)
+    ];
     auto cache = reinterpret_cast<ComplexLinearData<T>*>(_cache);
+    auto lmns = reinterpret_cast<std::array<T, 3>*>(cache + cachesize);
 
     for (
         size_t idx = blockIdx.x * blockDim.x + threadIdx.x;
@@ -59,6 +63,11 @@ void _gpudft(
         UVDatum<T> uvdatum;
         if (idx < uvdata.size()) uvdatum = uvdata[idx];
 
+        // Precompute uvw offsets
+        T u = uvdatum.u - origin.u0;
+        T v = uvdatum.v - origin.v0;
+        T w = uvdatum.w - origin.w0;
+
         ComplexLinearData<T> data;
 
         for (size_t i {}; i < subgridspec.size(); i += cachesize) {
@@ -66,17 +75,21 @@ void _gpudft(
 
             // Populate cache
             for (size_t j = threadIdx.x; j < N; j += blockDim.x) {
+                // Load subgrid value
                 cache[j] = subgrid[i + j];
+
+                // Precompute l, m, n and cache values
+                auto [l, m] = subgridspec.linearToSky<T>(i + j);
+                auto n = ndash(l, m);
+                lmns[j] = {l, m, n};
             }
             __syncthreads();
 
             // Cycle through cache
             for (size_t j {}; j < N; ++j) {
-                auto [l, m] = subgridspec.linearToSky<T>(i + j);
+                auto [l, m, n] = lmns[j];
                 auto phase = cispi(-2 * (
-                    (uvdatum.u - origin.u0) * l +
-                    (uvdatum.v - origin.v0) * m +
-                    (uvdatum.w - origin.w0) * ndash(l, m)
+                    u * l + v * m + w * n
                 ));
 
                 // Load subgrid cell from the cache
