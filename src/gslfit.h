@@ -88,7 +88,8 @@ public:
         case GSL_SUCCESS:
             break;
         case GSL_EMAXITER:
-            throw Exception("GSLFit: Fit reached max iterations before convergence");
+            Logger::warning("GSLFit: Fit reached max iterations before convergence.");
+            break;
         case GSL_ENOPROG:
             throw Exception(
                 "GSLFit: Fit did not converge "
