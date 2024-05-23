@@ -156,6 +156,24 @@ inline auto matmul(const LinearData<T>& lhs, const LinearData<S>& rhs) {
     };
 }
 
+template <typename P>
+__device__
+inline void atomicAdd(LinearData<P>* const x, const LinearData<P>& y) {
+    atomicAdd(&x->xx, y.xx);
+    atomicAdd(&x->yx, y.yx);
+    atomicAdd(&x->xy, y.xy);
+    atomicAdd(&x->yy, y.yy);
+}
+
+template <typename P>
+__device__
+inline void atomicSub(LinearData<P>* const x, const LinearData<P>& y) {
+    atomicAdd(&x->xx, -y.xx);
+    atomicAdd(&x->yx, -y.yx);
+    atomicAdd(&x->xy, -y.xy);
+    atomicAdd(&x->yy, -y.yy);
+}
+
 template <typename T>
 struct StokesI {
     thrust::complex<T> I {};
@@ -227,6 +245,6 @@ P abs(StokesI<P> x) { return thrust::abs(x.I); }
 
 template <typename P>
 __device__
-inline void atomicAdd(StokesI<P>* x, StokesI<P>& y) {
+inline void atomicAdd(StokesI<P>* const x, const StokesI<P>& y) {
     atomicAdd(&x->I, y.I);
 }

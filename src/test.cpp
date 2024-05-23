@@ -633,7 +633,7 @@ TEMPLATE_TEST_CASE_SIG(
     uvsort(workunits);
 
     predict<StokesI<Q>, Q>(
-        workunits, skymap, gridconf, DegridOp::Replace
+        workunits, skymap, gridconf, DegridOp::Add
     );
 
     // Create images to compare diff

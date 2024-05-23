@@ -14,28 +14,7 @@
 #include "uvdatum.h"
 #include "workunit.h"
 
-enum class DegridOp {Replace, Subtract, Add};
-
-template <typename S>
-__host__ __device__ inline void degridop_replace(
-    ComplexLinearData<S>& olddata, const ComplexLinearData<S>& newdata
-) {
-    olddata = newdata;
-}
-
-template <typename S>
-__host__ __device__ inline void degridop_add(
-    ComplexLinearData<S>& olddata, const ComplexLinearData<S>& newdata
-) {
-    olddata += newdata;
-}
-
-template <typename S>
-__host__ __device__ inline void degridop_subtract(
-    ComplexLinearData<S>& olddata, const ComplexLinearData<S>& newdata
-) {
-    olddata -= newdata;
-}
+enum class DegridOp {Subtract, Add};
 
 template <typename T>
 __global__
@@ -47,7 +26,7 @@ void _gpudft(
     const DegridOp degridop
 ) {
     // Set up the shared mem cache
-    const size_t cachesize {256};
+    const size_t cachesize {128};
     __shared__ char _cache[
         cachesize * sizeof(ComplexLinearData<T>) +
         cachesize * sizeof(std::array<T, 3>)
@@ -70,7 +49,7 @@ void _gpudft(
 
         ComplexLinearData<T> data;
 
-        for (size_t i {}; i < subgridspec.size(); i += cachesize) {
+        for (size_t i {blockIdx.y * cachesize}; i < subgridspec.size(); i += (gridDim.y * cachesize)) {
             const size_t N = min(cachesize, subgridspec.size() - i);
 
             // Populate cache
@@ -103,19 +82,16 @@ void _gpudft(
             __syncthreads();
         }
 
-        switch (degridop) {
-        case DegridOp::Replace:
-            degridop_replace(uvdatum.data, data);
-            break;
-        case DegridOp::Add:
-            degridop_add(uvdatum.data, data);
-            break;
-        case DegridOp::Subtract:
-            degridop_subtract(uvdatum.data, data);
-            break;
+        if (idx < uvdata.size()) {
+            switch (degridop) {
+            case DegridOp::Add:
+                atomicAdd(&uvdata[idx].data, data);
+                break;
+            case DegridOp::Subtract:
+                atomicSub(&uvdata[idx].data, data);
+                break;
+            }
         }
-
-        if (idx < uvdata.size()) uvdata[idx] = uvdatum;
     }
 }
 
@@ -128,10 +104,17 @@ void gpudft(
     const DegridOp degridop
 ) {
     auto fn = _gpudft<T>;
-    int nthreads {256};
-    int nblocks = cld<size_t>(uvdata.size(), nthreads);
+
+    // x-dimension distributes uvdata
+    int nthreadsx {128};
+    int nblocksx = cld<size_t>(uvdata.size(), nthreadsx);
+
+    // y-dimension breaks the subgrid down into 8 blocks
+    int nthreadsy {1};
+    int nblocksy {8};
+
     hipLaunchKernelGGL(
-        fn, nblocks, nthreads, 0, hipStreamPerThread,
+        fn, dim3(nblocksx, nblocksy), dim3(nthreadsx, nthreadsy), 0, hipStreamPerThread,
         uvdata, origin, subgrid, subgridspec, degridop
     );
 }

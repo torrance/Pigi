@@ -108,7 +108,7 @@ inline thrust::complex<T> conj(const thrust::complex<T>& x) { return thrust::con
 
 template <typename T>
 __device__
-void atomicAdd(thrust::complex<T>* x, thrust::complex<T>& y) {
+void atomicAdd(thrust::complex<T>* const x, const thrust::complex<T>& y) {
     atomicAdd(reinterpret_cast<T*>(x) + 0, y.real());
     atomicAdd(reinterpret_cast<T*>(x) + 1, y.imag());
 }

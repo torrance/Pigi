@@ -153,13 +153,13 @@ TEMPLATE_TEST_CASE("Predict", "[predict]", float, double) {
     {
         HostSpan<WorkUnit<TestType>, 1> oneworkunit({1}, &workunits.back());
         predict<StokesI<TestType>, TestType>(
-            oneworkunit, skymap, gridconf, DegridOp::Replace
+            oneworkunit, skymap, gridconf, DegridOp::Add
         );
     }
 
     simple_benchmark("Predict", 1, [&] {
         predict<StokesI<TestType>, TestType>(
-            workunits, skymap, gridconf, DegridOp::Replace
+            workunits, skymap, gridconf, DegridOp::Add
         );
         return true;
     });
@@ -262,7 +262,7 @@ TEMPLATE_TEST_CASE("gpudft kernel", "[gpudft]", float, double) {
     simple_benchmark("gpudft", 1, [&] {
         for (size_t i {}; i < 25; ++i) {
             gpudft<TestType>(
-                uvdata_ds[i], origin, subgrid_ds[i], subgridspec, DegridOp::Replace
+                uvdata_ds[i], origin, subgrid_ds[i], subgridspec, DegridOp::Add
             );
         }
         HIPCHECK( hipStreamSynchronize(hipStreamPerThread) );
