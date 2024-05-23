@@ -41,7 +41,11 @@ void _gpudift(
 
         ComplexLinearData<S> cell {};
 
-        for (size_t i {}; i < uvdata.size(); i += cachesize) {
+        for (
+            size_t i {blockIdx.y * cachesize};
+            i < uvdata.size();
+            i += (gridDim.y * cachesize)
+        ) {
             const size_t N = min(cachesize, uvdata.size() - i);
 
             // Populate cache
@@ -112,7 +116,7 @@ void _gpudift(
         }
 
         if (idx < subgridspec.size()) {
-            subgrid[idx] = output;
+            atomicAdd(subgrid.data() + idx, output);
         }
     }
 }
@@ -127,21 +131,28 @@ void gpudift(
     const GridSpec subgridspec,
     const bool makePSF
 ) {
+    // x-dimension corresponds to cells in the subgrid
+    int nthreadsx {128}; // hardcoded to match the cache size
+    int nblocksx = cld<size_t>(subgridspec.size(), nthreadsx);
+
+    // y-dimension breaks down chunks of uvdata necessary to increase occupancy
+    // but we cap the blocks at 12 which already gives good occupancy
+    int nthreadsy {1};
+    int nblocksy = std::min(12UL, cld<size_t>(uvdata.size(), nthreadsx));
+
     if (makePSF) {
         auto fn = _gpudift<T, S, true>;
-        int nthreads {128}; // hardcoded to match the cache size
-        int nblocks = cld<size_t>(subgridspec.size(), nthreads);
         hipLaunchKernelGGL(
-            fn, nblocks, nthreads, 0, hipStreamPerThread,
+            fn, dim3(nblocksx, nblocksy, 1), dim3(nthreadsx, nthreadsy, 1),
+            0, hipStreamPerThread,
             subgrid, Aleft, Aright,
             origin, uvdata, subgridspec
         );
     } else {
         auto fn = _gpudift<T, S, false>;
-        int nthreads {128}; // hardcoded to match the cache size
-        int nblocks = cld<size_t>(subgridspec.size(), nthreads);
         hipLaunchKernelGGL(
-            fn, nblocks, nthreads, 0, hipStreamPerThread,
+            fn, dim3(nblocksx, nblocksy, 1), dim3(nthreadsx, nthreadsy, 1),
+            0, hipStreamPerThread,
             subgrid, Aleft, Aright,
             origin, uvdata, subgridspec
         );

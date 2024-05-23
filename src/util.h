@@ -107,6 +107,13 @@ __host__ __device__
 inline thrust::complex<T> conj(const thrust::complex<T>& x) { return thrust::conj(x); }
 
 template <typename T>
+__device__
+void atomicAdd(thrust::complex<T>* x, thrust::complex<T>& y) {
+    atomicAdd(reinterpret_cast<T*>(x) + 0, y.real());
+    atomicAdd(reinterpret_cast<T*>(x) + 1, y.imag());
+}
+
+template <typename T>
 __host__ __device__
 inline T ndash(const T l, const T m) {
     auto r2 = std::min<T>(

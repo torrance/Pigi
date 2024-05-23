@@ -224,3 +224,9 @@ struct StokesI {
 template <typename P>
 __host__ __device__
 P abs(StokesI<P> x) { return thrust::abs(x.I); }
+
+template <typename P>
+__device__
+inline void atomicAdd(StokesI<P>* x, StokesI<P>& y) {
+    atomicAdd(&x->I, y.I);
+}
