@@ -61,9 +61,13 @@ namespace boost {
                 payload = HostArray<T, N>(dims);
             }
 
-            for (size_t i {}; i < payload.size(); ++i) {
-                ar & payload.data()[i];
-            }
+            // By casting to char, we assume binary compatibility of the data types
+            // stored in the array. This seems like a safe assumption for any reasonable
+            // cluster.
+            auto arr = make_array(
+                reinterpret_cast<char*>(payload.data()), sizeof(T) * payload.size()
+            );
+            ar & arr;
         }
 
         template <typename Archive, typename T>
