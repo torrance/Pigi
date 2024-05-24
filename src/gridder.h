@@ -85,12 +85,18 @@ void _gpudift(
                 // don't need to worry about bank conflicts
                 UVDatum<S> uvdatum = cache[j];
 
-                auto phase = cispi(
-                    2 * (uvdatum.u * l + uvdatum.v * m + uvdatum.w * n)
-                );
+                auto phase = cispi(2 * (uvdatum.u * l + uvdatum.v * m + uvdatum.w * n));
 
-                uvdatum.data *= phase;
-                cell += uvdatum.data;
+                // Equivalent of: cell += uvdata.data * phase
+                // Written out explicitly to encourage the compiler to use fma operations
+                cell.xx.real(cell.xx.real() + uvdatum.data.xx.real() * phase.real() - uvdatum.data.xx.imag() * phase.imag());
+                cell.xx.imag(cell.xx.imag() + uvdatum.data.xx.real() * phase.imag() + uvdatum.data.xx.imag() * phase.real());
+                cell.yx.real(cell.yx.real() + uvdatum.data.yx.real() * phase.real() - uvdatum.data.yx.imag() * phase.imag());
+                cell.yx.imag(cell.yx.imag() + uvdatum.data.yx.real() * phase.imag() + uvdatum.data.yx.imag() * phase.real());
+                cell.xy.real(cell.xy.real() + uvdatum.data.xy.real() * phase.real() - uvdatum.data.xy.imag() * phase.imag());
+                cell.xy.imag(cell.xy.imag() + uvdatum.data.xy.real() * phase.imag() + uvdatum.data.xy.imag() * phase.real());
+                cell.yy.real(cell.yy.real() + uvdatum.data.yy.real() * phase.real() - uvdatum.data.yy.imag() * phase.imag());
+                cell.yy.imag(cell.yy.imag() + uvdatum.data.yy.real() * phase.imag() + uvdatum.data.yy.imag() * phase.real());
             }
             __syncthreads();
         }

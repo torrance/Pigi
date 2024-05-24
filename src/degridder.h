@@ -67,16 +67,23 @@ void _gpudft(
             // Cycle through cache
             for (size_t j {}; j < N; ++j) {
                 auto [l, m, n] = lmns[j];
-                auto phase = cispi(-2 * (
-                    u * l + v * m + w * n
-                ));
+                auto phase = cispi(-2 * (u * l + v * m + w * n));
 
                 // Load subgrid cell from the cache
                 // This shared mem load is broadcast across the warp and so we
                 // don't need to worry about bank conflicts
                 auto cell = cache[j];
-                cell *= phase;
-                data += cell;
+
+                // Equivalent of: data += cell * phase
+                // Written out explicitly to encourage the compiler to use fma operations
+                data.xx.real(data.xx.real() + cell.xx.real() * phase.real() - cell.xx.imag() * phase.imag());
+                data.xx.imag(data.xx.imag() + cell.xx.real() * phase.imag() + cell.xx.imag() * phase.real());
+                data.yx.real(data.yx.real() + cell.yx.real() * phase.real() - cell.yx.imag() * phase.imag());
+                data.yx.imag(data.yx.imag() + cell.yx.real() * phase.imag() + cell.yx.imag() * phase.real());
+                data.xy.real(data.xy.real() + cell.xy.real() * phase.real() - cell.xy.imag() * phase.imag());
+                data.xy.imag(data.xy.imag() + cell.xy.real() * phase.imag() + cell.xy.imag() * phase.real());
+                data.yy.real(data.yy.real() + cell.yy.real() * phase.real() - cell.yy.imag() * phase.imag());
+                data.yy.imag(data.yy.imag() + cell.yy.real() * phase.imag() + cell.yy.imag() * phase.real());
             }
 
             __syncthreads();
