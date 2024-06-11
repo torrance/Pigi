@@ -2,6 +2,11 @@
 # Build: singularity build --fakeroot --build-arg platform=nvidia|amd singularity.sif singularity.def
 bootstrap: docker
 From: ubuntu:22.04
+# From: quay.io/pawsey/mpich-base:4.1.2_ubuntu23.04
+
+%environment
+
+export LD_LIBRARY_PATH="/opt/rocm/lib:$LD_LIBRARY_PATH"
 
 %post
 
@@ -11,7 +16,6 @@ export HIP_PLATFORM={{ platform }}
 # Install build/runtime dependencies
 apt update && apt upgrade -y
 DEBIAN_FRONTEND=noninteractive apt install -y \
-    libboost-all-dev \
     wget \
     curl \
     unzip \
@@ -24,18 +28,30 @@ DEBIAN_FRONTEND=noninteractive apt install -y \
     libcfitsio-dev \
     libreadline-dev \
     libncurses-dev \
-    libopenmpi-dev \
     wcslib-dev \
     build-essential \
     cmake \
     libblas-dev \
     liblapack-dev \
-    locales \
+    locales
+
+# libmpi.so will be already present if we use the Pawsey base image
+if ! (ldconfig -v 2>/dev/null | grep libmpi.so); then
+    DEBIAN_FRONTEND=noninteractive apt install -y libmpich-dev
+fi
 
 # Set locale
 sed -i -e 's/# en_US.UTF-8 UTF-8/en_US.UTF-8 UTF-8/' /etc/locale.gen
 dpkg-reconfigure --frontend=noninteractive locales
 update-locale LANG=en_US.UTF-8
+
+# Install libboost
+# We can't use debian packages as we need to build against mpich
+wget https://archives.boost.io/release/1.85.0/source/boost_1_85_0.tar.gz
+tar -xzf boost_1_85_0.tar.gz && cd boost_1_85_0
+sh bootstrap.sh
+echo "using mpi ;" >> project-config.jam
+./b2 --with-mpi --with-program_options --with-serialization --prefix=/usr/local install
 
 # Install Catch2
 cd $HOME
@@ -146,3 +162,6 @@ if [ "$HIP_PLATFORM" = "amd" ]; then
       apt install -y ./amdgpu-install_5.6.50601-1_all.deb
       apt update && apt install -y rocm-hip-sdk
 fi
+
+# Clean up root
+rm -rf /root/*

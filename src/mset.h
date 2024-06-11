@@ -351,8 +351,7 @@ public:
                     data.yy = *dataIter; ++dataIter;
 
                     if (!weights.isfinite() || !data.isfinite()) {
-                        data = {};
-                        weights = {};
+                        continue;
                     }
 
                     UVDatum<double> uvdatum {rowmeta, ncol, u, v, w, weights, data};

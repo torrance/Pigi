@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.22)
+cmake_minimum_required(VERSION 3.20)
 
 find_program(CMAKE_CXX_COMPILER "hipcc" PATHS "/opt/rocm/bin")
 
