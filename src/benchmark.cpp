@@ -113,13 +113,7 @@ TEMPLATE_TEST_CASE("Invert", "[invert]", float, double) {
     auto workunits = partition(uvdata, gridconf, Aterms<TestType>(Aterm));
     uvsort(workunits);
 
-    // Trigger precalculation of kernel configuration
-    {
-        HostSpan<WorkUnit<TestType>, 1> oneworkunit({1}, &workunits.back());
-        invert<StokesI, TestType>(oneworkunit, gridconf);
-    }
-
-    simple_benchmark("Invert", 1, [&] {
+    simple_benchmark("Invert", 5, [&] {
         return invert<StokesI, TestType>(
             workunits, gridconf
         );
@@ -149,15 +143,7 @@ TEMPLATE_TEST_CASE("Predict", "[predict]", float, double) {
     // Create skymap
     HostArray<StokesI<TestType>, 2> skymap {gridconf.grid().shape()};
 
-    // Trigger precalculation of kernel configuration
-    {
-        HostSpan<WorkUnit<TestType>, 1> oneworkunit({1}, &workunits.back());
-        predict<StokesI<TestType>, TestType>(
-            oneworkunit, skymap, gridconf, DegridOp::Add
-        );
-    }
-
-    simple_benchmark("Predict", 1, [&] {
+    simple_benchmark("Predict", 5, [&] {
         predict<StokesI<TestType>, TestType>(
             workunits, skymap, gridconf, DegridOp::Add
         );
