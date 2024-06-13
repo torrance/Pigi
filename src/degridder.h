@@ -19,7 +19,7 @@ enum class DegridOp {Subtract, Add};
 template <typename T>
 __global__
 void _gpudft(
-    DeviceSpan<UVDatum<T>, 1> uvdata,
+    DeviceSpan<UVDatum<T>*, 1> uvdata,
     const UVWOrigin<T> origin,
     const DeviceSpan<ComplexLinearData<T>, 2> subgrid,
     const GridSpec subgridspec,
@@ -40,7 +40,7 @@ void _gpudft(
         idx += blockDim.x * gridDim.x
     ) {
         UVDatum<T> uvdatum;
-        if (idx < uvdata.size()) uvdatum = uvdata[idx];
+        if (idx < uvdata.size()) uvdatum = *uvdata[idx];
 
         // Precompute uvw offsets
         T u = uvdatum.u - origin.u0;
@@ -92,10 +92,10 @@ void _gpudft(
         if (idx < uvdata.size()) {
             switch (degridop) {
             case DegridOp::Add:
-                atomicAdd(&uvdata[idx].data, data);
+                atomicAdd(&uvdata[idx]->data, data);
                 break;
             case DegridOp::Subtract:
-                atomicSub(&uvdata[idx].data, data);
+                atomicSub(&uvdata[idx]->data, data);
                 break;
             }
         }
@@ -104,7 +104,7 @@ void _gpudft(
 
 template <typename T>
 void gpudft(
-    DeviceSpan<UVDatum<T>, 1> uvdata,
+    DeviceSpan<UVDatum<T>*, 1> uvdata,
     const UVWOrigin<T> origin,
     const DeviceSpan<ComplexLinearData<T>, 2> subgrid,
     const GridSpec subgridspec,
@@ -200,6 +200,9 @@ void degridder(
 
     auto subgridspec = gridconf.subgrid();
 
+    // Ensure all memory transfers have completed before spawning theads
+    HIPCHECK( hipStreamSynchronize(hipStreamPerThread) );
+
     std::vector<std::thread> threads;
     for (
         size_t i {};
@@ -216,27 +219,8 @@ void degridder(
                 // maybe is a std::optional; let's get the value
                 auto workunit = *maybe;
 
-                // Allocate memory for uvdata on device
-                DeviceArray<UVDatum<S>, 1> uvdata_d(workunit->data.size());
-
-                // Transfer uvdata data host->device
-                bool iscontiguous = workunit->iscontiguous();
-                if (iscontiguous) {
-                    // If uvdata is sorted, we can avoid a bunch of pointer lookups,
-                    // and perform a memcopy on the contiguous memory segment.
-                    HostSpan<UVDatum<S>, 1> uvdata_h(
-                        {static_cast<long long>(workunit->data.size())},
-                        workunit->data.front()
-                    );
-                    copy(uvdata_d, uvdata_h);
-                } else {
-                    // Assemble uvdata from (out of order) pointers and transfer to host
-                    HostArray<UVDatum<S>, 1> uvdata_h(workunit->data.size());
-                    for (size_t i {}; const auto uvdatumptr : workunit->data) {
-                        uvdata_h[i++] = *uvdatumptr;
-                    }
-                    copy(uvdata_d, uvdata_h);
-                }
+                // Transfer workunit pointers to device
+                DeviceArray<UVDatum<S>*, 1> uvdata_d(workunit->data);
 
                 // Retrieve A terms that have already been sent to device
                 const auto& Aleft = Aterms.at(workunit->Aleft);
@@ -267,21 +251,6 @@ void degridder(
                     {workunit->u0, workunit->v0, workunit->w0},
                     subgrid, gridconf.subgrid(), degridop
                 );
-
-                // Transfer data back to host, once again using the optimal strategy
-                // depending on whether host data is contiguous
-                if (iscontiguous) {
-                    HostSpan<UVDatum<S>, 1> uvdata_h(
-                        {static_cast<long long>(workunit->data.size())},
-                        workunit->data.front()
-                    );
-                    copy(uvdata_h, uvdata_d);
-                } else {
-                    HostArray<UVDatum<S>, 1> uvdata_h {uvdata_d};
-                    for (size_t i {}; const auto& uvdatum : uvdata_h) {
-                        *(workunit->data[i++]) = uvdatum;
-                    }
-                }
             }
 
             HIPFFTCHECK( hipfftDestroy(plan) );

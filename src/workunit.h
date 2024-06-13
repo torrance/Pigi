@@ -9,7 +9,6 @@
 
 #include "aterms.h"
 #include "gridspec.h"
-#include "memmap.h"
 #include "memory.h"
 #include "outputtypes.h"
 #include "uvdatum.h"
@@ -41,14 +40,6 @@ struct WorkUnit {
         }
         return static_cast<LinearData<P>>(w);
     }
-
-    bool iscontiguous() const {
-        if (data.size() <= 1) return true;
-        for (UVDatum<S>* expected = data[0]; UVDatum<S>* ptr : data) {
-            if (expected++ != ptr) return false;
-        }
-        return true;
-    };
 };
 
 /**
@@ -147,53 +138,4 @@ auto partition(
     }
 
     return workunits;
-}
-
-/**
- * sort() is a dangerous function! It sorts the underlying data pointers in WorkUnit.data
- * to be contiguous. IT ASSUMES that all WorkUnit.data pointers form part of a single,
- * contiguous block allocation. This is only the case when using mset.data() and its
- * use of MMapAllocator.
- */
-template <typename S>
-void uvsort(std::vector<WorkUnit<S>>& workunits) {
-    // Find base pointer to block allocation
-    // and flatten ptrs into single vector
-    UVDatum<S>* initptr = workunits.front().data.front();
-    std::vector<UVDatum<S>*> ptrs;
-    for (auto& workunit : workunits) {
-        for (auto ptr : workunit.data) {
-            initptr = std::min(initptr, ptr);
-            ptrs.push_back(ptr);
-        }
-    }
-
-    // Sort
-    for (size_t i {}; i < ptrs.size(); ++i) {
-        size_t idx {i};
-        size_t nextidx = ptrs[i] - initptr;
-
-        // If uvdatumptr is already correct, do nothing
-        if (idx == nextidx) continue;
-
-        // Otherwise, we loop through the cycle, swapping pointers until all
-        // are in their correct position
-        while (nextidx != i) {
-            std::swap(*ptrs[idx], *ptrs[nextidx]);
-            ptrs[idx] = initptr + idx;
-
-            // Update idx, nextidx
-            idx = nextidx;
-            nextidx = ptrs[nextidx] - initptr;
-        }
-        ptrs[idx] = initptr + idx;
-    }
-
-    // Relabel workunit pointers to be sequential
-    for (size_t offset {}; auto& workunit : workunits) {
-        for (auto& ptr : workunit.data) {
-            ptr = initptr + offset;
-            ++offset;
-        }
-    }
 }

@@ -23,7 +23,7 @@ void _gpudift(
     const DeviceSpan< ComplexLinearData<S>, 2 > Aleft,
     const DeviceSpan< ComplexLinearData<S>, 2 > Aright,
     const UVWOrigin<S> origin,
-    const DeviceSpan< UVDatum<S>, 1 > uvdata,
+    const DeviceSpan< UVDatum<S>*, 1 > uvdata,
     const GridSpec subgridspec
 ) {
     // Set up the shared mem cache
@@ -51,7 +51,7 @@ void _gpudift(
             // Populate cache
             for (size_t j = threadIdx.x; j < N; j += blockDim.x) {
                 // Copy global value to shared memory cache
-                cache[j] = uvdata[i + j];
+                cache[j] = *uvdata[i + j];
 
                 // Precompute some values that will be used by all threads
                 UVDatum<S>& uvdatum = cache[j];
@@ -133,7 +133,7 @@ void gpudift(
     const DeviceSpan< ComplexLinearData<S>, 2 > Aleft,
     const DeviceSpan< ComplexLinearData<S>, 2 > Aright,
     const UVWOrigin<S> origin,
-    const DeviceSpan< UVDatum<S>, 1 > uvdata,
+    const DeviceSpan< UVDatum<S>*, 1 > uvdata,
     const GridSpec subgridspec,
     const bool makePSF
 ) {
@@ -241,6 +241,9 @@ void gridder(
     for (const auto workunit : workunits) { workunitsChannel.push(workunit); }
     workunitsChannel.close();
 
+    // Ensure all memory transfers have completed before spawning theads
+    HIPCHECK( hipStreamSynchronize(hipStreamPerThread) );
+
     std::vector<std::thread> threads;
     for (
         size_t i {};
@@ -259,27 +262,8 @@ void gridder(
 
                 const UVWOrigin origin {workunit->u0, workunit->v0, workunit->w0};
 
-                // Allocate memory for uvdata on device
-                DeviceArray<UVDatum<S>, 1> uvdata_d(workunit->data.size());
-
-                // Transfer uvdata host -> device using optimal strategy
-                if (workunit->iscontiguous()) {
-                    // If uvdata is sorted, we can avoid a bunch of pointer lookups,
-                    // and perform a memcopy on the contiguous memory segment.
-                    HostSpan<UVDatum<S>, 1> uvdata_h(
-                        {static_cast<long long>(workunit->data.size())},
-                        workunit->data.front()
-                    );
-                    copy(uvdata_d, uvdata_h);
-                } else {
-                    // Otherise assemble uvdata from (out of order) pointers
-                    // and transfer to host
-                    HostArray<UVDatum<S>, 1> uvdata_h(workunit->data.size());
-                    for (size_t i {}; const auto uvdatumptr : workunit->data) {
-                        uvdata_h[i++] = *uvdatumptr;
-                    }
-                    copy(uvdata_d, uvdata_h);
-                }
+                // Transfer workunit pointers to device
+                DeviceArray<UVDatum<S>*, 1> uvdata_d(workunit->data);
 
                 // Retrieve A terms that have already been sent to device
                 const auto& Aleft = Aterms.at(workunit->Aleft);

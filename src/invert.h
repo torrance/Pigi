@@ -46,6 +46,26 @@ HostArray<T<S>, 2> invert(
     for (const auto& [w0, wworkunits] : wlayers) {
         Logger::verbose("Processing w={} layer ({}/{})...", w0, ++nwlayer, wlayers.size());
 
+        // Prefetch managed memory to GPU
+        {
+            // Find the bounds of data in this w-layer
+            // If uvdata has been sorted by w value, this will be a contiguous region
+            UVDatum<S>* low = wworkunits.front()->data.front();
+            UVDatum<S>* high = NULL;
+            for (auto workunit : wworkunits) {
+                for (auto ptr : workunit->data) {
+                    std::min(low, ptr);
+                    std::max(high, ptr);
+                }
+            }
+
+            // Now prefetch
+            HIPCHECK( hipMemPrefetchAsync(
+                low, (high - low) * sizeof(UVDatum<S>),
+                GPU::getInstance().getID(), hipStreamPerThread
+            ) );
+        }
+
         wlayerd.zero();
         gridder<T<S>, S>(wlayerd, wworkunits, subtaperd, gridconf, makePSF);
 

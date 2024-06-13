@@ -111,7 +111,6 @@ TEMPLATE_TEST_CASE("Invert", "[invert]", float, double) {
     // Convert to TestType precision
     auto uvdata = mset.data<TestType>();
     auto workunits = partition(uvdata, gridconf, Aterms<TestType>(Aterm));
-    uvsort(workunits);
 
     simple_benchmark("Invert", 5, [&] {
         return invert<StokesI, TestType>(
@@ -138,7 +137,6 @@ TEMPLATE_TEST_CASE("Predict", "[predict]", float, double) {
 
     auto uvdata = mset.data<TestType>();
     auto workunits = partition(uvdata, gridconf, Aterms<TestType>(Aterm));
-    uvsort(workunits);
 
     // Create skymap
     HostArray<StokesI<TestType>, 2> skymap {gridconf.grid().shape()};
@@ -152,7 +150,7 @@ TEMPLATE_TEST_CASE("Predict", "[predict]", float, double) {
 }
 
 TEMPLATE_TEST_CASE("gpudift kernel", "[gpudift]", float, double) {
-    std::vector<UVDatum<TestType>> uvdata_h;
+    std::vector<UVDatum<TestType>, ManagedAllocator<UVDatum<TestType>>> uvdata;
 
     std::mt19937 gen(1234);
     std::uniform_real_distribution<TestType> rand;
@@ -162,7 +160,7 @@ TEMPLATE_TEST_CASE("gpudift kernel", "[gpudift]", float, double) {
         TestType v { (rand(gen) - TestType(0.5)) * 100 };
         TestType w { (rand(gen) - TestType(0.5)) * 100 };
 
-        uvdata_h.push_back(UVDatum<TestType> {
+        uvdata.push_back(UVDatum<TestType> {
             0, 0, u, v, w,
             {rand(gen), rand(gen), rand(gen), rand(gen)},
             {
@@ -172,11 +170,18 @@ TEMPLATE_TEST_CASE("gpudift kernel", "[gpudift]", float, double) {
         });
     }
 
-    std::vector<DeviceArray<UVDatum<TestType>, 1>> uvdata_ds;
-    for (size_t i {}; i < 25; ++i) {
-        uvdata_ds.push_back(
-            DeviceArray<UVDatum<TestType>, 1> {uvdata_h}
-        );
+    // Create 25 copies of uvdata, so that the L1 cache is always cold
+    std::vector<
+        std::vector<UVDatum<TestType>, ManagedAllocator<UVDatum<TestType>>>
+    > uvdata_ds;
+    for (size_t i {}; i < 25; ++i) uvdata_ds.push_back(uvdata);
+
+    // Now assemble the pointers to each uvdatum
+    std::vector<DeviceArray<UVDatum<TestType>*, 1>> uvdata_ptrs;
+    for (auto& uvdata_d : uvdata_ds) {
+        std::vector<UVDatum<TestType>*> ptrs_h;
+        for (auto& uvdatum : uvdata_d) ptrs_h.push_back(&uvdatum);
+        uvdata_ptrs.emplace_back(ptrs_h);
     }
 
     auto subgridspec = GridSpec::fromScaleLM(96, 96, deg2rad(15. / 3600));
@@ -189,9 +194,9 @@ TEMPLATE_TEST_CASE("gpudift kernel", "[gpudift]", float, double) {
     DeviceArray<StokesI<TestType>, 2> subgrid {subgridspec.Nx, subgridspec.Ny};
 
     simple_benchmark("gpudift", 1, [&] {
-        for (size_t i {}; i < 25; ++i) {
+        for (auto& uvdata : uvdata_ptrs) {
             gpudift<StokesI<TestType>, TestType>(
-                subgrid, Aterm_d, Aterm_d, origin, uvdata_ds[i], subgridspec, false
+                subgrid, Aterm_d, Aterm_d, origin, uvdata, subgridspec, false
             );
         }
         HIPCHECK( hipStreamSynchronize(hipStreamPerThread) );
@@ -200,7 +205,7 @@ TEMPLATE_TEST_CASE("gpudift kernel", "[gpudift]", float, double) {
 }
 
 TEMPLATE_TEST_CASE("gpudft kernel", "[gpudft]", float, double) {
-    std::vector<UVDatum<TestType>> uvdata_h;
+    std::vector<UVDatum<TestType>, ManagedAllocator<UVDatum<TestType>>> uvdata;
 
     std::mt19937 gen(1234);
     std::uniform_real_distribution<TestType> rand;
@@ -210,7 +215,7 @@ TEMPLATE_TEST_CASE("gpudft kernel", "[gpudft]", float, double) {
         TestType v { (rand(gen) - TestType(0.5)) * 100 };
         TestType w { (rand(gen) - TestType(0.5)) * 100 };
 
-        uvdata_h.push_back(UVDatum<TestType> {
+        uvdata.push_back(UVDatum<TestType> {
             0, 0, u, v, w,
             {rand(gen), rand(gen), rand(gen), rand(gen)},
             {
@@ -219,6 +224,11 @@ TEMPLATE_TEST_CASE("gpudft kernel", "[gpudft]", float, double) {
             }
         });
     }
+
+    // Assemble pointers for each uvdatum and send to device
+    std::vector<UVDatum<TestType>*> uvdata_ptrs_h;
+    for (auto& uvdatum : uvdata) uvdata_ptrs_h.push_back(&uvdatum);
+    DeviceArray<UVDatum<TestType>*, 1> uvdata_ptrs(uvdata_ptrs_h);
 
     auto subgridspec = GridSpec::fromScaleLM(96, 96, deg2rad(15. / 3600));
     HostArray<ComplexLinearData<TestType>, 2> subgrid_h {subgridspec.Nx, subgridspec.Ny};
@@ -231,13 +241,8 @@ TEMPLATE_TEST_CASE("gpudft kernel", "[gpudft]", float, double) {
         };
     }
 
-    std::vector<DeviceArray<UVDatum<TestType>, 1>> uvdata_ds;
     std::vector<DeviceArray<ComplexLinearData<TestType>, 2>> subgrid_ds;
-
     for (size_t i {}; i < 25; ++i) {
-        uvdata_ds.push_back(
-            DeviceArray<UVDatum<TestType>, 1> {uvdata_h}
-        );
         subgrid_ds.push_back(
             DeviceArray<ComplexLinearData<TestType>, 2> {subgrid_h}
         );
@@ -246,9 +251,9 @@ TEMPLATE_TEST_CASE("gpudft kernel", "[gpudft]", float, double) {
     UVWOrigin<TestType> origin {0, 0, 0};
 
     simple_benchmark("gpudft", 1, [&] {
-        for (size_t i {}; i < 25; ++i) {
+        for (auto& subgrid : subgrid_ds) {
             gpudft<TestType>(
-                uvdata_ds[i], origin, subgrid_ds[i], subgridspec, DegridOp::Add
+                uvdata_ptrs, origin, subgrid, subgridspec, DegridOp::Add
             );
         }
         HIPCHECK( hipStreamSynchronize(hipStreamPerThread) );

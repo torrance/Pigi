@@ -14,7 +14,7 @@
 #include "coordinates.h"
 #include "constants.h"
 #include "logger.h"
-#include "memmap.h"
+#include "managedalloc.h"
 #include "outputtypes.h"
 #include "uvdatum.h"
 
@@ -236,7 +236,7 @@ public:
         return ms.nrow() * (chanhi - chanlo + 1);
     }
 
-    template <typename P, typename Alloc=MMapAllocator<UVDatum<P>>>
+    template <typename P, typename Alloc=ManagedAllocator<UVDatum<P>>>
     std::vector<UVDatum<P>, Alloc> data() const {
         // Pre-allocate the uvdata vector to avoid resizing operations
         // which MMapAllocator doesn't handle well
@@ -359,6 +359,14 @@ public:
                 }  // chan iteration
             }  // nrow iteration
         }  // batch iteration
+
+        // Sort (coarsely) by w value, thus keeping uvdata belonging to one w-layer in a
+        // contiguous region of memory
+        Logger::debug("Sorting uvdata by w value...");
+        std::sort(uvdata.begin(), uvdata.end(), [] (auto& lhs, auto& rhs) {
+            return static_cast<long>(lhs.w) < static_cast<long>(rhs.w);
+        });
+        Logger::debug("Sorting complete");
 
         return uvdata;
     }

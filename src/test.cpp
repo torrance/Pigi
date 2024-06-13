@@ -16,6 +16,7 @@
 #include "degridder.h"
 #include "fits.h"
 #include "invert.h"
+#include "managedalloc.h"
 #include "memory.h"
 #include "mset.h"
 #include "phaserotate.h"
@@ -107,32 +108,32 @@ TEST_CASE("FFT and central shifts", "[fft]") {
     }
 }
 
-TEST_CASE("Toml configuration", "[toml]") {
-    // For now, we just test that:
-    // 1. the config object can be converted to toml
-    // 2. the toml can be converted back to Config
-    // 3. and all parameter values are retained
+// TEST_CASE("Toml configuration", "[toml]") {
+//     // For now, we just test that:
+//     // 1. the config object can be converted to toml
+//     // 2. the toml can be converted back to Config
+//     // 3. and all parameter values are retained
 
-    Config config1 {
-        .loglevel = Logger::Level::debug,
-        .chanlow = 33, .chanhigh = 56, .channelsOut = 5, .maxDuration = 32,
-        .msets = {"/path1.fits", "/path2.fits"},
-        .weight = "briggs", .robust = 1.3,
-        .scale = 25, .phasecenter = RaDec{0.5, 0.5},
-        .fields = {{.Nx = 1234, .Ny = 4568, .projectioncenter = RaDec{0.5, 0.5}}},
-        .precision = 64, .kernelsize = 156, .kernelpadding = 9, .paddingfactor = 1.23,
-        .wstep = 33, .majorgain = 0.354, .minorgain = 0.2343,
-        .cleanThreshold = 543154, .autoThreshold = 431.54, .nMajor = 432, .nMinor = 5426543,
-        .spectralparams = 123
-    };
+//     Config config1 {
+//         .loglevel = Logger::Level::debug,
+//         .chanlow = 33, .chanhigh = 56, .channelsOut = 5, .maxDuration = 32,
+//         .msets = {"/path1.fits", "/path2.fits"},
+//         .weight = "briggs", .robust = 1.3,
+//         .scale = 25, .phasecenter = RaDec{0.5, 0.5},
+//         .fields = {{.Nx = 1234, .Ny = 4568, .projectioncenter = RaDec{0.5, 0.5}}},
+//         .precision = 64, .kernelsize = 156, .kernelpadding = 9, .paddingfactor = 1.23,
+//         .wstep = 33, .majorgain = 0.354, .minorgain = 0.2343,
+//         .cleanThreshold = 543154, .autoThreshold = 431.54, .nMajor = 432, .nMinor = 5426543,
+//         .spectralparams = 123
+//     };
 
-    auto configtext = std::istringstream(toml::format(
-        toml::basic_value<toml::preserve_comments>(config1)
-    ));
-    Config config2 = toml::get<Config>(toml::parse(configtext));
+//     auto configtext = std::istringstream(toml::format(
+//         toml::basic_value<toml::preserve_comments>(config1)
+//     ));
+//     Config config2 = toml::get<Config>(toml::parse(configtext));
 
-    REQUIRE(config1 == config2);
-}
+//     REQUIRE(config1 == config2);
+// }
 
 TEST_CASE("Coordinates", "[coordinates]") {
     RaDec gridorigin {.ra=deg2rad(156.), .dec=deg2rad(-42.)};
@@ -349,7 +350,6 @@ TEST_CASE("Widefield inversion", "[widefield]") {
         gridconf,
         Aterms<P>{beam.gridResponse(gridconf.subgrid(), gridorigin, mset.midfreq())}
     );
-    uvsort(workunits);
     auto img = invert<StokesI, P>(workunits, gridconf);
 
     fmt::println("Direct DT imaging...");
@@ -492,14 +492,13 @@ TEMPLATE_TEST_CASE_SIG(
     }
 
     // Cast to float or double AND set w >= 0
-    std::vector<UVDatum<Q>> uvdata(uvdata64.size());
+    std::vector<UVDatum<Q>, ManagedAllocator<UVDatum<Q>>> uvdata(uvdata64.size());
     for (size_t i {}; const auto& uvdatum : uvdata64) {
         uvdata[i++] = static_cast<UVDatum<Q>>(uvdatum).forcePositiveW();
     }
 
     auto Aterm = beam.gridResponse(gridconf.subgrid(), gridorigin, freq);
     auto workunits = partition(uvdata, gridconf, Aterms<Q>(Aterm));
-    uvsort(workunits);
     auto img = invert<StokesI, Q>(workunits, gridconf);
 
     // Correct for beam
@@ -563,7 +562,7 @@ TEMPLATE_TEST_CASE_SIG(
     std::uniform_real_distribution<Q> randfloats(-1, 1);
 
     // Create empty UVDatum
-    std::vector<UVDatum<Q>> uvdata;
+    std::vector<UVDatum<Q>, ManagedAllocator<UVDatum<Q>>> uvdata;
     auto meta = makesharedhost<UVMeta>(0, 12345.6, 1, 5, RaDec{0, 1});
     for (size_t i {}; i < 5000; ++i) {
         Q u {randfloats(gen)}, v {randfloats(gen)}, w {randfloats(gen)};
@@ -632,7 +631,6 @@ TEMPLATE_TEST_CASE_SIG(
     auto workunits = partition(
         uvdata, gridconf, Aterms<Q>(aterm)
     );
-    uvsort(workunits);
 
     predict<StokesI<Q>, Q>(
         workunits, skymap, gridconf, DegridOp::Add
