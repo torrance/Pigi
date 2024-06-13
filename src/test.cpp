@@ -316,16 +316,18 @@ TEST_CASE("Measurement Set & Partition", "[mset]") {
 }
 
 TEST_CASE("Widefield inversion", "[widefield]") {
+    if (!TESTDATA) { SKIP("TESTDATA path not provided"); }
+
     using P = float;
 
     // Config
     double scale_asec = 15;
     const GridConfig gridconf {
-        .imgNx = 9000, .imgNy = 9000, .imgScalelm = std::sin(deg2rad(scale_asec / 3600)),
+        .imgNx = 12000, .imgNy = 12000, .imgScalelm = std::sin(deg2rad(scale_asec / 3600)),
         .paddingfactor = 1.5, .kernelsize = 128, .kernelpadding = 18, .wstep = 25
     };
 
-    const int oversample {6};
+    const int oversample {16};
     REQUIRE( gridconf.imgNx % oversample == 0 );
 
     MeasurementSet mset({TESTDATA}, MeasurementSet::DataColumn::data, 0, 11);
@@ -523,9 +525,9 @@ TEMPLATE_TEST_CASE_SIG(
     "Predict", "[predict]",
     ((typename Q, typename BEAM, int THRESHOLDF, int THRESHOLDP), Q, BEAM, THRESHOLDF, THRESHOLDP),
     (float, (UniformBeam<float>), 3, -5),
-    (double, (UniformBeam<double>), 2, -12),
+    (double, (UniformBeam<double>), 3, -12),
     (float, (GaussianBeam<float>), 3, -5),
-    (double, (GaussianBeam<double>), 2, -12),
+    (double, (GaussianBeam<double>), 3, -12),
     (float, (MWABeam<float>), 4, -5),
     (double, (MWABeam<double>), 3, -5)
 ) {
