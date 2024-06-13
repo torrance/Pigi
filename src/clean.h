@@ -118,11 +118,10 @@ auto _major(
                 if (fieldid == findnearestfield(imgGridspecs, lmpx).value()) {
                     S val {};
                     for (size_t n {}; n < N; ++n) val += residuals[n][i].I.real();
-                    imgCombined.push_back(val);
+                    imgCombined.push_back(val / N);
                 }
             }
         }
-        for (auto& val : imgCombined) val /= N;
 
         // stddev = sqrt(variance) == sqrt(sum over N (val_N - mean)^2 / N)
         // So we need caculate the mean and variance first
