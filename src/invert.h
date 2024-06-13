@@ -44,7 +44,7 @@ HostArray<T<S>, 2> invert(
 
     int nwlayer {};
     for (const auto& [w0, wworkunits] : wlayers) {
-        Logger::verbose("Processing {}/{} w-layer...", ++nwlayer, wlayers.size());
+        Logger::verbose("Processing w={} layer ({}/{})...", w0, ++nwlayer, wlayers.size());
 
         wlayerd.zero();
         gridder<T<S>, S>(wlayerd, wworkunits, subtaperd, gridconf, makePSF);

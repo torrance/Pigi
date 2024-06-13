@@ -50,7 +50,7 @@ void predict(
 
     int nwlayer {};
     for (auto& [w0, wworkunits] : wlayers) {
-        Logger::verbose("Processing {}/{} w-layer...", ++nwlayer, wlayers.size());
+        Logger::verbose("Processing w={} layer ({}/{})...", w0, ++nwlayer, wlayers.size());
 
         // Apply w-decorrection and copy to wlayer
         map([w0=w0, gridspec=gridspec] __device__ (auto idx, auto img, auto& wlayer) {
