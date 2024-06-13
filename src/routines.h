@@ -367,13 +367,9 @@ void cleanWorker(
             );
 
             // Create psf
-            HostArray<thrust::complex<P>, 2> psf;
-            {
-                // mpi::Lock lock(hive);
-                Logger::info("Constructing PSF...");
-                psf = invert<thrust::complex, P>(workunits, gridconf, true);
-                queen.send(0, fieldid, psf);
-            };
+            Logger::info("Constructing PSF...");
+            auto psf = invert<thrust::complex, P>(workunits, gridconf, true);
+            queen.send(0, fieldid, psf);
             if (hivesize > 1) save(
                 fmt::format("psf-field{:02d}-{:02d}.fits", fieldid + 1, rank + 1), psf,
                 gridconf.grid(), config.phasecenter.value()
@@ -384,13 +380,10 @@ void cleanWorker(
             psf = resize(psf, gridconf.grid(), gridspecPsf);
 
             // Initial inversion
-            HostArray<StokesI<P>, 2> residual;
-            {
-                // mpi::Lock lock(hive);
-                Logger::info("Constructing dirty image...");
-                residual = invert<StokesI, P>(workunits, gridconf);
-                queen.send(0, fieldid, residual);
-            };
+            Logger::info("Constructing dirty image...");
+            auto residual = invert<StokesI, P>(workunits, gridconf);
+            queen.send(0, fieldid, residual);
+
             if (hivesize > 1) save(fmt::format(
                 "dirty-field{:02d}-{:02d}.fits", fieldid + 1, rank + 1
             ), residual, gridconf.grid(), config.phasecenter.value());
@@ -456,12 +449,9 @@ void cleanWorker(
                 barrier.arrive_and_wait();
 
                 // Invert
-                {
-                    // mpi::Lock lock(hive);
-                    Logger::info("Constructing residual image... (major cycle {})", i);
-                    residual = invert<StokesI, P>(workunits, gridconf);
-                    queen.send(0, fieldid, residual);
-                }
+                Logger::info("Constructing residual image... (major cycle {})", i);
+                residual = invert<StokesI, P>(workunits, gridconf);
+                queen.send(0, fieldid, residual);
 
                 // Listen for major loop termination signal from queen
                 queen.recv(0, fieldid, again);
