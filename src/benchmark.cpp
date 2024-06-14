@@ -182,6 +182,9 @@ TEMPLATE_TEST_CASE("gpudift kernel", "[gpudift]", float, double) {
         std::vector<UVDatum<TestType>*> ptrs_h;
         for (auto& uvdatum : uvdata_d) ptrs_h.push_back(&uvdatum);
         uvdata_ptrs.emplace_back(ptrs_h);
+
+        // We've finished reading the data on the host; prefetch to device
+        HIPCHECK( hipMemPrefetchAsync(uvdata_d.data(), uvdata_d.size(), 0, 0) );
     }
 
     auto subgridspec = GridSpec::fromScaleLM(96, 96, deg2rad(15. / 3600));
@@ -229,6 +232,8 @@ TEMPLATE_TEST_CASE("gpudft kernel", "[gpudft]", float, double) {
     std::vector<UVDatum<TestType>*> uvdata_ptrs_h;
     for (auto& uvdatum : uvdata) uvdata_ptrs_h.push_back(&uvdatum);
     DeviceArray<UVDatum<TestType>*, 1> uvdata_ptrs(uvdata_ptrs_h);
+
+    HIPCHECK( hipMemPrefetchAsync(uvdata.data(), uvdata.size(), 0, 0) );
 
     auto subgridspec = GridSpec::fromScaleLM(96, 96, deg2rad(15. / 3600));
     HostArray<ComplexLinearData<TestType>, 2> subgrid_h {subgridspec.Nx, subgridspec.Ny};

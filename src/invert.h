@@ -54,8 +54,8 @@ HostArray<T<S>, 2> invert(
             UVDatum<S>* high = NULL;
             for (auto workunit : wworkunits) {
                 for (auto ptr : workunit->data) {
-                    std::min(low, ptr);
-                    std::max(high, ptr);
+                    low = std::min(low, ptr);
+                    high = std::max(high, ptr);
                 }
             }
 
