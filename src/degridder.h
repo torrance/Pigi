@@ -260,7 +260,7 @@ void degridder(
                 // extremely poorly. By running this as a seperate kernel we ensure the
                 // computation in gpudft() is not stalled.
                 map([] __device__ (auto ptr, auto datum) {
-                    ptr->data = datum;
+                    atomicAdd(&ptr->data, datum);
                 }, uvdata_ptrs, uvdata);
             }
 
