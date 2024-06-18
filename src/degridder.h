@@ -93,10 +93,10 @@ void _gpudft(
         if (idx < uvdata.size()) {
             switch (degridop) {
             case DegridOp::Add:
-                atomicAdd(&output[idx], data);
+                atomicAdd(output.data() + idx, data);
                 break;
             case DegridOp::Subtract:
-                atomicSub(&output[idx], data);
+                atomicSub(output.data() + idx, data);
                 break;
             }
         }
@@ -222,8 +222,8 @@ void degridder(
                 auto workunit = *maybe;
 
                 // Transfer workunit pointers to device and allocate output
-                DeviceArray<UVDatum<S>*, 1> uvdata_d(workunit->data);
-                DeviceArray<ComplexLinearData<S>, 1> output(workunit->data.size());
+                DeviceArray<UVDatum<S>*, 1> uvdata_ptrs(workunit->data);
+                DeviceArray<ComplexLinearData<S>, 1> uvdata(workunit->data.size());
 
                 // Retrieve A terms that have already been sent to device
                 const auto& Aleft = Aterms.at(workunit->Aleft);
@@ -250,7 +250,7 @@ void degridder(
                 }, subgrid, Aleft, Aright, subtaper);
 
                 gpudft<S>(
-                    output, uvdata_d,
+                    uvdata, uvdata_ptrs,
                     {workunit->u0, workunit->v0, workunit->w0},
                     subgrid, gridconf.subgrid(), degridop
                 );
@@ -259,9 +259,9 @@ void degridder(
                 // On some devices (e.g. Radeon W6800) this random-write pattern performs
                 // extremely poorly. By running this as a seperate kernel we ensure the
                 // computation in gpudft() is not stalled.
-                map([] __device__ (auto uvdatum, auto data) {
-                    uvdatum->data = data;
-                }, uvdata_d, output);
+                map([] __device__ (auto ptr, auto datum) {
+                    ptr->data = datum;
+                }, uvdata_ptrs, uvdata);
             }
 
             HIPFFTCHECK( hipfftDestroy(plan) );

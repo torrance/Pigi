@@ -23,7 +23,7 @@ void _gpudift(
     const DeviceSpan< ComplexLinearData<S>, 2 > Aleft,
     const DeviceSpan< ComplexLinearData<S>, 2 > Aright,
     const UVWOrigin<S> origin,
-    const DeviceSpan< UVDatum<S>*, 1 > uvdata,
+    const DeviceSpan< UVDatum<S>, 1 > uvdata,
     const GridSpec subgridspec
 ) {
     // Set up the shared mem cache
@@ -51,7 +51,7 @@ void _gpudift(
             // Populate cache
             for (size_t j = threadIdx.x; j < N; j += blockDim.x) {
                 // Copy global value to shared memory cache
-                cache[j] = *uvdata[i + j];
+                cache[j] = uvdata[i + j];
 
                 // Precompute some values that will be used by all threads
                 UVDatum<S>& uvdatum = cache[j];
@@ -133,7 +133,7 @@ void gpudift(
     const DeviceSpan< ComplexLinearData<S>, 2 > Aleft,
     const DeviceSpan< ComplexLinearData<S>, 2 > Aright,
     const UVWOrigin<S> origin,
-    const DeviceSpan< UVDatum<S>*, 1 > uvdata,
+    const DeviceSpan< UVDatum<S>, 1 > uvdata,
     const GridSpec subgridspec,
     const bool makePSF
 ) {
@@ -262,8 +262,14 @@ void gridder(
 
                 const UVWOrigin origin {workunit->u0, workunit->v0, workunit->w0};
 
-                // Transfer workunit pointers to device
-                DeviceArray<UVDatum<S>*, 1> uvdata_d(workunit->data);
+                // Transfer workunit pointers to device and allocate uvdata memory
+                DeviceArray<UVDatum<S>*, 1> uvdata_ptrs(workunit->data);
+                DeviceArray<UVDatum<S>, 1> uvdata(workunit->data.size());
+
+                // Dereference uvdata prior to the gridding kernel
+                map([] __device__ (auto& uvdatum, auto ptr) {
+                    uvdatum = *ptr;
+                }, uvdata, uvdata_ptrs);
 
                 // Retrieve A terms that have already been sent to device
                 const auto& Aleft = Aterms.at(workunit->Aleft);
@@ -274,7 +280,7 @@ void gridder(
 
                 // DFT
                 gpudift<T, S>(
-                    subgrid, Aleft, Aright, origin, uvdata_d, subgridspec, makePSF
+                    subgrid, Aleft, Aright, origin, uvdata, subgridspec, makePSF
                 );
 
                 // Apply taper and perform FFT normalization
