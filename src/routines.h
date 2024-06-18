@@ -346,6 +346,10 @@ void cleanWorker(
                 return workunits;
             }();
 
+            // Ensure partitioning is complete on all fields (which reads uvdata on the
+            // host) before allowing any worker to start prefetching data off to the GPU
+            barrier.arrive_and_wait();
+
             Logger::info("Constructing average beam...");
             auto beamPower = mkAvgAtermPower<StokesI, P>(workunits, gridconf);
 
