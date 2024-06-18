@@ -254,11 +254,12 @@ TEMPLATE_TEST_CASE("gpudft kernel", "[gpudft]", float, double) {
     }
 
     UVWOrigin<TestType> origin {0, 0, 0};
+    DeviceArray<ComplexLinearData<TestType>, 1> output(25000);
 
     simple_benchmark("gpudft", 1, [&] {
         for (auto& subgrid : subgrid_ds) {
             gpudft<TestType>(
-                uvdata_ptrs, origin, subgrid, subgridspec, DegridOp::Add
+                output, uvdata_ptrs, origin, subgrid, subgridspec, DegridOp::Add
             );
         }
         HIPCHECK( hipStreamSynchronize(hipStreamPerThread) );

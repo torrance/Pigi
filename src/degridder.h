@@ -19,6 +19,7 @@ enum class DegridOp {Subtract, Add};
 template <typename T>
 __global__
 void _gpudft(
+    DeviceSpan<ComplexLinearData<T>, 1> output,
     DeviceSpan<UVDatum<T>*, 1> uvdata,
     const UVWOrigin<T> origin,
     const DeviceSpan<ComplexLinearData<T>, 2> subgrid,
@@ -92,10 +93,10 @@ void _gpudft(
         if (idx < uvdata.size()) {
             switch (degridop) {
             case DegridOp::Add:
-                atomicAdd(&uvdata[idx]->data, data);
+                atomicAdd(&output[idx], data);
                 break;
             case DegridOp::Subtract:
-                atomicSub(&uvdata[idx]->data, data);
+                atomicSub(&output[idx], data);
                 break;
             }
         }
@@ -104,6 +105,7 @@ void _gpudft(
 
 template <typename T>
 void gpudft(
+    DeviceSpan<ComplexLinearData<T>, 1> output,
     DeviceSpan<UVDatum<T>*, 1> uvdata,
     const UVWOrigin<T> origin,
     const DeviceSpan<ComplexLinearData<T>, 2> subgrid,
@@ -122,7 +124,7 @@ void gpudft(
 
     hipLaunchKernelGGL(
         fn, dim3(nblocksx, nblocksy), dim3(nthreadsx, nthreadsy), 0, hipStreamPerThread,
-        uvdata, origin, subgrid, subgridspec, degridop
+        output, uvdata, origin, subgrid, subgridspec, degridop
     );
 }
 
@@ -219,8 +221,9 @@ void degridder(
                 // maybe is a std::optional; let's get the value
                 auto workunit = *maybe;
 
-                // Transfer workunit pointers to device
+                // Transfer workunit pointers to device and allocate output
                 DeviceArray<UVDatum<S>*, 1> uvdata_d(workunit->data);
+                DeviceArray<ComplexLinearData<S>, 1> output(workunit->data.size());
 
                 // Retrieve A terms that have already been sent to device
                 const auto& Aleft = Aterms.at(workunit->Aleft);
@@ -247,10 +250,18 @@ void degridder(
                 }, subgrid, Aleft, Aright, subtaper);
 
                 gpudft<S>(
-                    uvdata_d,
+                    output, uvdata_d,
                     {workunit->u0, workunit->v0, workunit->w0},
                     subgrid, gridconf.subgrid(), degridop
                 );
+
+                // Map output back into uvdata in a separate kernel call
+                // On some devices (e.g. Radeon W6800) this random-write pattern performs
+                // extremely poorly. By running this as a seperate kernel we ensure the
+                // computation in gpudft() is not stalled.
+                map([] __device__ (auto uvdatum, auto data) {
+                    uvdatum->data = data;
+                }, uvdata_d, output);
             }
 
             HIPFFTCHECK( hipfftDestroy(plan) );
