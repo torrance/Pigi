@@ -83,6 +83,6 @@ auto getKernelConfig(T fn, int N, size_t sharedMem=0) {
     }();
 
     return std::make_tuple(
-        std::min<int>(nblocksmax, cld(N, nthreads + 1)), nthreads
+        std::min<int>(nblocksmax, (N + nthreads - 1) / nthreads), nthreads
     );
 };
