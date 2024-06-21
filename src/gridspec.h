@@ -146,7 +146,6 @@ struct GridConfig {
     double paddingfactor {1};
     long long kernelsize {};
     long long kernelpadding {};
-    double wstep {1};
     double deltal {};
     double deltam {};
 

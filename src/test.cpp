@@ -16,6 +16,7 @@
 #include "degridder.h"
 #include "fits.h"
 #include "invert.h"
+#include "logger.h"
 #include "managedalloc.h"
 #include "memory.h"
 #include "mset.h"
@@ -108,32 +109,32 @@ TEST_CASE("FFT and central shifts", "[fft]") {
     }
 }
 
-// TEST_CASE("Toml configuration", "[toml]") {
-//     // For now, we just test that:
-//     // 1. the config object can be converted to toml
-//     // 2. the toml can be converted back to Config
-//     // 3. and all parameter values are retained
+TEST_CASE("Toml configuration", "[toml]") {
+    // For now, we just test that:
+    // 1. the config object can be converted to toml
+    // 2. the toml can be converted back to Config
+    // 3. and all parameter values are retained
 
-//     Config config1 {
-//         .loglevel = Logger::Level::debug,
-//         .chanlow = 33, .chanhigh = 56, .channelsOut = 5, .maxDuration = 32,
-//         .msets = {"/path1.fits", "/path2.fits"},
-//         .weight = "briggs", .robust = 1.3,
-//         .scale = 25, .phasecenter = RaDec{0.5, 0.5},
-//         .fields = {{.Nx = 1234, .Ny = 4568, .projectioncenter = RaDec{0.5, 0.5}}},
-//         .precision = 64, .kernelsize = 156, .kernelpadding = 9, .paddingfactor = 1.23,
-//         .wstep = 33, .majorgain = 0.354, .minorgain = 0.2343,
-//         .cleanThreshold = 543154, .autoThreshold = 431.54, .nMajor = 432, .nMinor = 5426543,
-//         .spectralparams = 123
-//     };
+    Config config1 {
+        .loglevel = Logger::Level::debug,
+        .chanlow = 33, .chanhigh = 56, .channelsOut = 5, .maxDuration = 32,
+        .msets = {"/path1.fits", "/path2.fits"},
+        .weight = "briggs", .robust = 1.3,
+        .scale = 25, .phasecenter = RaDec{0.5, 0.5},
+        .fields = {{.Nx = 1234, .Ny = 4568, .projectioncenter = RaDec{0.5, 0.5}}},
+        .precision = 64, .kernelsize = 156, .kernelpadding = 9, .paddingfactor = 1.23,
+        .majorgain = 0.354, .minorgain = 0.2343,
+        .cleanThreshold = 543154, .autoThreshold = 431.54, .nMajor = 432, .nMinor = 5426543,
+        .spectralparams = 123
+    };
 
-//     auto configtext = std::istringstream(toml::format(
-//         toml::basic_value<toml::preserve_comments>(config1)
-//     ));
-//     Config config2 = toml::get<Config>(toml::parse(configtext));
+    auto configtext = std::istringstream(toml::format(
+        toml::basic_value<toml::preserve_comments>(config1)
+    ));
+    Config config2 = toml::get<Config>(toml::parse(configtext));
 
-//     REQUIRE(config1 == config2);
-// }
+    REQUIRE(config1 == config2);
+}
 
 TEST_CASE("Coordinates", "[coordinates]") {
     RaDec gridorigin {.ra=deg2rad(156.), .dec=deg2rad(-42.)};
@@ -279,7 +280,7 @@ TEST_CASE("Measurement Set & Partition", "[mset]") {
 
     GridConfig gridconf {
         .imgNx=1000, .imgNy=1000, .imgScalelm=std::sin(deg2rad(15. / 3600)),
-        .paddingfactor=1.0, .kernelsize=96, .kernelpadding=18, .wstep=25
+        .paddingfactor=1.0, .kernelsize=96, .kernelpadding=18,
     };
 
     Beam::Uniform<double> beam;
@@ -325,7 +326,7 @@ TEST_CASE("Widefield inversion", "[widefield]") {
     double scale_asec = 15;
     const GridConfig gridconf {
         .imgNx = 12000, .imgNy = 12000, .imgScalelm = std::sin(deg2rad(scale_asec / 3600)),
-        .paddingfactor = 1.5, .kernelsize = 128, .kernelpadding = 18, .wstep = 25
+        .paddingfactor = 1.5, .kernelsize = 128, .kernelpadding = 18,
     };
 
     const int oversample {16};
@@ -406,7 +407,7 @@ TEMPLATE_TEST_CASE_SIG(
     // Config
     const GridConfig gridconf {
         .imgNx = 1000, .imgNy = 1050, .imgScalelm = std::sin(deg2rad(2. / 60)),
-        .paddingfactor = 1.5, .kernelsize = 96, .kernelpadding = 18, .wstep = 25,
+        .paddingfactor = 1.5, .kernelsize = 96, .kernelpadding = 18,
         .deltal = 0.02, .deltam = -0.01
     };
     const GridSpec gridspec = gridconf.grid();
@@ -524,15 +525,15 @@ TEMPLATE_TEST_CASE_SIG(
     "Predict", "[predict]",
     ((typename Q, typename BEAM, int THRESHOLDF, int THRESHOLDP), Q, BEAM, THRESHOLDF, THRESHOLDP),
     (float, (UniformBeam<float>), 3, -5),
-    (double, (UniformBeam<double>), 3, -12),
+    (double, (UniformBeam<double>), 1, -10),
     (float, (GaussianBeam<float>), 3, -5),
-    (double, (GaussianBeam<double>), 3, -12),
+    (double, (GaussianBeam<double>), 1, -10),
     (float, (MWABeam<float>), 4, -5),
     (double, (MWABeam<double>), 3, -5)
 ) {
     const GridConfig gridconf {
         .imgNx = 2000, .imgNy = 1800, .imgScalelm = 1. / (4000 * 20), .paddingfactor = 2,
-        .kernelsize = 96, .kernelpadding = 17, .wstep = 25, .deltal = 0.015, .deltam = -0.01
+        .kernelsize = 96, .kernelpadding = 17, .deltal = 0.015, .deltam = -0.01
     };
     const GridSpec gridspec = gridconf.grid();
     const double freq {150e6};

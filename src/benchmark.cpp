@@ -70,7 +70,7 @@ TEST_CASE("MSet reading and paritioning", "[io]") {
 
     GridConfig gridconf {
         .imgNx = 8000, .imgNy = 8000, .imgScalelm = std::sin(deg2rad(15. / 3600)),
-        .kernelsize = 96, .kernelpadding = 18, .wstep = 25
+        .kernelsize = 96, .kernelpadding = 18
     };
 
     HostArray<ComplexLinearData<double>, 2> Aterm {gridconf.subgrid().shape()};
@@ -97,7 +97,7 @@ TEMPLATE_TEST_CASE("Invert", "[invert]", float, double) {
 
     GridConfig gridconf {
         .imgNx = 8000, .imgNy = 8000, .imgScalelm = std::sin(deg2rad(15. / 3600)),
-        .kernelsize = 96, .kernelpadding = 18, .wstep = 25
+        .kernelsize = 96, .kernelpadding = 18
     };
 
     HostArray<ComplexLinearData<TestType>, 2> Aterm {gridconf.subgrid().shape()};
@@ -124,7 +124,7 @@ TEMPLATE_TEST_CASE("Predict", "[predict]", float, double) {
 
     GridConfig gridconf {
         .imgNx = 8000, .imgNy = 8000, .imgScalelm = std::sin(deg2rad(15. / 3600)),
-        .kernelsize = 96, .kernelpadding = 18, .wstep = 25
+        .kernelsize = 96, .kernelpadding = 18
     };
 
     HostArray<ComplexLinearData<TestType>, 2> Aterm {gridconf.subgrid().shape()};

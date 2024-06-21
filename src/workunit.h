@@ -9,6 +9,7 @@
 
 #include "aterms.h"
 #include "gridspec.h"
+#include "logger.h"
 #include "memory.h"
 #include "outputtypes.h"
 #include "uvdatum.h"
@@ -73,6 +74,38 @@ auto partition(
     // We use the padded gridspec during partitioning
     auto gridspec = gridconf.padded();
 
+    // wstep is the distance between w-layers. We want to choose as large a value as
+    // possible to reduce the number of workunits, but we must ensure that |w - w0|
+    // remains small enough that the subgrid can properly sample the w-term.
+    //
+    // We use a simple heuristic that seems to work (i.e. the tests pass).
+    // The w-component of the measurement equation, exp(2pi i w n') has a 'variable'
+    // frequency, since n' is a function of (l, m). So we take the derivative w.r.t.
+    // l and m to find the 'instantaneous' frequency, and substitute in values that give
+    // the maximum value. We ensure that, in the worst case, each radiating fringe pattern
+    // is sampled at least 3 times.
+    double wstep {std::numeric_limits<double>::max()};
+    {
+        auto subgridspec = gridconf.subgrid();
+
+        std::array<size_t, 4> corners {
+            0,  // bottom left
+            static_cast<size_t>(subgridspec.Nx) - 1,  // bottom right
+            subgridspec.size() - static_cast<size_t>(subgridspec.Nx),  // top left
+            subgridspec.size() - 1  // top right
+        };
+
+        for (size_t i : corners) {
+            auto [maxl, maxm] = subgridspec.linearToSky<double>(i);
+            auto maxn = std::sqrt(1 - maxl * maxl - maxm * maxm);
+
+            // Consider sampling density in both dl, and dm directions
+            wstep = std::min(wstep, maxn / (6 * std::abs(maxl) * subgridspec.scalel));
+            wstep = std::min(wstep, maxn / (6 * std::abs(maxm) * subgridspec.scalem));
+        }
+    }
+    Logger::debug("Setting wstep = {}", wstep);
+
     // Temporarily store workunits in a map to reduce search space during partitioning
     std::unordered_map<
         PartitionKey<S>,
@@ -95,8 +128,8 @@ auto partition(
         // avoid the first interval including negative values. w0 is the midpoint of each
         // respective interval.
         const double w0 {
-            gridconf.wstep * std::floor(uvdatum.w / gridconf.wstep)
-            + 0.5 * gridconf.wstep
+            wstep * std::floor(uvdatum.w / wstep)
+            + 0.5 * wstep
         };
 
         // Search through existing workunits to see if our UVDatum is included in an

@@ -195,7 +195,6 @@ struct Config {
     int kernelsize {128};
     int kernelpadding {18};
     double paddingfactor {1.5};
-    int wstep {20};
 
     // Clean parameters
     float majorgain {0.5};
@@ -239,9 +238,6 @@ struct Config {
         }
         if (paddingfactor < 1) {
             throw std::runtime_error("idg.paddingfactor must be >= 1");
-        }
-        if (wstep <= 0) {
-            throw std::runtime_error("idg.wstep must be > 0");
         }
         if (!(0 < majorgain && majorgain <= 1)) {
             throw std::runtime_error("clean.majorgain must be 0 < value <= 1");
@@ -305,7 +301,6 @@ struct Config {
             this->kernelpadding = find_or(tbl, "kernelpadding", this->kernelpadding);
             this->kernelsize = find_or(tbl, "kernelsize", this->kernelsize);
             this->paddingfactor = find_or(tbl, "paddingfactor", this->paddingfactor);
-            this->wstep = find_or(tbl, "wstep", this->wstep);
         }
 
         if (v.contains("clean")) {
@@ -354,13 +349,6 @@ struct Config {
                     " size = (size * padding factor). This extra padding removes",
                     " inaccuracies that occur due to tapering by pushing the unstable",
                     " values out beyond the field of interest. [1 <= float]",
-                }}},
-                {"wstep", {this->wstep, {
-                    " Partition visibility data by the w value into chunks that are",
-                    " wstep wide. Wider values reduce the number of w-layers that must",
-                    " be processed and reduce overall imaging time. However, above a",
-                    " threshold, larger wstep values will result in sudden and",
-                    " significant errors. [0 < int]"
                 }}},
                 {"precision", {this->precision, {
                     " The floating point precision used; on many GPU architectures",
@@ -496,7 +484,6 @@ struct Config {
                 .imgNx = field.Nx, .imgNy = field.Ny,
                 .imgScalelm = scalelm, .paddingfactor = paddingfactor,
                 .kernelsize = kernelsize, .kernelpadding = kernelpadding,
-                .wstep = static_cast<double>(wstep),
                 .deltal = deltal, .deltam = deltam
             });
         }
