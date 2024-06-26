@@ -397,12 +397,12 @@ template <typename Q> using MWABeam = Beam::MWA<Q>;
 TEMPLATE_TEST_CASE_SIG(
     "Invert", "[invert]",
     ((typename Q, typename BEAM, int THRESHOLDF, int THRESHOLDP), Q, BEAM, THRESHOLDF, THRESHOLDP),
-    (float, (UniformBeam<float>), 2, -5),
+    (float, (UniformBeam<float>), 5, -6),
     (double, (UniformBeam<double>), 2, -10),
-    (float, (GaussianBeam<float>), 2, -5),
+    (float, (GaussianBeam<float>), 6, -6),
     (double, (GaussianBeam<double>), 2, -10),
-    (float, (MWABeam<float>), 7, -4),
-    (double, (MWABeam<double>), 8, -6)
+    (float, (MWABeam<float>), 9, -5),
+    (double, (MWABeam<double>), 2, -8)
 ) {
     // Config
     const GridConfig gridconf {
@@ -509,27 +509,32 @@ TEMPLATE_TEST_CASE_SIG(
     }
 
     double maxdiff {-1};
+    double rms {};
     for (size_t i {}; i < gridspec.size(); ++i) {
         double diff = thrust::abs(
             expected[i].I.real() - thrust::complex<double>(img[i].I.real())
         );
+        rms += diff * diff;
         maxdiff = std::max(maxdiff, diff);
     }
+    rms = std::sqrt(rms / gridspec.size());
     fmt::println("Max diff: {:g}", maxdiff);
+    fmt::println("RMS error: {:g}", rms);
 
     REQUIRE( maxdiff != -1 );
     REQUIRE( maxdiff < THRESHOLDF * std::pow(10, THRESHOLDP));
+    REQUIRE( rms < 0.1 * THRESHOLDF * std::pow(10, THRESHOLDP));
 }
 
 TEMPLATE_TEST_CASE_SIG(
     "Predict", "[predict]",
     ((typename Q, typename BEAM, int THRESHOLDF, int THRESHOLDP), Q, BEAM, THRESHOLDF, THRESHOLDP),
     (float, (UniformBeam<float>), 3, -5),
-    (double, (UniformBeam<double>), 1, -10),
+    (double, (UniformBeam<double>), 2, -10),
     (float, (GaussianBeam<float>), 3, -5),
-    (double, (GaussianBeam<double>), 1, -10),
-    (float, (MWABeam<float>), 4, -5),
-    (double, (MWABeam<double>), 3, -5)
+    (double, (GaussianBeam<double>), 2, -10),
+    (float, (MWABeam<float>), 2, -5),
+    (double, (MWABeam<double>), 2, -10)
 ) {
     const GridConfig gridconf {
         .imgNx = 2000, .imgNy = 1800, .imgScalelm = 1. / (4000 * 20), .paddingfactor = 2,
@@ -651,11 +656,8 @@ TEMPLATE_TEST_CASE_SIG(
 
     double maxdiff {-1};
     for (size_t i {}; i < gridspec.size(); ++i) {
-        auto diff = expectedMap[i].I - imgMap[i].I;
-
-        maxdiff = std::max<double>(
-            maxdiff, thrust::abs(diff)
-        );
+        auto diff = thrust::abs(expectedMap[i].I - imgMap[i].I);
+        maxdiff = std::max<double>(maxdiff, diff);
     }
 
     fmt::println("Prediction max diff: {}", maxdiff);

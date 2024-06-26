@@ -32,7 +32,7 @@ HostArray<T<S>, 2> invert(
     // Create device matrices
     DeviceArray<T<S>, 2> imgd {gridspec.shape()};
     DeviceArray<T<S>, 2> wlayerd {gridspec.shape(), false}; // We zero in main loop
-    DeviceArray<S, 2> subtaperd {kaiserbessel<S>(subgridspec)};
+    DeviceArray<S, 2> subtaperd {pswf<S>(subgridspec)};
 
     auto plan = fftPlan<T<S>>(gridspec);
 
@@ -94,7 +94,7 @@ HostArray<T<S>, 2> invert(
     HostArray<T<S>, 2> img {imgd};
 
     // The final image still has a taper applied. It's time to remove it.
-    img /= kaiserbessel<S>(gridspec);
+    img /= pswf<S>(gridspec);
 
     hipfftDestroy(plan);
 

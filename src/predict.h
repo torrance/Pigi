@@ -27,7 +27,7 @@ void predict(
     // Copy img (with padding) to device and apply inverse taper
     DeviceArray<T, 2> imgd {resize(img, gridconf.grid(), gridspec)};
     {
-        DeviceArray<S, 2> taperd {kaiserbessel<S>(gridspec)};
+        DeviceArray<S, 2> taperd {pswf<S>(gridspec)};
         map([] __device__ (auto& img, const auto t) {
             if (t == 0) img = T{};
             else img /= t;
@@ -35,7 +35,7 @@ void predict(
     }
 
     // Copy subtaper to device
-    DeviceArray<S, 2> subtaperd {kaiserbessel<S>(subgridspec)};
+    DeviceArray<S, 2> subtaperd {pswf<S>(subgridspec)};
 
     auto plan = fftPlan<T>(gridspec);
 
