@@ -6,6 +6,10 @@
 #include <vector>
 
 #include <boost/functional/hash.hpp>
+#include <boost/geometry.hpp>
+#include <boost/geometry/geometries/point.hpp>
+#include <boost/geometry/geometries/box.hpp>
+#include <boost/geometry/index/rtree.hpp>
 
 #include "aterms.h"
 #include "gridspec.h"
@@ -106,16 +110,31 @@ auto partition(
     }
     Logger::debug("Setting wstep = {}", wstep);
 
-    // Temporarily store workunits in a map to reduce search space during partitioning
-    std::unordered_map<
-        PartitionKey<S>,
-        std::vector<WorkUnit<S>>,
-        PartitionKeyHasher<S>
-    > wlayers;
+    // Initialize workunits vector
+    std::vector<WorkUnit<S>> workunits;
+
+    // Set up some helpful types for using boost::geometry
+    using Point = boost::geometry::model::point<double, 2, boost::geometry::cs::cartesian>;
+    using Box = boost::geometry::model::box<Point>;
+    using Value = std::pair<Box, size_t>;
+    using RTree = boost::geometry::index::rtree<
+        Value, boost::geometry::index::quadratic<16>
+    >;
+
+    // Preallocate rtree_result
+    std::vector<Value> rtree_result;
+
+    // Store rtrees in a map, indexed by wstep and A-terms. This reduces
+    // the size of each rtree and avoids manually filtering workunits with
+    // incompatible A-terms
+    std::unordered_map<PartitionKey<S>, RTree, PartitionKeyHasher<S>> rtrees;
+
+    // Calculate the radius of the subgrid, excluding the pixels reserved for
+    // padding.
     long long radius {gridconf.kernelsize / 2 - gridconf.kernelpadding};
 
     for (auto& uvdatum : uvdata) {
-        // Find Aterm
+        // Find the Aterms for this uvdatum
         auto Aleft = aterms.get(uvdatum.meta->time, uvdatum.meta->ant1);
         auto Aright = aterms.get(uvdatum.meta->time, uvdatum.meta->ant2);
 
@@ -132,42 +151,42 @@ auto partition(
             + 0.5 * wstep
         };
 
-        // Search through existing workunits to see if our UVDatum is included in an
-        // existing workunit.
-        auto& wworkunits = wlayers[{w0, Aleft, Aright}];
+        // Get the associated rtree for this combination of w0 and Aterms
+        auto& rtree = rtrees[{w0, Aleft, Aright}];
 
-        bool found {false};
-        for (auto& workunit : wworkunits) {
-            // The +0.5 accounts for the off-center central pixel of an even grid
-            // TODO: add one to upper bound
-            if (
-                -radius <= upx - workunit.u0px + 0.5 &&
-                upx - workunit.u0px + 0.5 <= radius &&
-                -radius <= vpx - workunit.v0px + 0.5 &&
-                vpx - workunit.v0px + 0.5 <= radius
-            ) {
-                workunit.data.push_back(&uvdatum);
-                found = true;
-                break;
-            }
+        // Check if (upx, vpx) is already within an existing box
+        rtree_result.clear();
+        rtree.query(
+            boost::geometry::index::contains(Point(upx, vpx)),
+            std::back_inserter(rtree_result)
+        );
+
+        if (rtree_result.empty()) {
+            // No box was found. Let's create a new workunit for our UVDatum
+            // First, snap upx, vpx to the nearest pixels
+            const long long u0px {llround(upx)}, v0px {llround(vpx)};
+            const auto [u0, v0] = gridspec.gridToUV<S>(u0px, v0px);
+
+            // Create a new workunit with uvdatum as first member
+            // TODO: use emplace_back() when we can upgrade Clang
+            workunits.push_back({
+                u0px, v0px, u0, v0, static_cast<S>(w0),
+                Aleft, Aright, {&uvdatum}
+            });
+
+            // Now add workgroup's box to the rtree
+            rtree.insert({
+                Box(
+                    Point(u0px - 0.5 - radius, v0px - 0.5 - radius), // bottom left corner
+                    Point(u0px - 0.5 + radius, v0px - 0.5 + radius)  // upper right corner
+                ),
+                workunits.size() - 1  // associated index into workunits
+            });
+        } else {
+            // We found an overlapping box. Add uvdatum to the existing workunit.
+            WorkUnit<S>& workunit = workunits[rtree_result.front().second];
+            workunit.data.push_back(&uvdatum);
         }
-        if (found) continue;
-
-        // If we are here, we need to create a new workunit for our UVDatum
-        const long long u0px {llround(upx)}, v0px {llround(vpx)};
-        const auto [u0, v0] = gridspec.gridToUV<S>(u0px, v0px);
-
-        // TODO: use emplace_back() when we can upgrade Clang
-        wworkunits.push_back({
-            u0px, v0px, u0, v0, static_cast<S>(w0),
-            Aleft, Aright, {&uvdatum}
-        });
-    }
-
-    // Flatten workunits
-    std::vector<WorkUnit<S>> workunits;
-    for (auto& [_, wworkunits] : wlayers) {
-        std::move(wworkunits.begin(), wworkunits.end(), std::back_inserter(workunits));
     }
 
     return workunits;
