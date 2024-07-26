@@ -16,6 +16,7 @@
 #include "logger.h"
 #include "memory.h"
 #include "outputtypes.h"
+#include "timer.h"
 #include "uvdatum.h"
 
 template <typename T>
@@ -75,6 +76,8 @@ auto partition(
     const GridConfig gridconf,
     const Aterms<S>& aterms
 ) {
+    auto timer = Timer::get("partition");
+
     // We use the padded gridspec during partitioning
     auto gridspec = gridconf.padded();
 

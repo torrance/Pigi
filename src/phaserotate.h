@@ -4,10 +4,13 @@
 
 #include "coordinates.h"
 #include "uvdatum.h"
+#include "timer.h"
 #include "util.h"
 
 template<typename P>
 void phaserotate(UVDatum<P>& uvdatum, const RaDec to) {
+    auto timer = Timer::get("phaserotate");
+
     const RaDec from = uvdatum.meta->phasecenter;
 
     if (to == from) return;

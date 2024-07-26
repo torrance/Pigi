@@ -21,6 +21,8 @@ void predict(
     const GridConfig gridconf,
     const DegridOp degridop
 ) {
+    auto timer = Timer::get("predict");
+
     const auto gridspec = gridconf.padded();
     const auto subgridspec = gridconf.subgrid();
 
@@ -50,6 +52,8 @@ void predict(
 
     int nwlayer {};
     for (auto& [w0, wworkunits] : wlayers) {
+        auto timer = Timer::get("predict::wlayer");
+
         Logger::verbose("Processing w={} layer ({}/{})...", w0, ++nwlayer, wlayers.size());
 
         // Prefetch managed memory to GPU

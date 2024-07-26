@@ -15,6 +15,7 @@
 #include "memory.h"
 #include "outputtypes.h"
 #include "taper.h"
+#include "timer.h"
 #include "util.h"
 #include "uvdatum.h"
 #include "workunit.h"
@@ -25,6 +26,8 @@ HostArray<T<S>, 2> invert(
     const GridConfig gridconf,
     const bool makePSF = false
 ) {
+    auto timer = Timer::get("invert");
+
     // Pad the main gridspec, and create the subgridspec
     const auto gridspec = gridconf.padded();
     const auto subgridspec = gridconf.subgrid();
@@ -44,6 +47,7 @@ HostArray<T<S>, 2> invert(
 
     int nwlayer {};
     for (const auto& [w0, wworkunits] : wlayers) {
+        auto timer = Timer::get("invert::wlayer");
         Logger::verbose("Processing w={} layer ({}/{})...", w0, ++nwlayer, wlayers.size());
 
         // Prefetch managed memory to GPU

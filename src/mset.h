@@ -16,6 +16,7 @@
 #include "logger.h"
 #include "managedalloc.h"
 #include "outputtypes.h"
+#include "timer.h"
 #include "uvdatum.h"
 
 class MeasurementSet {
@@ -238,6 +239,8 @@ public:
 
     template <typename P, typename Alloc=ManagedAllocator<UVDatum<P>>>
     std::vector<UVDatum<P>, Alloc> data() const {
+        auto timer = Timer::get("mset::data");
+
         // Pre-allocate the uvdata vector to avoid resizing operations
         // which MMapAllocator doesn't handle well
         std::vector<UVDatum<P>, Alloc> uvdata;

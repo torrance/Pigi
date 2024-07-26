@@ -112,6 +112,8 @@ void gpudft(
     const GridSpec subgridspec,
     const DegridOp degridop
 ) {
+    auto timer = Timer::get("predict::wlayer::degridder::thread::dft");
+
     auto fn = _gpudft<T>;
 
     // x-dimension distributes uvdata
@@ -162,6 +164,8 @@ auto extractSubgrid(
     const WorkUnit<S>& workunit,
     const GridConfig gridconf
 ) {
+    auto timer = Timer::get("predict::wlayer::degridder::thread::splitter");
+
     // Allocate subgrid matrix
     DeviceArray<ComplexLinearData<S>, 2> subgrid {gridconf.subgrid().shape()};
 
@@ -185,6 +189,8 @@ void degridder(
     const GridConfig gridconf,
     const DegridOp degridop
 ) {
+    auto timer = Timer::get("predict::wlayer::degridder");
+
     // Transfer _unique_ Aterms to GPU
     std::unordered_map<
         std::shared_ptr<HostArray<ComplexLinearData<S>, 2>>,
@@ -213,6 +219,7 @@ void degridder(
     ) {
         threads.emplace_back([&] {
             GPU::getInstance().resetDevice(); // needs to be reset for each new thread
+            auto timer = Timer::get("predict::wlayer::degridder::thread");
 
             // Make fft plan for each thread
             auto plan = fftPlan<ComplexLinearData<S>>(gridconf.subgrid());
@@ -233,21 +240,28 @@ void degridder(
                 auto subgrid = extractSubgrid(grid, *workunit, gridconf);
 
                 // Apply deltal, deltam shift to visibilities
-                map([
-                    =,
-                    deltal=static_cast<S>(subgridspec.deltal),
-                    deltam=static_cast<S>(subgridspec.deltam)
-                ] __device__ (auto idx, auto& subgrid) {
-                    auto [u, v] = subgridspec.linearToUV<S>(idx);
-                    subgrid *= cispi(2 * (u * deltal + v * deltam));
-                }, Iota(), subgrid);
+                PIGI_TIMER(
+                    "predict::wlayer::degridder::thread::deltalm",
+                    map([
+                        =,
+                        deltal=static_cast<S>(subgridspec.deltal),
+                        deltam=static_cast<S>(subgridspec.deltam)
+                    ] __device__ (auto idx, auto& subgrid) {
+                        auto [u, v] = subgridspec.linearToUV<S>(idx);
+                        subgrid *= cispi(2 * (u * deltal + v * deltam));
+                    }, Iota(), subgrid);
+                );
 
-                fftExec(plan, subgrid, HIPFFT_BACKWARD);
+                PIGI_TIMER("predict::wlayer::degridder::thread::fft", fftExec(plan, subgrid, HIPFFT_BACKWARD));
+
 
                 // Apply aterms, taper and normalize post-FFT
-                map([norm = subgrid.size()] __device__ (auto& cell, const auto& Aleft, const auto& Aright, const auto t) {
-                    cell = matmul(matmul(Aleft, cell), Aright.adjoint()) *= (t / norm);
-                }, subgrid, Aleft, Aright, subtaper);
+                PIGI_TIMER(
+                    "predict::wlayer::degridder::thread::postfft",
+                    map([norm = subgrid.size()] __device__ (auto& cell, const auto& Aleft, const auto& Aright, const auto t) {
+                        cell = matmul(matmul(Aleft, cell), Aright.adjoint()) *= (t / norm);
+                    }, subgrid, Aleft, Aright, subtaper);
+                );
 
                 gpudft<S>(
                     uvdata, uvdata_ptrs,
@@ -259,9 +273,12 @@ void degridder(
                 // On some devices (e.g. Radeon W6800) this random-write pattern performs
                 // extremely poorly. By running this as a seperate kernel we ensure the
                 // computation in gpudft() is not stalled.
-                map([] __device__ (auto ptr, auto datum) {
-                    atomicAdd(&ptr->data, datum);
-                }, uvdata_ptrs, uvdata);
+                PIGI_TIMER(
+                    "predict::wlayer::degridder::thread::memuncoalesce",
+                    map([] __device__ (auto ptr, auto datum) {
+                        atomicAdd(&ptr->data, datum);
+                    }, uvdata_ptrs, uvdata);
+                );
             }
 
             HIPFFTCHECK( hipfftDestroy(plan) );

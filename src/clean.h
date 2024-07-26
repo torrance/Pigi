@@ -26,6 +26,7 @@
 #include "memory.h"
 #include "mset.h"
 #include "outputtypes.h"
+#include "timer.h"
 
 namespace clean {
 
@@ -401,6 +402,8 @@ auto major(
     const size_t niter,
     const int spectralparams
 ) {
+    auto timer = Timer::get("clean");
+
     switch (freqs.size()) {
     case 1:
         return clean::_major<S, 1>(

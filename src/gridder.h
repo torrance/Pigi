@@ -12,6 +12,7 @@
 #include "hip.h"
 #include "memory.h"
 #include "outputtypes.h"
+#include "timer.h"
 #include "util.h"
 #include "uvdatum.h"
 #include "workunit.h"
@@ -137,6 +138,8 @@ void gpudift(
     const GridSpec subgridspec,
     const bool makePSF
 ) {
+    auto timer = Timer::get("invert::wlayer::gridder::thread::dift");
+
     // x-dimension corresponds to cells in the subgrid
     int nthreadsx {128}; // hardcoded to match the cache size
     int nblocksx = cld<size_t>(subgridspec.size(), nthreadsx);
@@ -202,6 +205,8 @@ void addsubgrid(
     const GridSpec gridspec, const GridSpec subgridspec,
     const long long u0px, const long long v0px
 ) {
+    auto timer = Timer::get("invert::wlayer::gridder::thread::adder");
+
     auto fn = _addsubgrid<T>;
     auto [nblocks, nthreads] = getKernelConfig(
         fn, subgridspec.size()
@@ -220,6 +225,8 @@ void gridder(
     const GridConfig gridconf,
     const bool makePSF
 ) {
+    auto timer = Timer::get("invert::wlayer::gridder");
+
     const GridSpec gridspec = gridconf.padded();
     const GridSpec subgridspec = gridconf.subgrid();
 
@@ -252,6 +259,7 @@ void gridder(
     ) {
         threads.emplace_back([&] {
             GPU::getInstance().resetDevice(); // needs to be reset for each new thread
+            auto timer = Timer::get("invert::wlayer::gridder::thread");
 
             // Make FFT plan for each thread
             auto plan = fftPlan<T>(subgridspec);
@@ -267,9 +275,12 @@ void gridder(
                 DeviceArray<UVDatum<S>, 1> uvdata(workunit->data.size());
 
                 // Dereference uvdata prior to the gridding kernel
-                map([] __device__ (auto& uvdatum, auto ptr) {
-                    uvdatum = *ptr;
-                }, uvdata, uvdata_ptrs);
+                PIGI_TIMER(
+                    "invert::wlayer::gridder::thread::memcoalesce",
+                    map([] __device__ (auto& uvdatum, auto ptr) {
+                        uvdatum = *ptr;
+                    }, uvdata, uvdata_ptrs);
+                );
 
                 // Retrieve A terms that have already been sent to device
                 const auto& Aleft = Aterms.at(workunit->Aleft);
@@ -284,22 +295,28 @@ void gridder(
                 );
 
                 // Apply taper and perform FFT normalization
-                map([N = subgrid.size()] __device__ (auto& cell, const auto t) {
-                    cell *= (t / N);
-                }, subgrid, subtaper);
+                PIGI_TIMER(
+                    "invert::wlayer::gridder::thread::prefft",
+                    map([N = subgrid.size()] __device__ (auto& cell, const auto t) {
+                        cell *= (t / N);
+                    }, subgrid, subtaper);
+                );
 
                 // FFT
-                fftExec(plan, subgrid, HIPFFT_FORWARD);
+                PIGI_TIMER("invert::wlayer::gridder::thread::fft", fftExec(plan, subgrid, HIPFFT_FORWARD));
 
                 // Reset deltal, deltam shift prior to adding to master grid
-                map([
-                    =,
-                    deltal=static_cast<S>(subgridspec.deltal),
-                    deltam=static_cast<S>(subgridspec.deltam)
-                ] __device__ (auto idx, auto& subgrid) {
-                    auto [u, v] = subgridspec.linearToUV<S>(idx);
-                    subgrid *= cispi(-2 * (u * deltal + v * deltam));
-                }, Iota(), subgrid);
+                PIGI_TIMER(
+                    "invert::wlayer::gridder::thread::deltlm",
+                    map([
+                        =,
+                        deltal=static_cast<S>(subgridspec.deltal),
+                        deltam=static_cast<S>(subgridspec.deltam)
+                    ] __device__ (auto idx, auto& subgrid) {
+                        auto [u, v] = subgridspec.linearToUV<S>(idx);
+                        subgrid *= cispi(-2 * (u * deltal + v * deltam));
+                    }, Iota(), subgrid);
+                );
 
                 // Sync the stream before we send the subgrid back to the main thread
                 HIPCHECK( hipStreamSynchronize(hipStreamPerThread) );
