@@ -32,6 +32,19 @@ __device__ inline auto cispi(const double& theta) {
     sincospi(theta, &imag, &real);
     return thrust::complex(real, imag);
 }
+
+__device__ inline auto cis(const float& theta) {
+    float real, imag;
+    __sincosf(theta, &imag, &real);
+    return thrust::complex(real, imag);
+}
+
+__device__ inline auto cis(const double& theta) {
+    double real, imag;
+    sincos(theta, &imag, &real);
+    return thrust::complex(real, imag);
+}
+
 #endif
 #if !defined(__CUDA_ARCH__)
 template <typename T>

@@ -43,10 +43,10 @@ void _gpudft(
         UVDatum<T> uvdatum;
         if (idx < uvdata.size()) uvdatum = *uvdata[idx];
 
-        // Precompute uvw offsets
-        T u = uvdatum.u - origin.u0;
-        T v = uvdatum.v - origin.v0;
-        T w = uvdatum.w - origin.w0;
+        // Precompute uvw offsets and convert to wavenumbers
+        T u = -2 * ::pi_v<T> * (uvdatum.u - origin.u0);
+        T v = -2 * ::pi_v<T> * (uvdatum.v - origin.v0);
+        T w = -2 * ::pi_v<T> * (uvdatum.w - origin.w0);
 
         ComplexLinearData<T> data;
 
@@ -68,7 +68,7 @@ void _gpudft(
             // Cycle through cache
             for (size_t j {}; j < N; ++j) {
                 auto [l, m, n] = lmns[j];
-                auto phase = cispi(-2 * (u * l + v * m + w * n));
+                auto phase = cis(u * l + v * m + w * n);
 
                 // Load subgrid cell from the cache
                 // This shared mem load is broadcast across the warp and so we

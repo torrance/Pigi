@@ -40,6 +40,11 @@ void _gpudift(
         auto [l, m] = subgridspec.linearToSky<S>(idx);
         S n {ndash(l, m)};
 
+        // Convert to wavenumbers
+        l *= 2 * ::pi_v<S>;
+        m *= 2 * ::pi_v<S>;
+        n *= 2 * ::pi_v<S>;
+
         ComplexLinearData<S> cell {};
 
         for (
@@ -86,7 +91,7 @@ void _gpudift(
                 // don't need to worry about bank conflicts
                 UVDatum<S> uvdatum = cache[j];
 
-                auto phase = cispi(2 * (uvdatum.u * l + uvdatum.v * m + uvdatum.w * n));
+                auto phase = cis(uvdatum.u * l + uvdatum.v * m + uvdatum.w * n);
 
                 // Equivalent of: cell += uvdata.data * phase
                 // Written out explicitly to encourage the compiler to use fma operations
