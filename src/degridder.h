@@ -76,15 +76,11 @@ void _gpudft(
                 auto cell = cache[j];
 
                 // Equivalent of: data += cell * phase
-                // Written out explicitly to encourage the compiler to use fma operations
-                data.xx.real(data.xx.real() + cell.xx.real() * phase.real() - cell.xx.imag() * phase.imag());
-                data.xx.imag(data.xx.imag() + cell.xx.real() * phase.imag() + cell.xx.imag() * phase.real());
-                data.yx.real(data.yx.real() + cell.yx.real() * phase.real() - cell.yx.imag() * phase.imag());
-                data.yx.imag(data.yx.imag() + cell.yx.real() * phase.imag() + cell.yx.imag() * phase.real());
-                data.xy.real(data.xy.real() + cell.xy.real() * phase.real() - cell.xy.imag() * phase.imag());
-                data.xy.imag(data.xy.imag() + cell.xy.real() * phase.imag() + cell.xy.imag() * phase.real());
-                data.yy.real(data.yy.real() + cell.yy.real() * phase.real() - cell.yy.imag() * phase.imag());
-                data.yy.imag(data.yy.imag() + cell.yy.real() * phase.imag() + cell.yy.imag() * phase.real());
+                // Written out explicitly to use fma operations
+                cmac(data.xx, cell.xx, phase);
+                cmac(data.yx, cell.yx, phase);
+                cmac(data.xy, cell.xy, phase);
+                cmac(data.yy, cell.yy, phase);
             }
 
             __syncthreads();

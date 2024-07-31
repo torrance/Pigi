@@ -56,6 +56,18 @@ __host__ inline auto cispi(const T& theta) {
 }
 #endif
 
+/**
+ * Complex-valued fused multiply accumulate
+ * x += y * z
+ */
+template <typename T>
+__device__ __inline__ void cmac(thrust::complex<T>& x, const thrust::complex<T> y, const thrust::complex<T> z) {
+    x.real( fma(y.real(), z.real(), x.real()) );
+    x.imag( fma(y.real(), z.imag(), x.imag()) );
+    x.real( fma(-y.imag(), z.imag(), x.real()) );
+    x.imag( fma(y.imag(), z.real(), x.imag()) );
+}
+
 template <typename T>
 struct fmt::formatter<thrust::complex<T>> {
     template <typename ParseContext>
