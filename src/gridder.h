@@ -321,7 +321,7 @@ void gridder(
                 // Sync the stream before we send the subgrid back to the main thread
                 HIPCHECK( hipStreamSynchronize(hipStreamPerThread) );
 
-                subgridsChannel.push({std::move(subgrid), workunit});
+                subgridsChannel.push(Pair(std::move(subgrid), workunit));
             }
 
             HIPFFTCHECK( hipfftDestroy(plan) );

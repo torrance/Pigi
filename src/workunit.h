@@ -155,7 +155,7 @@ auto partition(
         };
 
         // Get the associated rtree for this combination of w0 and Aterms
-        auto& rtree = rtrees[{w0, Aleft, Aright}];
+        RTree& rtree = rtrees[{w0, Aleft, Aright}];
 
         // Check if (upx, vpx) is already within an existing box
         rtree_result.clear();
@@ -178,13 +178,13 @@ auto partition(
             });
 
             // Now add workgroup's box to the rtree
-            rtree.insert({
+            rtree.insert(Value(
                 Box(
                     Point(u0px - 0.5 - radius, v0px - 0.5 - radius), // bottom left corner
                     Point(u0px - 0.5 + radius, v0px - 0.5 + radius)  // upper right corner
                 ),
                 workunits.size() - 1  // associated index into workunits
-            });
+            ));
         } else {
             // We found an overlapping box. Add uvdatum to the existing workunit.
             WorkUnit<S>& workunit = workunits[rtree_result.front().second];
