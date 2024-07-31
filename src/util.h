@@ -23,7 +23,7 @@ __device__ void sincospi(double, double*, double*);  // Suppress IDE warning abo
 #if defined(__clang__) || defined(__CUDA_ARCH__)
 __device__ inline auto cispi(const float& theta) {
     float real, imag;
-    sincospif(theta, &imag, &real);
+    __sincosf(::pi_v<float> * theta, &imag, &real);
     return thrust::complex(real, imag);
 }
 

@@ -397,11 +397,11 @@ template <typename Q> using MWABeam = Beam::MWA<Q>;
 TEMPLATE_TEST_CASE_SIG(
     "Invert", "[invert]",
     ((typename Q, typename BEAM, int THRESHOLDF, int THRESHOLDP), Q, BEAM, THRESHOLDF, THRESHOLDP),
-    (float, (UniformBeam<float>), 5, -6),
+    (float, (UniformBeam<float>), 6, -6),
     (double, (UniformBeam<double>), 2, -10),
     (float, (GaussianBeam<float>), 6, -6),
     (double, (GaussianBeam<double>), 2, -10),
-    (float, (MWABeam<float>), 9, -5),
+    (float, (MWABeam<float>), 1.5, -4),
     (double, (MWABeam<double>), 2, -8)
 ) {
     // Config
@@ -533,7 +533,7 @@ TEMPLATE_TEST_CASE_SIG(
     (double, (UniformBeam<double>), 2, -10),
     (float, (GaussianBeam<float>), 3, -5),
     (double, (GaussianBeam<double>), 2, -10),
-    (float, (MWABeam<float>), 2, -5),
+    (float, (MWABeam<float>), 3, -5),
     (double, (MWABeam<double>), 2, -10)
 ) {
     const GridConfig gridconf {
