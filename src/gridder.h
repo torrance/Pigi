@@ -55,6 +55,7 @@ void _gpudift(
             const size_t N = min(cachesize, uvdata.size() - i);
 
             // Populate cache
+            __syncthreads();
             for (size_t j = threadIdx.x; j < N; j += blockDim.x) {
                 // Copy global value to shared memory cache
                 cache[j] = uvdata[i + j];
@@ -84,6 +85,10 @@ void _gpudift(
             }
             __syncthreads();
 
+            // Zombie threads need to keep filling the cache
+            // but can skip doing any actual work
+            if (idx >= subgridspec.size()) continue;
+
             // Read through cache
             for (size_t j {}; j < N; ++j) {
                 // Retrieve value of uvdatum from the cache
@@ -100,8 +105,10 @@ void _gpudift(
                 cmac(cell.xy, uvdatum.data.xy, phase);
                 cmac(cell.yy, uvdatum.data.yy, phase);
             }
-            __syncthreads();
         }
+
+        // Zombie threads can exit early
+        if (idx >= subgridspec.size()) return;
 
         T output;
         if constexpr(makePSF) {
@@ -123,9 +130,7 @@ void _gpudift(
             output /= norm;
         }
 
-        if (idx < subgridspec.size()) {
-            atomicAdd(subgrid.data() + idx, output);
-        }
+        atomicAdd(subgrid.data() + idx, output);
     }
 }
 

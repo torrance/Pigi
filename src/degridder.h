@@ -54,6 +54,7 @@ void _gpudft(
             const size_t N = min(cachesize, subgridspec.size() - i);
 
             // Populate cache
+            __syncthreads();
             for (size_t j = threadIdx.x; j < N; j += blockDim.x) {
                 // Load subgrid value
                 cache[j] = subgrid[i + j];
@@ -64,6 +65,10 @@ void _gpudft(
                 lmns[j] = {l, m, n};
             }
             __syncthreads();
+
+            // Zombie threads need to keep filling the cache
+            // but can skip doing any actual work
+            if (idx >= uvdata.size()) continue;
 
             // Cycle through cache
             for (size_t j {}; j < N; ++j) {
@@ -82,8 +87,6 @@ void _gpudft(
                 cmac(data.xy, cell.xy, phase);
                 cmac(data.yy, cell.yy, phase);
             }
-
-            __syncthreads();
         }
 
         if (idx < uvdata.size()) {
