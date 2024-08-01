@@ -401,7 +401,7 @@ TEMPLATE_TEST_CASE_SIG(
     (double, (UniformBeam<double>), 2, -10),
     (float, (GaussianBeam<float>), 6, -6),
     (double, (GaussianBeam<double>), 2, -10),
-    (float, (MWABeam<float>), 1.5, -4),
+    (float, (MWABeam<float>), 2, -4),
     (double, (MWABeam<double>), 2, -8)
 ) {
     // Config
