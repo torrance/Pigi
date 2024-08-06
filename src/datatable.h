@@ -36,16 +36,6 @@ public:
         double u {}, v {}, w{};
     };
 
-    struct Workunit {
-        // Location within master grid
-        long long upx, vpx;
-        double u, v, w;
-
-        // Data slice
-        size_t rowstart, rowend;
-        size_t chanstart, chanend;
-    };
-
     DataTable(
         const std::string& path,
         double maxduration,
@@ -73,25 +63,25 @@ public:
             if (chanhigh <= 0) chanhigh = allfreqs.size();
 
             for (long long chan {chanlow}; chan < chanhigh; ++chan) {
-                freqs.push_back(allfreqs[chan]);
+                m_freqs.push_back(allfreqs[chan]);
             }
 
-            for (double freq : freqs) lambdas.push_back(Constants::c / freq);
+            for (double freq : m_freqs) m_lambdas.push_back(Constants::c / freq);
         }
 
         // Set dimensions of table
-        nrows = mset.nrow();
-        nchans = chanhigh - chanlow;
+        m_nrows = mset.nrow();
+        m_nchans = chanhigh - chanlow;
 
         Logger::info(
             "Reading table with {} rows and {} channels (after filtering)...",
-            nrows, nchans
+            m_nrows, m_nchans
         );
 
         // Allocate data arrays
-        metadata.resize(nrows);
-        weights.resize(nrows * nchans);
-        data.resize(nrows * nchans);
+        m_metadata.resize(m_nrows);
+        m_weights.resize(m_nrows * m_nchans);
+        m_data.resize(m_nrows * m_nchans);
 
         // Determine initial time for use in TableIterator
         double initialtime = [&] {
@@ -152,7 +142,7 @@ public:
                     double v = *uvwIter; ++uvwIter;
                     double w = *uvwIter; ++uvwIter;
 
-                    metadata[irow + i] = RowMetadata{
+                    m_metadata[irow + i] = RowMetadata{
                         .time = *timeIter,
                         .baseline = Baseline{ant1, ant2},
                         .u = u, .v = v, .w = w
@@ -170,7 +160,7 @@ public:
 
                 std::copy(
                     weightSpectrumCol.begin(), weightSpectrumCol.end(),
-                    reinterpret_cast<float*>(weights.data() + irow * nchans)
+                    reinterpret_cast<float*>(m_weights.data() + irow * m_nchans)
                 );
             }
 
@@ -182,7 +172,7 @@ public:
 
                 std::copy(
                     dataCol.begin(), dataCol.end(),
-                    reinterpret_cast<std::complex<float>*>(data.data() + irow * nchans)
+                    reinterpret_cast<std::complex<float>*>(m_data.data() + irow * m_nchans)
                 );
             }
 
@@ -192,9 +182,9 @@ public:
                 auto flagIter = flagCol.begin();
 
                 for (size_t i {}; i < nsubrows; ++i) {
-                    for (size_t j {}; j < nchans; ++j) {
-                        auto& datum = data[(irow + i) * nchans + j];
-                        auto& weight = weights[(irow + i) * nchans + j];
+                    for (size_t j {}; j < m_nchans; ++j) {
+                        auto& datum = m_data[(irow + i) * m_nchans + j];
+                        auto& weight = m_weights[(irow + i) * m_nchans + j];
 
                         // Treat NaNs as flags
                         if (!datum.isfinite() || !weight.isfinite()) {
@@ -215,254 +205,30 @@ public:
         }
     }
 
+    size_t nrows() const { return m_nrows; }
+    size_t nchans() const { return m_nchans; }
+
+    const std::vector<double>& lambdas() const {
+        return m_lambdas;
+    }
+
+    RowMetadata metadata(size_t i) const { return m_metadata[i]; }
+
     size_t mem() {
         return (
-            freqs.size() * sizeof(double) +
-            metadata.size() * sizeof(RowMetadata) +
-            weights.size() * sizeof(LinearData<float>) +
-            data.size() * sizeof(ComplexLinearData<float>)
+            m_freqs.size() * sizeof(double) +
+            m_metadata.size() * sizeof(RowMetadata) +
+            m_weights.size() * sizeof(LinearData<float>) +
+            m_data.size() * sizeof(ComplexLinearData<float>)
         );
     }
 
-    std::vector<Workunit> partition(GridConfig gridconf) {
-        // Workunit candidate
-        // We use candidates as an adhoc structure to store Workunits-to-be, before we
-        // know their exact position or data range.
-        struct WorkunitCandidate {
-            double ulowpx {}, uhighpx, vlowpx, vhighpx;  // in pixels
-            double maxspanpx;
-            double w0, wmax;                             // in wavelengths
-            size_t chanstart {}, chanend {};
-            size_t rowstart;
-
-            WorkunitCandidate(
-                double upx, double vpx, double w0, double maxspanpx, double wmax,
-                size_t row, size_t chan
-            ) : ulowpx(std::floor(upx)), uhighpx(std::ceil(upx)),
-                vlowpx(std::floor(vpx)), vhighpx(std::ceil(vpx)),
-                maxspanpx(maxspanpx), w0(w0), wmax(wmax),
-                rowstart(row), chanstart(chan), chanend(chan) {}
-
-            bool add(double upx, double vpx, double w, size_t chan) {
-                if (add(upx, vpx, w)) {
-                    chanend = std::max(chanend, chan);
-                    return true;
-                }
-
-                return false;
-            }
-
-            bool add(double upx, double vpx, double w) {
-                // Check w is within range
-                if (std::abs(w - w0) > wmax) {
-                    // fmt::println("Failed w test: {} versus {}", w, w0);
-                    return false;
-                }
-
-                // Check that this visbilility fits, and if so update the bounds
-                double ulowpx_ = std::floor(std::min(upx, ulowpx));
-                double uhighpx_ = std::ceil(std::max(upx, uhighpx));
-                double vlowpx_ = std::floor(std::min(vpx, vlowpx));
-                double vhighpx_ = std::ceil(std::max(vpx, vhighpx));
-
-                if (
-                    uhighpx_ - ulowpx_ > maxspanpx ||
-                    vhighpx_ - vlowpx_ > maxspanpx
-                ) {
-                    // fmt::println("Not in span: ({}, {}) not in {}-{} {}-{}", upx, vpx, ulowpx, uhighpx, vlowpx, vhighpx);
-                    return false;
-                }
-
-                ulowpx = ulowpx_;
-                uhighpx = uhighpx_;
-                vlowpx = vlowpx_;
-                vhighpx = vhighpx_;
-
-                return true;
-            }
-        };
-
-        // Initialize workunits which we will return on completion
-        std::vector<Workunit> workunits;
-
-        // Get the padded and subgrid GridSpec objections
-        GridSpec subgrid = gridconf.subgrid();
-        GridSpec padded = gridconf.padded();
-
-        // wstep is the maximum distance up until a visibility is critically sampled over
-        // a subgrid. We want to choose as large a value as possible to reduce the number
-        // of workunits, but we must ensure that |w - w0| remains small enough that the
-        // subgrid can properly sample the w-term.
-        //
-        // We use a simple heuristic that seems to work (i.e. the tests pass).
-        // The w-component of the measurement equation, exp(2pi i w n') has a 'variable'
-        // frequency, since n' is a function of (l, m). So we take the derivative w.r.t.
-        // l and m to find the 'instantaneous' frequency, and substitute in values that give
-        // the maximum value. We ensure that, in the worst case, each radiating fringe pattern
-        // is sampled at least 3 times.
-        const double wmax = [&] {
-            double wmax {std::numeric_limits<double>::max()};
-            auto subgridspec = gridconf.subgrid();
-
-            std::array<size_t, 4> corners {
-                0,  // bottom left
-                static_cast<size_t>(subgridspec.Nx) - 1,  // bottom right
-                subgridspec.size() - static_cast<size_t>(subgridspec.Nx),  // top left
-                subgridspec.size() - 1  // top right
-            };
-
-            for (size_t i : corners) {
-                auto [maxl, maxm] = subgridspec.linearToSky<double>(i);
-                auto maxn = std::sqrt(1 - maxl * maxl - maxm * maxm);
-
-                // Consider sampling density in both dl, and dm directions
-                wmax = std::min(wmax, maxn / (12 * std::abs(maxl) * subgridspec.scalel));
-                wmax = std::min(wmax, maxn / (12 * std::abs(maxm) * subgridspec.scalem));
-            }
-
-            return wmax;
-        }();
-        Logger::debug("Calculated wmax = {}", wmax);
-
-        // wstep controls the position of the wlayers. Set this at 80% of the allowable
-        // limit to allow partitioning to have some space to grow before triggering a new
-        // workunit.
-        const double wstep = std::llround(2 * wmax * 0.8);
-        Logger::debug("Setting wstep = {}", wstep);
-
-        // Maxspanpx is the maximum allowable span in either the u or v direction across
-        // a subgrid. Note: it assumes a square subgrid.
-        const double maxspanpx = subgrid.Nx - 2 * gridconf.kernelpadding;
-
-        // Set up candidate workunits
-        std::vector<WorkunitCandidate> candidates;
-
-        // We use priorbaseline to track changes in the baseline during the loop
-        std::optional<Baseline> priorbaseline;
-
-        for (size_t irow {}; irow < nrows; ++irow) {
-            auto m = metadata[irow];
-
-            // For each candidate, check that the first and last channel fit
-            // fmt::println("Testing candidates on new row...");
-            for (auto& candidate : candidates) {
-                double u1px = m.u / lambdas[candidate.chanstart] / subgrid.scaleu;
-                double v1px = m.v / lambdas[candidate.chanstart] / subgrid.scalev;
-                double w1 = m.w / lambdas[candidate.chanstart];
-
-                double u2px = m.u / lambdas[candidate.chanend] / subgrid.scaleu;
-                double v2px = m.v / lambdas[candidate.chanend] / subgrid.scalev;
-                double w2 = m.w / lambdas[candidate.chanend];
-
-                if (!candidate.add(u1px, v1px, w1) || !candidate.add(u2px, v2px, w2)) {
-                    priorbaseline.reset();  // use this value as a signal to create new candidates
-                    break;
-                }
-            }
-
-            // Split the channel width into chunks that fit comfortably
-            // within a subgrid (and then a little bit extra)
-            if (!priorbaseline || m.baseline != priorbaseline.value()) {
-                priorbaseline = m.baseline;
-
-                // Save any existing candidates as workunits
-                for (auto& c : candidates) {
-                    long long upx = std::llround(c.ulowpx + c.uhighpx) / 2;
-                    long long vpx = std::llround(c.vlowpx + c.vhighpx) / 2;
-                    double u = upx * padded.scaleu;
-                    double v = vpx * padded.scalev;
-
-                    // Offset wrt to the bottom left corner
-                    upx += padded.Nx / 2;
-                    vpx += padded.Ny / 2;
-
-                    workunits.push_back(Workunit(
-                        upx, vpx, u, v, c.w0,
-                        c.rowstart, irow, c.chanstart, c.chanend + 1
-                    ));
-                }
-
-                candidates.clear();
-                for (size_t chan {}; chan < nchans; ++chan) {
-                    double upx = m.u / lambdas[chan] / subgrid.scaleu;
-                    double vpx = m.v / lambdas[chan] / subgrid.scalev;
-                    double w = m.w / lambdas[chan];
-
-                    if (
-                        candidates.empty() ||
-                        !candidates.back().add(upx, vpx, w, chan)
-                    ) {
-                        // Create new candidate
-                        // We initialize with 0.7 of the full span. This is fudge factor
-                        // to allow the uvw positions to move in time, and not immediately
-                        // fall outside the subgrid. If this value is too small, we'll
-                        // have too many workunits along the frequency axis; if it's too
-                        // large, we risk having too many workgrids along the time axis.
-
-                        // Snap w to a w-layer
-                        w = (std::floor(w / wstep) + 0.5) * wstep;
-
-                        candidates.push_back(WorkunitCandidate(
-                            upx, vpx, w, 0.7 * maxspanpx, wstep / 2, irow, chan
-                        ));
-                    }
-                }
-
-                // Set all candidates to use the full span
-                for (auto& candidate : candidates) {
-                    candidate.maxspanpx = maxspanpx;
-                    candidate.wmax = wmax;
-                }
-            }
-        }
-
-        // Save final candidates as workunits
-        for (auto& c : candidates) {
-            long long upx = std::llround(c.ulowpx + c.uhighpx) / 2;
-            long long vpx = std::llround(c.vlowpx + c.vhighpx) / 2;
-            double u = upx * padded.scaleu;
-            double v = vpx * padded.scalev;
-
-            // Offset wrt to the bottom left corner
-            upx += padded.Nx / 2;
-            vpx += padded.Ny / 2;
-
-            workunits.push_back(Workunit(
-                upx, vpx, u, v, c.w0,
-                c.rowstart, nrows, c.chanstart, c.chanend + 1
-            ));
-        }
-
-        // Log Workunit statistics
-        {
-            std::vector<int> occupancy;
-            for (auto& workunit : workunits) {
-                occupancy.push_back(
-                    (workunit.chanend - workunit.chanstart) * (workunit.rowend - workunit.rowstart)
-                );
-            }
-            std::sort(occupancy.begin(), occupancy.end());
-
-            double mean = std::accumulate(
-                occupancy.begin(), occupancy.end(), 0.
-            ) / occupancy.size();
-
-            Logger::debug(
-                "Workunits created: {} Mean occupancy: {:.1f} Occupancy quartiles: {}/{}/{}",
-                workunits.size(), mean, occupancy[occupancy.size() / 4],
-                occupancy[occupancy.size() / 2], occupancy[3 * occupancy.size() / 4]
-            );
-        }
-
-        return workunits;
-    }
-
     // TODO: Investigate storing baselines as std::unorded_map?
-    size_t nrows {};
-    size_t nchans {};
-    std::vector<double> freqs;
-    std::vector<double> lambdas;
-    std::vector<RowMetadata> metadata;
-    std::vector<LinearData<float>> weights;
-    std::vector<ComplexLinearData<float>> data;
+    size_t m_nrows {};
+    size_t m_nchans {};
+    std::vector<double> m_freqs;
+    std::vector<double> m_lambdas;
+    std::vector<RowMetadata> m_metadata;
+    std::vector<LinearData<float>> m_weights;
+    std::vector<ComplexLinearData<float>> m_data;
 };

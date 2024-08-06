@@ -1,89 +1,97 @@
 #pragma once
 
+#include <algorithm>
 #include <cmath>
-#include <memory>
-#include <unordered_map>
 #include <vector>
 
-#include <boost/functional/hash.hpp>
-#include <boost/geometry.hpp>
-#include <boost/geometry/geometries/point.hpp>
-#include <boost/geometry/geometries/box.hpp>
-#include <boost/geometry/index/rtree.hpp>
-
-#include "aterms.h"
-#include "gridspec.h"
+#include "datatable.h"
 #include "logger.h"
-#include "memory.h"
-#include "outputtypes.h"
-#include "timer.h"
-#include "uvdatum.h"
 
-template <typename T>
-struct UVWOrigin {
-    T u0, v0, w0;
-
-    UVWOrigin(T* ptr) : u0(ptr[0]), v0(ptr[1]), w0(ptr[2]) {}
-    UVWOrigin(T u0, T v0, T w0) : u0(u0), v0(v0), w0(w0) {}
-};
-
-template <typename S>
 struct WorkUnit {
-    long long u0px;
-    long long v0px;
-    S u0;
-    S v0;
-    S w0;
-    std::shared_ptr<HostArray< ComplexLinearData<S>, 2 >> Aleft;
-    std::shared_ptr<HostArray< ComplexLinearData<S>, 2 >> Aright;
-    std::vector<UVDatum<S>*> data;
+    // The center of a workunit is Nx / 2, Ny / 2, using integer division.
+    // This is to be consistent with where the center is in an FFT.
 
-    template <typename P>
-    LinearData<P> totalWeight() const {
-        LinearData<double> w {};
-        for (const auto uvdatumptr : this->data) {
-            w += static_cast<LinearData<double>>(uvdatumptr->weights);
+    // The corresponding location within master grid [px] of the central pixel.
+    // Note this is respect to the bottom left corner of the master grid.
+    long long upx, vpx;
+
+    // The u, v, w [dimensionless] values of the workunit center.
+    double u, v, w;
+
+    // Data slice values into the corresponding DataTable
+    size_t rowstart, rowend;
+    size_t chanstart, chanend;
+};
+
+std::vector<WorkUnit> partition(DataTable& tbl, GridConfig gridconf) {
+    // WorkUnit candidate
+    // We use candidates as an adhoc structure to store WorkUnits-to-be, before we
+    // know their exact position or data range.
+    struct WorkUnitCandidate {
+        double ulowpx {}, uhighpx, vlowpx, vhighpx;  // in pixels
+        double maxspanpx;
+        double w0, wmax;                             // in wavelengths
+        size_t chanstart {}, chanend {};
+        size_t rowstart;
+
+        WorkUnitCandidate(
+            double upx, double vpx, double w0, double maxspanpx, double wmax,
+            size_t row, size_t chan
+        ) : ulowpx(std::floor(upx)), uhighpx(std::ceil(upx)),
+            vlowpx(std::floor(vpx)), vhighpx(std::ceil(vpx)),
+            maxspanpx(maxspanpx), w0(w0), wmax(wmax),
+            rowstart(row), chanstart(chan), chanend(chan) {}
+
+        bool add(double upx, double vpx, double w, size_t chan) {
+            if (add(upx, vpx, w)) {
+                chanend = std::max(chanend, chan);
+                return true;
+            }
+
+            return false;
         }
-        return static_cast<LinearData<P>>(w);
-    }
-};
 
-/**
- * PartitionKey is used as a key in a std::unordered_map during partition to reduce
- * the search sapce. We define it here so that we can make it hashable.
- */
-template <typename S>
-using PartitionKey = std::tuple<
-    double,
-    std::shared_ptr<HostArray<ComplexLinearData<S>, 2>>,
-    std::shared_ptr<HostArray<ComplexLinearData<S>, 2>>
->;
+        bool add(double upx, double vpx, double w) {
+            // Check w is within range
+            if (std::abs(w - w0) > wmax) {
+                // fmt::println("Failed w test: {} versus {}", w, w0);
+                return false;
+            }
 
-template <typename S>
-struct PartitionKeyHasher {
-    std::size_t operator()(const PartitionKey<S>& key) const {
-        size_t seed {};
-        boost::hash_combine(seed, std::get<0>(key));
-        boost::hash_combine(seed, std::get<1>(key));
-        boost::hash_combine(seed, std::get<2>(key));
-        return seed;
-    }
-};
+            // Check that this visbilility fits, and if so update the bounds
+            double ulowpx_ = std::floor(std::min(upx, ulowpx));
+            double uhighpx_ = std::ceil(std::max(upx, uhighpx));
+            double vlowpx_ = std::floor(std::min(vpx, vlowpx));
+            double vhighpx_ = std::ceil(std::max(vpx, vhighpx));
 
-template <typename S>
-auto partition(
-    auto&& uvdata,
-    const GridConfig gridconf,
-    const Aterms<S>& aterms
-) {
-    auto timer = Timer::get("partition");
+            if (
+                uhighpx_ - ulowpx_ > maxspanpx ||
+                vhighpx_ - vlowpx_ > maxspanpx
+            ) {
+                // fmt::println("Not in span: ({}, {}) not in {}-{} {}-{}", upx, vpx, ulowpx, uhighpx, vlowpx, vhighpx);
+                return false;
+            }
 
-    // We use the padded gridspec during partitioning
-    auto gridspec = gridconf.padded();
+            ulowpx = ulowpx_;
+            uhighpx = uhighpx_;
+            vlowpx = vlowpx_;
+            vhighpx = vhighpx_;
 
-    // wstep is the distance between w-layers. We want to choose as large a value as
-    // possible to reduce the number of workunits, but we must ensure that |w - w0|
-    // remains small enough that the subgrid can properly sample the w-term.
+            return true;
+        }
+    };
+
+    // Initialize workunits which we will return on completion
+    std::vector<WorkUnit> workunits;
+
+    // Get the padded and subgrid GridSpec objections
+    GridSpec subgrid = gridconf.subgrid();
+    GridSpec padded = gridconf.padded();
+
+    // wstep is the maximum distance up until a visibility is critically sampled over
+    // a subgrid. We want to choose as large a value as possible to reduce the number
+    // of workunits, but we must ensure that |w - w0| remains small enough that the
+    // subgrid can properly sample the w-term.
     //
     // We use a simple heuristic that seems to work (i.e. the tests pass).
     // The w-component of the measurement equation, exp(2pi i w n') has a 'variable'
@@ -91,8 +99,8 @@ auto partition(
     // l and m to find the 'instantaneous' frequency, and substitute in values that give
     // the maximum value. We ensure that, in the worst case, each radiating fringe pattern
     // is sampled at least 3 times.
-    double wstep {std::numeric_limits<double>::max()};
-    {
+    const double wmax = [&] {
+        double wmax {std::numeric_limits<double>::max()};
         auto subgridspec = gridconf.subgrid();
 
         std::array<size_t, 4> corners {
@@ -107,89 +115,146 @@ auto partition(
             auto maxn = std::sqrt(1 - maxl * maxl - maxm * maxm);
 
             // Consider sampling density in both dl, and dm directions
-            wstep = std::min(wstep, maxn / (6 * std::abs(maxl) * subgridspec.scalel));
-            wstep = std::min(wstep, maxn / (6 * std::abs(maxm) * subgridspec.scalem));
+            wmax = std::min(wmax, maxn / (12 * std::abs(maxl) * subgridspec.scalel));
+            wmax = std::min(wmax, maxn / (12 * std::abs(maxm) * subgridspec.scalem));
         }
-    }
+
+        return wmax;
+    }();
+    Logger::debug("Calculated wmax = {}", wmax);
+
+    // wstep controls the position of the wlayers. Set this at 80% of the allowable
+    // limit to allow partitioning to have some space to grow before triggering a new
+    // workunit.
+    const double wstep = std::llround(2 * wmax * 0.8);
     Logger::debug("Setting wstep = {}", wstep);
 
-    // Initialize workunits vector
-    std::vector<WorkUnit<S>> workunits;
+    // Maxspanpx is the maximum allowable span in either the u or v direction across
+    // a subgrid. Note: it assumes a square subgrid.
+    const double maxspanpx = subgrid.Nx - 2 * gridconf.kernelpadding;
 
-    // Set up some helpful types for using boost::geometry
-    using Point = boost::geometry::model::point<double, 2, boost::geometry::cs::cartesian>;
-    using Box = boost::geometry::model::box<Point>;
-    using Value = std::pair<Box, size_t>;
-    using RTree = boost::geometry::index::rtree<
-        Value, boost::geometry::index::quadratic<16>
-    >;
+    // Set up candidate workunits. This is mutable state used during the table
+    // scan loop below, and will be periodically flushed and reinitialized
+    // as WorkUnits are created.
+    std::vector<WorkUnitCandidate> candidates;
 
-    // Preallocate rtree_result
-    std::vector<Value> rtree_result;
+    // We use priorbaseline to track changes in the baseline during the loop
+    std::optional<DataTable::Baseline> priorbaseline;
 
-    // Store rtrees in a map, indexed by wstep and A-terms. This reduces
-    // the size of each rtree and avoids manually filtering workunits with
-    // incompatible A-terms
-    std::unordered_map<PartitionKey<S>, RTree, PartitionKeyHasher<S>> rtrees;
+    const auto lambdas = tbl.lambdas();
 
-    // Calculate the radius of the subgrid, excluding the pixels reserved for
-    // padding.
-    long long radius {gridconf.kernelsize / 2 - gridconf.kernelpadding};
+    for (size_t irow {}; irow < tbl.nrows(); ++irow) {
+        auto m = tbl.metadata(irow);
 
-    for (auto& uvdatum : uvdata) {
-        // Find the Aterms for this uvdatum
-        auto Aleft = aterms.get(uvdatum.meta->time, uvdatum.meta->ant1);
-        auto Aright = aterms.get(uvdatum.meta->time, uvdatum.meta->ant2);
+        // For each candidate, check that the first and last channel fit
+        // fmt::println("Testing candidates on new row...");
+        for (auto& candidate : candidates) {
+            double u1px = m.u / lambdas[candidate.chanstart] / subgrid.scaleu;
+            double v1px = m.v / lambdas[candidate.chanstart] / subgrid.scalev;
+            double w1 = m.w / lambdas[candidate.chanstart];
 
-        // Find equivalent pixel coordinates of (u,v) position
-        const auto [upx, vpx] = gridspec.UVtoGrid(uvdatum.u, uvdatum.v);
+            double u2px = m.u / lambdas[candidate.chanend] / subgrid.scaleu;
+            double v2px = m.v / lambdas[candidate.chanend] / subgrid.scalev;
+            double w2 = m.w / lambdas[candidate.chanend];
 
-        // Snap to center of nearest wstep window. Note: for a given wstep,
-        // the boundaries occur at {0 <= w < wstep, wstep <= w < 2 * wstep, ...}
-        // This choice is made because w values are made positive and we want to
-        // avoid the first interval including negative values. w0 is the midpoint of each
-        // respective interval.
-        const double w0 {
-            wstep * std::floor(uvdatum.w / wstep)
-            + 0.5 * wstep
-        };
-
-        // Get the associated rtree for this combination of w0 and Aterms
-        RTree& rtree = rtrees[{w0, Aleft, Aright}];
-
-        // Check if (upx, vpx) is already within an existing box
-        rtree_result.clear();
-        rtree.query(
-            boost::geometry::index::contains(Point(upx, vpx)),
-            std::back_inserter(rtree_result)
-        );
-
-        if (rtree_result.empty()) {
-            // No box was found. Let's create a new workunit for our UVDatum
-            // First, snap upx, vpx to the nearest pixels
-            const long long u0px {llround(upx)}, v0px {llround(vpx)};
-            const auto [u0, v0] = gridspec.gridToUV<S>(u0px, v0px);
-
-            // Create a new workunit with uvdatum as first member
-            // TODO: use emplace_back() when we can upgrade Clang
-            workunits.push_back({
-                u0px, v0px, u0, v0, static_cast<S>(w0),
-                Aleft, Aright, {&uvdatum}
-            });
-
-            // Now add workgroup's box to the rtree
-            rtree.insert(Value(
-                Box(
-                    Point(u0px - 0.5 - radius, v0px - 0.5 - radius), // bottom left corner
-                    Point(u0px - 0.5 + radius, v0px - 0.5 + radius)  // upper right corner
-                ),
-                workunits.size() - 1  // associated index into workunits
-            ));
-        } else {
-            // We found an overlapping box. Add uvdatum to the existing workunit.
-            WorkUnit<S>& workunit = workunits[rtree_result.front().second];
-            workunit.data.push_back(&uvdatum);
+            if (!candidate.add(u1px, v1px, w1) || !candidate.add(u2px, v2px, w2)) {
+                priorbaseline.reset();  // use this value as a signal to create new candidates
+                break;
+            }
         }
+
+        // Split the channel width into chunks that fit comfortably
+        // within a subgrid (and then a little bit extra)
+        if (!priorbaseline || m.baseline != priorbaseline.value()) {
+            priorbaseline = m.baseline;
+
+            // Save any existing candidates as workunits
+            for (auto& c : candidates) {
+                long long upx = std::llround(c.ulowpx + c.uhighpx) / 2;
+                long long vpx = std::llround(c.vlowpx + c.vhighpx) / 2;
+                double u = upx * padded.scaleu;
+                double v = vpx * padded.scalev;
+
+                // Offset wrt to the bottom left corner
+                upx += padded.Nx / 2;
+                vpx += padded.Ny / 2;
+
+                workunits.push_back(WorkUnit(
+                    upx, vpx, u, v, c.w0,
+                    c.rowstart, irow, c.chanstart, c.chanend + 1
+                ));
+            }
+
+            candidates.clear();
+            for (size_t chan {}; chan < tbl.nchans(); ++chan) {
+                double upx = m.u / lambdas[chan] / subgrid.scaleu;
+                double vpx = m.v / lambdas[chan] / subgrid.scalev;
+                double w = m.w / lambdas[chan];
+
+                if (
+                    candidates.empty() ||
+                    !candidates.back().add(upx, vpx, w, chan)
+                ) {
+                    // Create new candidate
+                    // We initialize with 0.7 of the full span. This is fudge factor
+                    // to allow the uvw positions to move in time, and not immediately
+                    // fall outside the subgrid. If this value is too small, we'll
+                    // have too many workunits along the frequency axis; if it's too
+                    // large, we risk having too many workgrids along the time axis.
+
+                    // Snap w to a w-layer
+                    w = (std::floor(w / wstep) + 0.5) * wstep;
+
+                    candidates.push_back(WorkUnitCandidate(
+                        upx, vpx, w, 0.7 * maxspanpx, wstep / 2, irow, chan
+                    ));
+                }
+            }
+
+            // Set all candidates to use the full span
+            for (auto& candidate : candidates) {
+                candidate.maxspanpx = maxspanpx;
+                candidate.wmax = wmax;
+            }
+        }
+    }
+
+    // Save final candidates as workunits
+    for (auto& c : candidates) {
+        long long upx = std::llround(c.ulowpx + c.uhighpx) / 2;
+        long long vpx = std::llround(c.vlowpx + c.vhighpx) / 2;
+        double u = upx * padded.scaleu;
+        double v = vpx * padded.scalev;
+
+        // Offset wrt to the bottom left corner
+        upx += padded.Nx / 2;
+        vpx += padded.Ny / 2;
+
+        workunits.push_back(WorkUnit(
+            upx, vpx, u, v, c.w0,
+            c.rowstart, tbl.nrows(), c.chanstart, c.chanend + 1
+        ));
+    }
+
+    // Log WorkUnit statistics
+    {
+        std::vector<int> occupancy;
+        for (auto& workunit : workunits) {
+            occupancy.push_back(
+                (workunit.chanend - workunit.chanstart) * (workunit.rowend - workunit.rowstart)
+            );
+        }
+        std::sort(occupancy.begin(), occupancy.end());
+
+        double mean = std::accumulate(
+            occupancy.begin(), occupancy.end(), 0.
+        ) / occupancy.size();
+
+        Logger::debug(
+            "WorkUnits created: {} Mean occupancy: {:.1f} Occupancy quartiles: {}/{}/{}",
+            workunits.size(), mean, occupancy[occupancy.size() / 4],
+            occupancy[occupancy.size() / 2], occupancy[3 * occupancy.size() / 4]
+        );
     }
 
     return workunits;

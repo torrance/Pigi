@@ -4,12 +4,13 @@
 
 #include "datatable.h"
 #include "memory.h"
+#include "workunit.h"
 
 template <typename T, typename S>
 __global__
 void _gridderk(
     DeviceSpan<T, 3> subgrids,
-    const DeviceSpan<DataTable::Workunit, 1> workunits,
+    const DeviceSpan<WorkUnit, 1> workunits,
     const DeviceSpan<std::array<double, 3>, 1> uvws,
     const DeviceSpan<ComplexLinearData<S>, 2> data,
     const DeviceSpan<LinearData<S>, 2> weights,
@@ -157,7 +158,7 @@ void _gridderk(
 template <typename T, typename S>
 void gridderk(
     DeviceSpan<T, 3> subgrids,
-    const DeviceSpan<DataTable::Workunit, 1> workunits,
+    const DeviceSpan<WorkUnit, 1> workunits,
     const DeviceSpan<std::array<double, 3>, 1> uvws,
     const DeviceSpan<ComplexLinearData<S>, 2> data,
     const DeviceSpan<LinearData<S>, 2> weights,
@@ -190,7 +191,7 @@ template <typename T>
 __global__
 void _addsubgridbatched(
     DeviceSpan<T, 2> grid, const DeviceSpan<size_t, 1> widxs,
-    const DeviceSpan<DataTable::Workunit, 1> workunits, const DeviceSpan<T, 3> subgrids,
+    const DeviceSpan<WorkUnit, 1> workunits, const DeviceSpan<T, 3> subgrids,
     const GridSpec gridspec, const GridSpec subgridspec
 ) {
     size_t widx = widxs[blockIdx.y];
@@ -225,7 +226,7 @@ void _addsubgridbatched(
 template <typename T>
 void addsubgridbatched(
     DeviceSpan<T, 2> grid, const DeviceSpan<size_t, 1> widxs,
-    const DeviceSpan<DataTable::Workunit, 1> workunits, const DeviceSpan<T, 3> subgrids,
+    const DeviceSpan<WorkUnit, 1> workunits, const DeviceSpan<T, 3> subgrids,
     const GridSpec gridspec, const GridSpec subgridspec
 ) {
     auto timer = Timer::get("invert::wlayer::gridder::thread::adder");
@@ -247,7 +248,7 @@ void addsubgridbatched(
 template <template<typename> typename T, typename S>
 HostArray<T<S>, 2> invertbatch(
     DataTable& vis,
-    std::vector<DataTable::Workunit>& workunits,
+    std::vector<WorkUnit>& workunits,
     GridConfig gridconf,
     bool makePSF = false
 ) {
@@ -274,33 +275,33 @@ HostArray<T<S>, 2> invertbatch(
         size_t rowstart = workunits[istart].rowstart;
         size_t rowend = workunits[iend - 1].rowend;
         long long nrows = rowend - rowstart;
-        long long rowstride = vis.freqs.size();
+        long long rowstride = vis.nchans();
 
         fmt::println("batching {} rows of data ({}-{}), with {} nworkunits", nrows, rowstart, rowend, nworkunits);
 
-        HostSpan<DataTable::Workunit, 1> workunits_h(
+        HostSpan<WorkUnit, 1> workunits_h(
             {nworkunits}, workunits.data() + istart
         );
 
         HostSpan<ComplexLinearData<S>, 2> data_h(
-            {nrows, rowstride}, vis.data.data() + rowstart * rowstride
+            {nrows, rowstride}, vis.m_data.data() + rowstart * rowstride
         );
 
         HostSpan<LinearData<S>, 2> weights_h(
-            {nrows, rowstride}, vis.weights.data() + rowstart * rowstride
+            {nrows, rowstride}, vis.m_weights.data() + rowstart * rowstride
         );
 
         HostArray<std::array<double, 3>, 1> uvws_h({nrows});
         for (size_t i {}; i < nrows; ++i) {
-            auto m = vis.metadata[rowstart + i];
+            auto m = vis.m_metadata[rowstart + i];
             uvws_h[i] = {m.u, m.v, m.w};
         }
 
         // Copy across data
-        DeviceArray<DataTable::Workunit, 1> workunits_d(workunits_h);
+        DeviceArray<WorkUnit, 1> workunits_d(workunits_h);
         DeviceArray<ComplexLinearData<S>, 2> data_d(data_h);
         DeviceArray<LinearData<S>, 2> weights_d(weights_h);
-        DeviceArray<double, 1> lambdas_d(vis.lambdas);
+        DeviceArray<double, 1> lambdas_d(vis.m_lambdas);
         DeviceArray<std::array<double, 3>, 1> uvws_d(uvws_h);
 
         // Allocate subgrid stack
