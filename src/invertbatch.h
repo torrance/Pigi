@@ -2,14 +2,14 @@
 
 #include <hip/hip_runtime.h>
 
+#include "datatable.h"
 #include "memory.h"
-#include "visibility.h"
 
 template <typename T, typename S>
 __global__
 void _gridderk(
     DeviceSpan<T, 3> subgrids,
-    const DeviceSpan<Visibility::Workunit, 1> workunits,
+    const DeviceSpan<DataTable::Workunit, 1> workunits,
     const DeviceSpan<std::array<double, 3>, 1> uvws,
     const DeviceSpan<ComplexLinearData<S>, 2> data,
     const DeviceSpan<LinearData<S>, 2> weights,
@@ -157,7 +157,7 @@ void _gridderk(
 template <typename T, typename S>
 void gridderk(
     DeviceSpan<T, 3> subgrids,
-    const DeviceSpan<Visibility::Workunit, 1> workunits,
+    const DeviceSpan<DataTable::Workunit, 1> workunits,
     const DeviceSpan<std::array<double, 3>, 1> uvws,
     const DeviceSpan<ComplexLinearData<S>, 2> data,
     const DeviceSpan<LinearData<S>, 2> weights,
@@ -190,7 +190,7 @@ template <typename T>
 __global__
 void _addsubgridbatched(
     DeviceSpan<T, 2> grid, const DeviceSpan<size_t, 1> widxs,
-    const DeviceSpan<Visibility::Workunit, 1> workunits, const DeviceSpan<T, 3> subgrids,
+    const DeviceSpan<DataTable::Workunit, 1> workunits, const DeviceSpan<T, 3> subgrids,
     const GridSpec gridspec, const GridSpec subgridspec
 ) {
     size_t widx = widxs[blockIdx.y];
@@ -225,7 +225,7 @@ void _addsubgridbatched(
 template <typename T>
 void addsubgridbatched(
     DeviceSpan<T, 2> grid, const DeviceSpan<size_t, 1> widxs,
-    const DeviceSpan<Visibility::Workunit, 1> workunits, const DeviceSpan<T, 3> subgrids,
+    const DeviceSpan<DataTable::Workunit, 1> workunits, const DeviceSpan<T, 3> subgrids,
     const GridSpec gridspec, const GridSpec subgridspec
 ) {
     auto timer = Timer::get("invert::wlayer::gridder::thread::adder");
@@ -246,8 +246,8 @@ void addsubgridbatched(
 
 template <template<typename> typename T, typename S>
 HostArray<T<S>, 2> invertbatch(
-    Visibility& vis,
-    std::vector<Visibility::Workunit>& workunits,
+    DataTable& vis,
+    std::vector<DataTable::Workunit>& workunits,
     GridConfig gridconf,
     bool makePSF = false
 ) {
@@ -278,7 +278,7 @@ HostArray<T<S>, 2> invertbatch(
 
         fmt::println("batching {} rows of data ({}-{}), with {} nworkunits", nrows, rowstart, rowend, nworkunits);
 
-        HostSpan<Visibility::Workunit, 1> workunits_h(
+        HostSpan<DataTable::Workunit, 1> workunits_h(
             {nworkunits}, workunits.data() + istart
         );
 
@@ -297,7 +297,7 @@ HostArray<T<S>, 2> invertbatch(
         }
 
         // Copy across data
-        DeviceArray<Visibility::Workunit, 1> workunits_d(workunits_h);
+        DeviceArray<DataTable::Workunit, 1> workunits_d(workunits_h);
         DeviceArray<ComplexLinearData<S>, 2> data_d(data_h);
         DeviceArray<LinearData<S>, 2> weights_d(weights_h);
         DeviceArray<double, 1> lambdas_d(vis.lambdas);
