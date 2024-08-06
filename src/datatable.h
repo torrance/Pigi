@@ -2,18 +2,22 @@
 
 #include <algorithm>
 #include <array>
-#include <vector>
+#include <limits>
 #include <utility>
+#include <vector>
 
+#include <casacore/casa/Utilities/Compare.h>
+#include <casacore/casa/Utilities/CountedPtr.h>
 #include <casacore/ms/MeasurementSets.h>
 #include <casacore/tables/Tables.h>
 #include <casacore/tables/Tables/TableIter.h>
 #include <fmt/format.h>
 #include <thrust/complex.h>
 
+#include "logger.h"
 #include "outputtypes.h"
 
-class Visibility {
+class DataTable {
 public:
     struct Baseline {
         int a {};
@@ -42,10 +46,15 @@ public:
         size_t chanstart, chanend;
     };
 
-    Visibility(const std::string& path) {
+    DataTable(
+        const std::string& path,
+        double maxduration,
+        long long chanlow,
+        long long chanhigh
+    ) {
         casacore::MeasurementSet mset(path);
+
         // TODO: Allow selection of field ID.
-        // TODO: Slice based on chanlow, chanhigh
 
         // Remove autocorrelations
         mset = mset(mset.col("ANTENNA1") != mset.col("ANTENNA2"));
@@ -53,36 +62,77 @@ public:
         // Remove flagged rows
         mset = mset(!mset.col("FLAG_ROW"));
 
-        nrow = mset.nrow();
-
         // Retrieve frequency values
         {
             auto spw = mset.spectralWindow();
-            freqs = casacore::ArrayColumn<double>(spw, "CHAN_FREQ").get(0).tovector();
+            casacore::ArrayColumn<double> chanCol(spw, "CHAN_FREQ");
+            auto allfreqs = chanCol.get(0).tovector();
 
-            // TODO: Validate frequencies are strictly ASC
+            // Ensure chanlow >= 0; and set chanhigh to default to all channels if <= 0
+            chanlow = std::min(0ll, chanlow);
+            if (chanhigh <= 0) chanhigh = allfreqs.size();
+
+            for (long long chan {chanlow}; chan < chanhigh; ++chan) {
+                freqs.push_back(allfreqs[chan]);
+            }
 
             for (double freq : freqs) lambdas.push_back(Constants::c / freq);
         }
 
-        // fmt::println("Reading table with {} rows and {} channels (after filtering)...", nrow, freqs.size());
+        // Set dimensions of table
+        nrows = mset.nrow();
+        nchans = chanhigh - chanlow;
+
+        Logger::info(
+            "Reading table with {} rows and {} channels (after filtering)...",
+            nrows, nchans
+        );
 
         // Allocate data arrays
-        metadata.resize(nrow);
-        weights.resize(nrow * freqs.size());
-        data.resize(nrow * freqs.size());
+        metadata.resize(nrows);
+        weights.resize(nrows * nchans);
+        data.resize(nrows * nchans);
 
-        casacore::Block<casacore::String> sortedcols(2);
-        sortedcols[0] = "ANTENNA1";
-        sortedcols[1] = "ANTENNA2";
+        // Determine initial time for use in TableIterator
+        double initialtime = [&] {
+            auto times = casacore::ScalarColumn<double>(mset, "TIME_CENTROID").getColumn();
+            return *std::min_element(times.begin(), times.end());
+        }();
+
+        if (maxduration <= 0) maxduration = std::numeric_limits<double>::max();
+
+        // We iterate through the measurement set in [time block] x [baselines]
+        // Each time block is <= maxduration. This order is essential for
+        // efficient partitioning.
+        casacore::Block<casacore::String> colnames(3);
+        colnames[0] = "TIME_CENTROID";
+        colnames[1] = "ANTENNA1";
+        colnames[2] = "ANTENNA2";
+
+        casacore::Block<std::shared_ptr<casacore::BaseCompare>> cmpobjs(3);
+        auto interval = std::make_shared<casacore::CompareIntervalReal<double>>(
+            initialtime, maxduration
+        );
+        cmpobjs[0] = interval;
+        cmpobjs[1] = std::shared_ptr<casacore::BaseCompare>();
+        cmpobjs[2] = std::shared_ptr<casacore::BaseCompare>();
+
+        casacore::Block<casacore::Int> orders(3);
+        orders[0] = 0;
+        orders[1] = 0;
+        orders[2] = 0;
 
         size_t irow {};
-        for (casacore::TableIterator iter(mset, sortedcols); !iter.pastEnd(); iter.next()) {
+        for (
+            casacore::TableIterator iter(mset, colnames, cmpobjs, orders);
+            !iter.pastEnd();
+            iter.next()
+        ) {
             auto subtbl = iter.table();
-            size_t nsubrow = subtbl.nrow();
+            size_t nsubrows = subtbl.nrow();
 
             // Skip processing of an empty table
-            if (nsubrow == 0) continue;
+            if (nsubrows == 0) continue;
 
             int ant1 = casacore::ScalarColumn<int>(subtbl, "ANTENNA1").get(0);
             int ant2 = casacore::ScalarColumn<int>(subtbl, "ANTENNA2").get(0);
@@ -92,11 +142,12 @@ public:
                 auto timeCol = casacore::ScalarColumn<double>(
                     subtbl, "TIME_CENTROID"
                 ).getColumn();
+
                 auto uvwCol = casacore::ArrayColumn<double>(subtbl, "UVW").getColumn();
 
                 auto timeIter = timeCol.begin();
                 auto uvwIter = uvwCol.begin();
-                for (size_t i {}; i < nsubrow; ++i) {
+                for (size_t i {}; i < nsubrows; ++i) {
                     double u = *uvwIter; ++uvwIter;
                     double v = *uvwIter; ++uvwIter;
                     double w = *uvwIter; ++uvwIter;
@@ -119,7 +170,7 @@ public:
 
                 std::copy(
                     weightSpectrumCol.begin(), weightSpectrumCol.end(),
-                    reinterpret_cast<float*>(weights.data() + irow * freqs.size())
+                    reinterpret_cast<float*>(weights.data() + irow * nchans)
                 );
             }
 
@@ -131,7 +182,7 @@ public:
 
                 std::copy(
                     dataCol.begin(), dataCol.end(),
-                    reinterpret_cast<std::complex<float>*>(data.data() + irow * freqs.size())
+                    reinterpret_cast<std::complex<float>*>(data.data() + irow * nchans)
                 );
             }
 
@@ -140,10 +191,10 @@ public:
                 auto flagCol = casacore::ArrayColumn<bool>(subtbl, "FLAG").getColumn();
                 auto flagIter = flagCol.begin();
 
-                for (size_t i {}; i < nsubrow; ++i) {
-                    for (size_t j {}; j < freqs.size(); ++j) {
-                        auto& datum = data[(irow + i) * freqs.size() + j];
-                        auto& weight = weights[(irow + i) * freqs.size() + j];
+                for (size_t i {}; i < nsubrows; ++i) {
+                    for (size_t j {}; j < nchans; ++j) {
+                        auto& datum = data[(irow + i) * nchans + j];
+                        auto& weight = weights[(irow + i) * nchans + j];
 
                         // Treat NaNs as flags
                         if (!datum.isfinite() || !weight.isfinite()) {
@@ -160,27 +211,8 @@ public:
                 }
             }
 
-            irow += nsubrow;
+            irow += nsubrows;
         }
-
-        // // Collapse
-
-        // // Set all uvw to be positive
-        // // Maybe perform this in the gridder kernel?
-        // for (size_t i {}; i < nrow; ++i) {
-        //     auto& m = metadata[i];
-        //     if (m.w < 0) {
-        //         m.u *= -1;
-        //         m.v *= -1;
-        //         m.w *= -1;
-
-        //         for (size_t j {}; j < freqs.size(); ++j) {
-        //             assert(data[i * freqs.size() + j].isfinite());
-        //             assert(weights[i * freqs.size() + j].isfinite());
-        //             data[i * freqs.size() + j] = data[i * freqs.size() + j].adjoint();
-        //         }
-        //     }
-        // }
     }
 
     size_t mem() {
@@ -265,7 +297,7 @@ public:
         // We use priorbaseline to track changes in the baseline during the loop
         std::optional<Baseline> priorbaseline;
 
-        for (size_t irow {}; irow < nrow; ++irow) {
+        for (size_t irow {}; irow < nrows; ++irow) {
             auto m = metadata[irow];
 
             // For each candidate, check that the first and last channel fit
@@ -284,7 +316,6 @@ public:
                     break;
                 }
             }
-            // fmt::println("Done");
 
             // Split the channel width into chunks that fit comfortably
             // within a subgrid (and then a little bit extra)
@@ -308,13 +339,8 @@ public:
                     ));
                 }
 
-                // if (!candidates.empty()) {
-                //     auto& c = candidates.back();
-                //     fmt::println("Creating workunits with {} rows and {} channel chunks", irow - c.rowstart, candidates.size());
-                // }
-
                 candidates.clear();
-                for (size_t chan {}; chan < freqs.size(); ++chan) {
+                for (size_t chan {}; chan < nchans; ++chan) {
                     double upx = m.u / lambdas[chan] / subgrid.scaleu;
                     double vpx = m.v / lambdas[chan] / subgrid.scalev;
                     double w = m.w / lambdas[chan];
@@ -366,7 +392,7 @@ public:
 
             workunits.push_back(Workunit(
                 upx, vpx, u, v, c.w0,
-                c.rowstart, nrow, c.chanstart, c.chanend + 1
+                c.rowstart, nrows, c.chanstart, c.chanend + 1
             ));
         }
 
@@ -374,7 +400,8 @@ public:
     }
 
     // TODO: Investigate storing baselines as std::unorded_map?
-    size_t nrow {};
+    size_t nrows {};
+    size_t nchans {};
     std::vector<double> freqs;
     std::vector<double> lambdas;
     std::vector<RowMetadata> metadata;
