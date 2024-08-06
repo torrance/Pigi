@@ -226,6 +226,8 @@ public:
 
     std::vector<Workunit> partition(GridConfig gridconf) {
         // Workunit candidate
+        // We use candidates as an adhoc structure to store Workunits-to-be, before we
+        // know their exact position or data range.
         struct WorkunitCandidate {
             double ulowpx {}, uhighpx, vlowpx, vhighpx;  // in pixels
             double maxspanpx;
@@ -280,15 +282,56 @@ public:
             }
         };
 
+        // Initialize workunits which we will return on completion
         std::vector<Workunit> workunits;
 
         // Get the padded and subgrid GridSpec objections
         GridSpec subgrid = gridconf.subgrid();
         GridSpec padded = gridconf.padded();
 
-        const double wmax = 20;
-        const double wstep = 30; // TODO calculate
+        // wstep is the maximum distance up until a visibility is critically sampled over
+        // a subgrid. We want to choose as large a value as possible to reduce the number
+        // of workunits, but we must ensure that |w - w0| remains small enough that the
+        // subgrid can properly sample the w-term.
+        //
+        // We use a simple heuristic that seems to work (i.e. the tests pass).
+        // The w-component of the measurement equation, exp(2pi i w n') has a 'variable'
+        // frequency, since n' is a function of (l, m). So we take the derivative w.r.t.
+        // l and m to find the 'instantaneous' frequency, and substitute in values that give
+        // the maximum value. We ensure that, in the worst case, each radiating fringe pattern
+        // is sampled at least 3 times.
+        const double wmax = [&] {
+            double wmax {std::numeric_limits<double>::max()};
+            auto subgridspec = gridconf.subgrid();
 
+            std::array<size_t, 4> corners {
+                0,  // bottom left
+                static_cast<size_t>(subgridspec.Nx) - 1,  // bottom right
+                subgridspec.size() - static_cast<size_t>(subgridspec.Nx),  // top left
+                subgridspec.size() - 1  // top right
+            };
+
+            for (size_t i : corners) {
+                auto [maxl, maxm] = subgridspec.linearToSky<double>(i);
+                auto maxn = std::sqrt(1 - maxl * maxl - maxm * maxm);
+
+                // Consider sampling density in both dl, and dm directions
+                wmax = std::min(wmax, maxn / (12 * std::abs(maxl) * subgridspec.scalel));
+                wmax = std::min(wmax, maxn / (12 * std::abs(maxm) * subgridspec.scalem));
+            }
+
+            return wmax;
+        }();
+        Logger::debug("Calculated wmax = {}", wmax);
+
+        // wstep controls the position of the wlayers. Set this at 80% of the allowable
+        // limit to allow partitioning to have some space to grow before triggering a new
+        // workunit.
+        const double wstep = std::llround(2 * wmax * 0.8);
+        Logger::debug("Setting wstep = {}", wstep);
+
+        // Maxspanpx is the maximum allowable span in either the u or v direction across
+        // a subgrid. Note: it assumes a square subgrid.
         const double maxspanpx = subgrid.Nx - 2 * gridconf.kernelpadding;
 
         // Set up candidate workunits
@@ -370,12 +413,6 @@ public:
                     candidate.maxspanpx = maxspanpx;
                     candidate.wmax = wmax;
                 }
-
-                // fmt::println("Created new candidates: ");
-                // for (auto& c : candidates) {
-                //     fmt::print("{}-{} ", c.chanstart, c.chanend);
-                // }
-                // fmt::println("");
             }
         }
 
@@ -394,6 +431,27 @@ public:
                 upx, vpx, u, v, c.w0,
                 c.rowstart, nrows, c.chanstart, c.chanend + 1
             ));
+        }
+
+        // Log Workunit statistics
+        {
+            std::vector<int> occupancy;
+            for (auto& workunit : workunits) {
+                occupancy.push_back(
+                    (workunit.chanend - workunit.chanstart) * (workunit.rowend - workunit.rowstart)
+                );
+            }
+            std::sort(occupancy.begin(), occupancy.end());
+
+            double mean = std::accumulate(
+                occupancy.begin(), occupancy.end(), 0.
+            ) / occupancy.size();
+
+            Logger::debug(
+                "Workunits created: {} Mean occupancy: {:.1f} Occupancy quartiles: {}/{}/{}",
+                workunits.size(), mean, occupancy[occupancy.size() / 4],
+                occupancy[occupancy.size() / 2], occupancy[3 * occupancy.size() / 4]
+            );
         }
 
         return workunits;
