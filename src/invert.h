@@ -13,7 +13,7 @@
 
 template <template<typename> typename T, typename S>
 HostArray<T<S>, 2> invert(
-    DataTable& vis,
+    DataTable& tbl,
     std::vector<WorkUnit>& workunits,
     GridConfig gridconf,
     bool makePSF = false
@@ -21,70 +21,65 @@ HostArray<T<S>, 2> invert(
     GridSpec gridspec = gridconf.padded();
     GridSpec subgridspec = gridconf.subgrid();
 
+    // Allocate both grids now which will be used in the summation over w layers
     DeviceArray<T<S>, 2> imgd(gridspec.Nx, gridspec.Ny);
     DeviceArray<T<S>, 2> wlayer(gridspec.Nx, gridspec.Ny);
+
+    // Construct the taper and send to the device
     DeviceArray<S, 2> subtaperd {pswf<S>(subgridspec)};
 
     // TODO: set batch dynamically, based on memory allowance
-    const size_t nbatch {2 * 8192};
+    const size_t nbatch {4096};
 
-    // TODO: Round up workunits to include any remaining channels
-
+    // Create FFT plans
     auto subplan = fftPlan<T<S>>(subgridspec, nbatch);
     auto wplan = fftPlan<T<S>>(gridspec);
 
+    // Lambdas does not change row to row
+    const DeviceArray<double, 1> lambdas_d(tbl.lambdas());
+
     for (size_t istart {}; istart < workunits.size(); istart += nbatch) {
+        // istart, iend are the bounds of the workunits to be used this batch
         size_t iend = std::min(istart + nbatch, workunits.size());
         long long nworkunits = iend - istart;
-        fmt::println("istart={}; iend={}; nworkunits={}; workunits.size={} {}", istart, iend, nworkunits, workunits.size(), istart < workunits.size());
 
+        // Record the corresponding row dimensions of this batch
         size_t rowstart = workunits[istart].rowstart;
         size_t rowend = workunits[iend - 1].rowend;
         long long nrows = rowend - rowstart;
-        long long rowstride = vis.nchans();
 
-        fmt::println("batching {} rows of data ({}-{}), with {} nworkunits", nrows, rowstart, rowend, nworkunits);
-
-        HostSpan<WorkUnit, 1> workunits_h(
-            {nworkunits}, workunits.data() + istart
+        Logger::debug(
+            "Invert: batching rows {}-{}/{} ({} workunits)",
+            rowstart, rowend, nrows, nworkunits
         );
 
-        HostSpan<ComplexLinearData<S>, 2> data_h(
-            {nrows, rowstride}, vis.m_data.data() + rowstart * rowstride
-        );
+        HostSpan<WorkUnit, 1> workunits_h({nworkunits}, workunits.data() + istart);
 
-        HostSpan<LinearData<S>, 2> weights_h(
-            {nrows, rowstride}, vis.m_weights.data() + rowstart * rowstride
-        );
+        auto data_h = tbl.data(rowstart, rowend);
+        auto weights_h = tbl.weights(rowstart, rowend);
 
-        HostArray<std::array<double, 3>, 1> uvws_h({nrows});
-        for (size_t i {}; i < nrows; ++i) {
-            auto m = vis.m_metadata[rowstart + i];
-            uvws_h[i] = {m.u, m.v, m.w};
+        HostArray<std::array<double, 3>, 1> uvws_h(nrows);
+        for (size_t i {rowstart}, j {}; i < rowend; ++i, ++j) {
+            auto m = tbl.metadata(i);
+            uvws_h[j] = {m.u, m.v, m.w};
         }
 
         // Copy across data
         DeviceArray<WorkUnit, 1> workunits_d(workunits_h);
         DeviceArray<ComplexLinearData<S>, 2> data_d(data_h);
         DeviceArray<LinearData<S>, 2> weights_d(weights_h);
-        DeviceArray<double, 1> lambdas_d(vis.m_lambdas);
         DeviceArray<std::array<double, 3>, 1> uvws_d(uvws_h);
 
         // Allocate subgrid stack
-        DeviceArray<T<S>, 3> subgrids_d(
-            {subgridspec.Nx, subgridspec.Ny, nbatch}
-        );
+        DeviceArray<T<S>, 3> subgrids_d({subgridspec.Nx, subgridspec.Ny, nbatch});
 
-        // HIPCHECK( hipStreamSynchronize(hipStreamPerThread) );
-
+        // Grid
         gridder<T<S>, S>(
             subgrids_d, workunits_d, uvws_d, data_d, weights_d,
             subgridspec, lambdas_d, subtaperd, rowstart, makePSF
         );
 
-        HIPCHECK( hipStreamSynchronize(hipStreamPerThread) );
-        fmt::println("Calling FFT...");
-
+        // FFT all subgrids as one batch
         fftExec(subplan, subgrids_d, HIPFFT_FORWARD);
 
         // Reset deltal, deltam shift prior to adding to master grid
@@ -102,17 +97,18 @@ HostArray<T<S>, 2> invert(
             }, Iota(), subgrids_d);
         );
 
+        // Group subgrids into w layers
         std::unordered_map<double, std::vector<size_t>> widxs;
         for (size_t i {istart}; i < iend; ++i) {
             auto workunit = workunits[i];
             widxs[workunit.w].push_back(i - istart);
         }
 
-        fmt::println("Processing {} w-layers...", widxs.size());
-
+        // ...and process each wlayer serially
         for (auto& [w0, idxs] : widxs) {
             wlayer.zero();
 
+            // Add each subgrid from this w-layer
             addsubgrid(
                 wlayer, DeviceArray<size_t, 1>(idxs),
                 workunits_d, subgrids_d, gridspec, subgridspec
@@ -132,30 +128,21 @@ HostArray<T<S>, 2> invert(
             fftExec(wplan, wlayer, HIPFFT_BACKWARD);
 
             // Apply wcorrection and append layer onto img
-            map([gridspec=gridspec, w0=static_cast<S>(w0)] __device__ (auto idx, auto& imgd, auto wlayer) {
+            map([gridspec=gridspec, w0=static_cast<S>(w0)] __device__ (
+                auto idx, auto& imgd, auto wlayer
+            ) {
                 auto [l, m] = gridspec.linearToSky<S>(idx);
                 wlayer *= cispi(2 * w0 * ndash(l, m));
                 imgd += wlayer;
             }, Iota(), imgd, wlayer);
         }
-
-        {
-            size_t free, total;
-            HIPCHECK( hipMemGetInfo(&free, &total) );
-            fmt::println(
-                "Free: {} GB Total: {} GB ",
-                free / 1024. / 1024. / 1024., total / 1024. / 1024. / 1024.
-            );
-        }
     }
-
-    // Copy image from device to host
-    HostArray<T<S>, 2> img(imgd);
 
     hipfftDestroy(subplan);
     hipfftDestroy(wplan);
 
-    HIPCHECK(hipStreamSynchronize(hipStreamPerThread));
+    // Copy image from device to host
+    HostArray<T<S>, 2> img(imgd);
 
     // The final image still has a taper applied. It's time to remove it.
     img /= pswf<S>(gridspec);

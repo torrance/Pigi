@@ -208,11 +208,29 @@ public:
     size_t nrows() const { return m_nrows; }
     size_t nchans() const { return m_nchans; }
 
-    const std::vector<double>& lambdas() const {
-        return m_lambdas;
-    }
+    const std::vector<double>& lambdas() const { return m_lambdas; }
 
     RowMetadata metadata(size_t i) const { return m_metadata[i]; }
+
+    HostSpan<ComplexLinearData<float>, 2> data(size_t rowstart, size_t rowend) {
+        return {
+            std::array<long long, 2>(
+                static_cast<long long>(rowend - rowstart),
+                static_cast<long long>(m_nchans)
+            ),
+            m_data.data() + rowstart * m_nchans
+        };
+    }
+
+    HostSpan<LinearData<float>, 2> weights(size_t rowstart, size_t rowend) {
+        return {
+            std::array<long long, 2>(
+                static_cast<long long>(rowend - rowstart),
+                static_cast<long long>(m_nchans)
+            ),
+            m_weights.data() + rowstart * m_nchans
+        };
+    }
 
     size_t mem() {
         return (
@@ -223,6 +241,7 @@ public:
         );
     }
 
+private:
     // TODO: Investigate storing baselines as std::unorded_map?
     size_t m_nrows {};
     size_t m_nchans {};
