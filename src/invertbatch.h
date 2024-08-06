@@ -263,18 +263,7 @@ HostArray<T<S>, 2> invertbatch(
 
     // TODO: Round up workunits to include any remaining channels
 
-    hipfftHandle subplan {};
-    int rank[] {(int) subgridspec.Ny, (int) subgridspec.Nx}; // COL MAJOR
-    HIPFFTCHECK( hipfftPlanMany(
-        &subplan, 2, rank,
-        rank, 1, subgridspec.size(),
-        rank, 1, subgridspec.size(),
-        HIPFFT_C2C, nbatch
-    ) );
-    HIPFFTCHECK( hipfftSetStream(subplan, hipStreamPerThread) );
-
-    // auto subplan = fftPlan<T<S>>(subgridspec);
-
+    auto subplan = fftPlan<T<S>>(subgridspec, nbatch);
     auto wplan = fftPlan<T<S>>(gridspec);
 
     for (size_t istart {}; istart < workunits.size(); istart += nbatch) {
@@ -329,14 +318,7 @@ HostArray<T<S>, 2> invertbatch(
         HIPCHECK( hipStreamSynchronize(hipStreamPerThread) );
         fmt::println("Calling FFT...");
 
-        fftshift_batched(subgrids_d, FFTShift::pre);
-        hipfftExecC2C(
-            subplan,
-            (hipfftComplex*) subgrids_d.data(),
-            (hipfftComplex*) subgrids_d.data(),
-            HIPFFT_FORWARD
-        );
-        fftshift_batched(subgrids_d, FFTShift::post);
+        fftExec(subplan, subgrids_d, HIPFFT_FORWARD);
 
         // Reset deltal, deltam shift prior to adding to master grid
         PIGI_TIMER(
