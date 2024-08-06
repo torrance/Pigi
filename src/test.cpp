@@ -206,72 +206,52 @@ TEST_CASE("Utility functions", "[utility]") {
     REQUIRE(maxdiff < 2e-2);
 }
 
-TEMPLATE_TEST_CASE("Phase rotation", "[phaserotation]", float, double) {
+TEST_CASE("Phase rotation", "[phaserotation]") {
     if (!TESTDATA) { SKIP("TESTDATA path not provided"); }
 
-    MeasurementSet mset(
-        {TESTDATA}, MeasurementSet::DataColumn::data, 0, 11, 0, std::numeric_limits<double>::max()
-    );
+    DataTable tbl(TESTDATA, 0, 0, 12);
+    DataTable expected = tbl;
 
-    auto uvdata = mset.data<TestType, std::allocator<UVDatum<TestType>>>();
-    std::vector<UVDatum<TestType>> expected(uvdata);
+    RaDec original = tbl.phasecenter();
 
-    RaDec original = uvdata.front().meta->phasecenter;
+    phaserotate(tbl, {0, 0});
 
-    for (auto& uvdatum : uvdata) {
-        phaserotate(uvdatum, {0, 0});
-    }
+    // Ensure something has changed
+    REQUIRE(tbl.metadata(12345).u != expected.metadata(12345).u);
+    REQUIRE(tbl.metadata(12345).v != expected.metadata(12345).v);
+    REQUIRE(tbl.metadata(12345).w != expected.metadata(12345).w);
 
-    for (auto& uvdatum : uvdata) {
-        uvdatum.meta->phasecenter = {0, 0};
-    }
+    phaserotate(tbl, original);
 
-    double maxudiff {}, maxvdiff {}, maxwdiff {}, maxdatadiff {};
-    for (size_t i {}; i < uvdata.size(); ++i) {
-        maxudiff = std::max<double>(maxudiff, std::abs(uvdata[i].u - expected[i].u));
-        maxvdiff = std::max<double>(maxvdiff, std::abs(uvdata[i].v - expected[i].v));
-        maxwdiff = std::max<double>(maxwdiff, std::abs(uvdata[i].w - expected[i].w));
+    double maxudiff = 0, maxvdiff = 0, maxwdiff = 0, maxdatadiff = 0;
+    for (size_t irow {}; irow < tbl.nrows(); ++irow) {
+        auto m1 = tbl.metadata(irow);
+        auto m2 = expected.metadata(irow);
 
+        maxudiff = std::max<double>(maxudiff, std::abs(m1.u - m2.u));
+        maxvdiff = std::max<double>(maxvdiff, std::abs(m1.v - m2.v));
+        maxwdiff = std::max<double>(maxwdiff, std::abs(m1.w - m2.w));
 
-        auto data = uvdata[i].data;
-        data -= expected[i].data;
-        maxdatadiff = std::max<double>(
-            maxdatadiff,
-            thrust::abs(static_cast<thrust::complex<double>>(data))
-        );
-    }
+        auto data = tbl.data(irow, irow);
+        auto expecteddata = expected.data(irow, irow);
+        for (size_t ichan {}; ichan < tbl.nchans(); ++ichan) {
+            ComplexLinearData<float> datum = data[ichan];
+            datum -= expecteddata[ichan];
 
-    // Ensure we have done some kind of shift
-    REQUIRE(maxudiff > 1);
-    REQUIRE(maxvdiff > 1);
-    REQUIRE(maxwdiff > 1);
-    REQUIRE(maxdatadiff > 1);
-
-    for (auto& uvdatum : uvdata) {
-        phaserotate(uvdatum, original);
-    }
-
-    maxudiff = 0, maxvdiff = 0, maxwdiff = 0, maxdatadiff = 0;
-    for (size_t i {}; i < uvdata.size(); ++i) {
-        maxudiff = std::max<double>(maxudiff, std::abs(uvdata[i].u - expected[i].u));
-        maxvdiff = std::max<double>(maxvdiff, std::abs(uvdata[i].v - expected[i].v));
-        maxwdiff = std::max<double>(maxwdiff, std::abs(uvdata[i].w - expected[i].w));
-
-
-        auto data = uvdata[i].data;
-        data -= expected[i].data;
-        maxdatadiff = std::max<double>(
-            maxdatadiff,
-            thrust::abs(static_cast<thrust::complex<double>>(data))
-        );
+            maxdatadiff = std::max<double>(
+                maxdatadiff,
+                thrust::abs(static_cast<thrust::complex<double>>(datum))
+            );
+        }
     }
 
     // Now ensure we have returned back
-    double alloweddiff {std::is_same_v<float, TestType> ? 1e-3 : 1e-12};
+    double alloweddiff {1e-7};
     REQUIRE(maxudiff < alloweddiff);
     REQUIRE(maxvdiff < alloweddiff);
     REQUIRE(maxwdiff < alloweddiff);
-    REQUIRE(maxdatadiff < (std::is_same_v<float, TestType> ? 1e-1 : 1e-9));
+    REQUIRE(maxdatadiff < 2e-3);
+    fmt::println("Max uvw diffs: {:g}, {:g}, {:g}", maxudiff, maxvdiff, maxwdiff);
     fmt::println("Max data diff: {:g}", maxdatadiff);
 }
 

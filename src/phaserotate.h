@@ -3,16 +3,14 @@
 #include <cmath>
 
 #include "coordinates.h"
-#include "uvdatum.h"
+#include "datatable.h"
 #include "timer.h"
 #include "util.h"
 
-template<typename P>
-void phaserotate(UVDatum<P>& uvdatum, const RaDec to) {
+void phaserotate(DataTable& tbl, const RaDec to) {
     auto timer = Timer::get("phaserotate");
 
-    const RaDec from = uvdatum.meta->phasecenter;
-
+    const RaDec from = tbl.phasecenter();
     if (to == from) return;
 
     const double cos_deltara = std::cos(to.ra - from.ra);
@@ -22,29 +20,37 @@ void phaserotate(UVDatum<P>& uvdatum, const RaDec to) {
     const double sin_decto = std::sin(to.dec);
     const double cos_decto = std::cos(to.dec);
 
-    const double u {uvdatum.u}, v {uvdatum.v}, w {uvdatum.w};
+    for (size_t irow {}; auto& m : tbl.metadata()) {
+        double u = m.u;
+        double v = m.v;
+        double w = m.w;
 
-    const double uprime = (
-        + u * cos_deltara
-        - v * sin_decfrom * sin_deltara
-        - w * cos_decfrom * sin_deltara
-    );
-    const double vprime = (
-        + u * sin_decto * sin_deltara
-        + v * (sin_decfrom * sin_decto * cos_deltara + cos_decfrom * cos_decto)
-        - w * (sin_decfrom * cos_decto - cos_decfrom * sin_decto * cos_deltara)
-    );
-    const double wprime = (
-        + u * cos_decto * sin_deltara
-        - v * (cos_decfrom * sin_decto - sin_decfrom * cos_decto * cos_deltara)
-        + w * (sin_decfrom * sin_decto + cos_decfrom * cos_decto * cos_deltara)
-    );
+        const double uprime = (
+            + u * cos_deltara
+            - v * sin_decfrom * sin_deltara
+            - w * cos_decfrom * sin_deltara
+        );
+        const double vprime = (
+            + u * sin_decto * sin_deltara
+            + v * (sin_decfrom * sin_decto * cos_deltara + cos_decfrom * cos_decto)
+            - w * (sin_decfrom * cos_decto - cos_decfrom * sin_decto * cos_deltara)
+        );
+        const double wprime = (
+            + u * cos_decto * sin_deltara
+            - v * (cos_decfrom * sin_decto - sin_decfrom * cos_decto * cos_deltara)
+            + w * (sin_decfrom * sin_decto + cos_decfrom * cos_decto * cos_deltara)
+        );
 
-    // We ensure the UVDatum<P> constructor is called to ensure w is made positive
-    // again after phase rotation
-    uvdatum = UVDatum<P>(
-        uvdatum.meta, uvdatum.chan,
-        uprime, vprime, wprime,
-        uvdatum.weights, uvdatum.data *= cispi(-2 * (wprime - w))
-    );
+        m.u = uprime;
+        m.v = vprime;
+        m.w = wprime;
+
+        // Add in geometric delay to data
+        auto data = tbl.data(irow, irow);
+        for (size_t ichan {}; const double lambda : tbl.lambdas()) {
+            data[ichan++] *= cispi(-2 * (wprime - w) / lambda);
+        }
+    }
+
+    tbl.phasecenter(to);
 }
