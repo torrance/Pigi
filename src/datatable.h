@@ -45,6 +45,13 @@ public:
         casacore::MeasurementSet mset(path);
 
         // TODO: Allow selection of field ID.
+        {
+            auto field = mset.field();
+            auto phasecenter = casacore::ArrayColumn<double>(
+                field, "PHASE_DIR"
+            ).get(0).tovector();
+            m_phasecenter = {phasecenter[0], phasecenter[1]};
+        }
 
         // Remove autocorrelations
         mset = mset(mset.col("ANTENNA1") != mset.col("ANTENNA2"));
@@ -205,10 +212,17 @@ public:
         }
     }
 
+    size_t size() const { return m_nrows * m_nchans; }
     size_t nrows() const { return m_nrows; }
     size_t nchans() const { return m_nchans; }
 
+    const RaDec phasecenter() const { return m_phasecenter; }
+    void phasecenter(RaDec radec) { m_phasecenter = radec; }
+
     const std::vector<double>& lambdas() const { return m_lambdas; }
+
+    std::vector<RowMetadata>& metadata() { return m_metadata; }
+    const std::vector<RowMetadata>& metadata() const { return m_metadata; }
 
     RowMetadata metadata(size_t i) const { return m_metadata[i]; }
 
@@ -245,6 +259,7 @@ private:
     // TODO: Investigate storing baselines as std::unorded_map?
     size_t m_nrows {};
     size_t m_nchans {};
+    RaDec m_phasecenter;
     std::vector<double> m_freqs;
     std::vector<double> m_lambdas;
     std::vector<RowMetadata> m_metadata;

@@ -21,6 +21,10 @@ struct WorkUnit {
     // Data slice values into the corresponding DataTable
     size_t rowstart, rowend;
     size_t chanstart, chanend;
+
+    size_t size() const {
+        return (rowend - rowstart) * (chanend - chanstart);
+    }
 };
 
 std::vector<WorkUnit> partition(DataTable& tbl, GridConfig gridconf) {
