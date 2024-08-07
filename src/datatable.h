@@ -66,7 +66,7 @@ public:
             auto allfreqs = chanCol.get(0).tovector();
 
             // Ensure chanlow >= 0; and set chanhigh to default to all channels if <= 0
-            chanlow = std::min(0ll, chanlow);
+            chanlow = std::max(0ll, chanlow);
             if (chanhigh <= 0) chanhigh = allfreqs.size();
 
             for (long long chan {chanlow}; chan < chanhigh; ++chan) {
@@ -159,11 +159,24 @@ public:
                 }
             }
 
+            // Create slicers used to filter channels
+            casacore::Slicer rowSlice {
+                casacore::IPosition {0},
+                casacore::IPosition {static_cast<long>(nsubrows)},
+                casacore::Slicer::endIsLength
+            };
+
+            casacore::Slicer arraySlice {
+                casacore::IPosition {0, chanlow},
+                casacore::IPosition {3, static_cast<long>(m_nchans)},
+                casacore::Slicer::endIsLength
+            };
+
             // Copy weight spectrum in full
             {
                 auto weightSpectrumCol = casacore::ArrayColumn<float>(
                     subtbl, "WEIGHT_SPECTRUM"
-                ).getColumn();
+                ).getColumnRange(rowSlice, arraySlice);
 
                 std::copy(
                     weightSpectrumCol.begin(), weightSpectrumCol.end(),
@@ -175,7 +188,7 @@ public:
             {
                 auto dataCol = casacore::ArrayColumn<std::complex<float>>(
                     subtbl, "CORRECTED_DATA"
-                ).getColumn();
+                ).getColumnRange(rowSlice, arraySlice);
 
                 std::copy(
                     dataCol.begin(), dataCol.end(),
@@ -185,7 +198,9 @@ public:
 
             // Then fold flag and NaNs from the data column into weights
             {
-                auto flagCol = casacore::ArrayColumn<bool>(subtbl, "FLAG").getColumn();
+                auto flagCol = casacore::ArrayColumn<bool>(
+                    subtbl, "FLAG"
+                ).getColumnRange(rowSlice, arraySlice);
                 auto flagIter = flagCol.begin();
 
                 for (size_t i {}; i < nsubrows; ++i) {
