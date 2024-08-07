@@ -268,6 +268,16 @@ public:
         return {m.u / lambda, m.v / lambda, m.w / lambda};
     }
 
+    HostSpan<ComplexLinearData<float>, 2> data() {
+        return {
+            std::array<long long, 2>(
+                static_cast<long long>(m_nchans),
+                static_cast<long long>(m_nrows)
+            ),
+            m_data.data()
+        };
+    }
+
     HostSpan<ComplexLinearData<float>, 2> data(const std::array<size_t, 2>& rowslice) {
         auto& [rowstart, rowend] = rowslice;
         return {
