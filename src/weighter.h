@@ -28,92 +28,80 @@
 
 #include <vector>
 
+#include "datatable.h"
 #include "gridspec.h"
-#include "uvdatum.h"
 #include "workunit.h"
 
-template <typename T>
 class Weighter {
 public:
-    virtual const LinearData<T>& operator()(UVDatum<T>&) const;
+    virtual const LinearData<float>& operator()(
+        const double u, const double v, LinearData<float>& weight
+    ) const = 0;
     virtual ~Weighter() = default;
 };
 
-template <typename T, typename R>
-void applyWeights(const Weighter<T>& weighter, R& uvdata) {
+void applyweights(const Weighter& weighter, DataTable& tbl) {
     LinearData<double> totalWeight {};  // The sum requires double precision
 
-    for (UVDatum<T>& uvdatum : uvdata) {
-        totalWeight += static_cast<LinearData<double>>(weighter(uvdatum));
+    // Apply weighting
+    for (size_t irow {}; irow < tbl.nrows(); ++irow) {
+        for (size_t ichan {}; ichan < tbl.nchans(); ++ichan) {
+            auto [u, v, _] = tbl.uvw(irow, ichan);
+            totalWeight += static_cast<LinearData<double>>(
+                weighter(u, v, tbl.weights(irow, ichan))
+            );
+        }
     }
 
-    // Normalize weight sum to unity
-    for (UVDatum<T>& uvdatum : uvdata) {
-        uvdatum.weights = static_cast<LinearData<T>>(
-            static_cast<LinearData<double>>(uvdatum.weights) /= totalWeight
+    // Then normalize weight sum to unity
+    for (auto& weight : tbl.weights()) {
+        weight = static_cast<LinearData<float>>(
+            static_cast<LinearData<double>>(weight) /= totalWeight
         );
     }
 }
 
-template <typename T>
-void applyWeights(const Weighter<T>& weighter, std::vector<WorkUnit<T>>& workunits) {
-    LinearData<double> totalWeight {};  // The sum requires double precision
-
-    for (WorkUnit<T>& workunit : workunits) {
-        for (UVDatum<T>& uvdatum : workunit.data) {
-            totalWeight += static_cast<LinearData<double>>(weighter(uvdatum));
-        }
-    }
-
-    // Normalize weight sum to unity
-    for (WorkUnit<T>& workunit : workunits) {
-        for (UVDatum<T>& uvdatum : workunit.data) {
-            uvdatum.weights = static_cast<LinearData<T>>(
-                static_cast<LinearData<double>>(uvdatum.weights) /= totalWeight
-            );
-        }
-    }
-}
-
-template <typename T>
-class Natural : public Weighter<T> {
+class Natural : public Weighter {
 public:
     Natural() = delete;
 
-    template <typename R>
-    Natural(R&&, GridSpec gridspec) : gridspec(gridspec) {}
+    Natural(DataTable&, GridSpec gridspec) : gridspec(gridspec) {}
 
-    inline const LinearData<T>& operator()(UVDatum<T>& uvdatum) const override {
-        auto [upx, vpx] = gridspec.UVtoGrid(uvdatum.u, uvdatum.v);
+    inline const LinearData<float>& operator()(
+        const double u, const double v, LinearData<float>& weight
+    ) const override {
+        auto [upx, vpx] = gridspec.UVtoGrid(u, v);
         if (!(0 <= upx && upx < gridspec.Nx && 0 <= vpx && vpx < gridspec.Ny)) {
-            uvdatum.weights = {0, 0, 0, 0};
+            weight = {0, 0, 0, 0};
         }
-        return uvdatum.weights;
+        return weight;
     }
 
 private:
     GridSpec gridspec;
 };
 
-template <typename T>
-class Uniform : public Weighter<T> {
+class Uniform : public Weighter {
 public:
     Uniform() = delete;
 
-    template <typename R>
-    Uniform(R&& uvdata, GridSpec gridspec)
+    Uniform(DataTable& tbl, GridSpec gridspec)
         : gridspec(gridspec), griddedWeights{gridspec.Nx, gridspec.Ny} {
 
         // Sum weights for each grid cell
-        for (const UVDatum<T>& uvdatum : uvdata) {
-            auto [upx, vpx] = gridspec.UVtoGrid(uvdatum.u, uvdatum.v);
-            long long upx_ll { std::llround(upx) }, vpx_ll { std::llround(vpx) };
+        for (size_t irow {}; irow < tbl.nrows(); ++irow) {
+            for (size_t ichan {}; ichan < tbl.nchans(); ++ichan) {
+                auto [u, v, w] = tbl.uvw(irow, ichan);
+                auto [upx, vpx] = gridspec.UVtoGrid(u, v);
+                long long upx_ll { std::llround(upx) }, vpx_ll { std::llround(vpx) };
 
-            if (
-                0 <= upx_ll && upx_ll < gridspec.Nx &&
-                0 <= vpx_ll && vpx_ll < gridspec.Ny
-            ) {
-                griddedWeights[gridspec.gridToLinear(upx_ll, vpx_ll)] += uvdatum.weights;
+                if (
+                    0 <= upx_ll && upx_ll < gridspec.Nx &&
+                    0 <= vpx_ll && vpx_ll < gridspec.Ny
+                ) {
+                    griddedWeights[gridspec.gridToLinear(upx_ll, vpx_ll)]
+                        += tbl.weights(irow, ichan);
+                }
             }
         }
 
@@ -125,52 +113,55 @@ public:
         }
     }
 
-    inline const LinearData<T>& operator()(UVDatum<T>& uvdatum) const override {
-        auto [upx, vpx] = gridspec.UVtoGrid(uvdatum.u, uvdatum.v);
+    inline const LinearData<float>& operator()(
+        const double u, const double v, LinearData<float>& weight
+    ) const override {
+        auto [upx, vpx] = gridspec.UVtoGrid(u, v);
         long long upx_ll { std::llround(upx) }, vpx_ll { std::llround(vpx) };
         if (
             0 <= upx_ll && upx_ll < gridspec.Nx &&
             0 <= vpx_ll && vpx_ll < gridspec.Ny
         ) {
-            uvdatum.weights *=
-                griddedWeights[gridspec.gridToLinear(upx_ll, vpx_ll)];
+            weight *= griddedWeights[gridspec.gridToLinear(upx_ll, vpx_ll)];
         } else {
-            uvdatum.weights *= 0;
+            weight *= 0;
         }
 
-        return uvdatum.weights;
+        return weight;
     }
 
 private:
     GridSpec gridspec;
-    HostArray<LinearData<T>, 2> griddedWeights;
+    HostArray<LinearData<float>, 2> griddedWeights;
 };
 
-template <typename T>
-class Briggs : public Weighter<T> {
+class Briggs : public Weighter {
 public:
-    template <typename R>
-    Briggs(R&& uvdata, GridSpec gridspec, double robust)
+    Briggs(DataTable& tbl, GridSpec gridspec, double robust)
         : robust(robust), gridspec(gridspec), griddedWeights{gridspec.Nx, gridspec.Ny} {
 
         // Sum weights for each grid cell
-        for (const UVDatum<T>& uvdatum : uvdata) {
-            auto [upx, vpx] = gridspec.UVtoGrid(uvdatum.u, uvdatum.v);
-            long long upx_ll { std::llround(upx) }, vpx_ll { std::llround(vpx) };
+        for (size_t irow {}; irow < tbl.nrows(); ++irow) {
+            for (size_t ichan {}; ichan < tbl.nchans(); ++ichan) {
+                auto [u, v, w] = tbl.uvw(irow, ichan);
+                auto [upx, vpx] = gridspec.UVtoGrid(u, v);
+                long long upx_ll { std::llround(upx) }, vpx_ll { std::llround(vpx) };
 
-            if (
-                0 <= upx_ll && upx_ll < gridspec.Nx &&
-                0 <= vpx_ll && vpx_ll < gridspec.Ny
-            ) {
-                griddedWeights[gridspec.gridToLinear(upx_ll, vpx_ll)] += uvdatum.weights;
+                if (
+                    0 <= upx_ll && upx_ll < gridspec.Nx &&
+                    0 <= vpx_ll && vpx_ll < gridspec.Ny
+                ) {
+                    griddedWeights[gridspec.gridToLinear(upx_ll, vpx_ll)]
+                        += tbl.weights(irow, ichan);
+                }
             }
         }
 
         // Calculate f2
-        LinearData<T> f2 { 1, 1, 1, 1};
+        LinearData<float> f2 { 1, 1, 1, 1};
         f2 *= std::pow(5 * std::pow(10, -robust), 2);
 
-        LinearData<T> sumWk2, sumwi;
+        LinearData<float> sumWk2, sumwi;
         for (auto weight : griddedWeights) {
             // Note: weight is a copy
             sumwi += weight;
@@ -182,31 +173,32 @@ public:
         // Apply f2 to inverse gridded weights and calculate norm as we go
         for (auto& weight: griddedWeights) {
             for (size_t i {}; i < 4; ++i) {
-                T briggsWeight { 1 / (1 + weight[i] * f2[i]) };
+                float briggsWeight { 1 / (1 + weight[i] * f2[i]) };
                 weight[i] = briggsWeight;
             }
         }
     }
 
-    inline const LinearData<T>& operator()(UVDatum<T>& uvdatum) const override {
-        auto [upx, vpx] = gridspec.UVtoGrid(uvdatum.u, uvdatum.v);
+    inline const LinearData<float>& operator()(
+        const double u, const double v, LinearData<float>& weight
+    ) const override {
+        auto [upx, vpx] = gridspec.UVtoGrid(u, v);
         long long upx_ll { std::llround(upx) }, vpx_ll { std::llround(vpx) };
         if (
             0 <= upx_ll && upx_ll < gridspec.Nx &&
             0 <= vpx_ll && vpx_ll < gridspec.Ny
         ) {
-            uvdatum.weights *=
-                griddedWeights[gridspec.gridToLinear(upx_ll, vpx_ll)];
+            weight *= griddedWeights[gridspec.gridToLinear(upx_ll, vpx_ll)];
         } else {
-            uvdatum.weights *= 0;
+            weight *= 0;
         }
 
-        return uvdatum.weights;
+        return weight;
     }
 
 
 private:
     double robust {};
     GridSpec gridspec;
-    HostArray<LinearData<T>, 2> griddedWeights;
+    HostArray<LinearData<float>, 2> griddedWeights;
 };
