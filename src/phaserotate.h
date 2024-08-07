@@ -46,9 +46,8 @@ void phaserotate(DataTable& tbl, const RaDec to) {
         m.w = wprime;
 
         // Add in geometric delay to data
-        auto data = tbl.data(irow, irow);
         for (size_t ichan {}; const double lambda : tbl.lambdas()) {
-            data[ichan++] *= cispi(-2 * (wprime - w) / lambda);
+            tbl.data(irow, ichan++) *= cispi(-2 * (wprime - w) / lambda);
         }
     }
 

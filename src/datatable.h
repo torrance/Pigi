@@ -226,7 +226,23 @@ public:
 
     RowMetadata metadata(size_t i) const { return m_metadata[i]; }
 
-    HostSpan<ComplexLinearData<float>, 2> data(size_t rowstart, size_t rowend) {
+    HostSpan<RowMetadata, 1> metadata(std::array<size_t, 2> rowslice) {
+        auto& [rowstart, rowend] = rowslice;
+        return {
+            std::array<long long, 1>(static_cast<long long>(rowend - rowstart)),
+            m_metadata.data() + rowstart
+        };
+    }
+
+    std::array<double, 3> uvw(size_t row, size_t chan) {
+        RowMetadata& m = m_metadata[row];
+        double lambda = m_lambdas[chan];
+
+        return {m.u / lambda, m.v / lambda, m.w / lambda};
+    }
+
+    HostSpan<ComplexLinearData<float>, 2> data(const std::array<size_t, 2>& rowslice) {
+        auto& [rowstart, rowend] = rowslice;
         return {
             std::array<long long, 2>(
                 static_cast<long long>(rowend - rowstart),
@@ -236,7 +252,22 @@ public:
         };
     }
 
-    HostSpan<LinearData<float>, 2> weights(size_t rowstart, size_t rowend) {
+    ComplexLinearData<float>& data(const size_t row, const size_t chan) {
+        return m_data[row * m_nchans + chan];
+    }
+
+    HostSpan<LinearData<float>, 2> weights() {
+        return {
+            std::array<long long, 2>(
+                static_cast<long long>(m_nrows),
+                static_cast<long long>(m_nchans)
+            ),
+            m_weights.data()
+        };
+    }
+
+    HostSpan<LinearData<float>, 2> weights(const std::array<size_t, 2>& rowslice) {
+        auto& [rowstart, rowend] = rowslice;
         return {
             std::array<long long, 2>(
                 static_cast<long long>(rowend - rowstart),
@@ -244,6 +275,10 @@ public:
             ),
             m_weights.data() + rowstart * m_nchans
         };
+    }
+
+    LinearData<float>& weights(const size_t row, const size_t chan) {
+        return m_weights[row * m_nchans + chan];
     }
 
     size_t mem() {
