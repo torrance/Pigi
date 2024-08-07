@@ -89,8 +89,8 @@ HostArray<T<S>, 2> invert(
 
         // Copy across data
         DeviceArray<WorkUnit, 1> workunits_d(workunits_h);
-        DeviceArray<ComplexLinearData<S>, 2> data_d(data_h);
-        DeviceArray<LinearData<S>, 2> weights_d(weights_h);
+        DeviceArray<ComplexLinearData<float>, 2> data_d(data_h);
+        DeviceArray<LinearData<float>, 2> weights_d(weights_h);
         DeviceArray<std::array<double, 3>, 1> uvws_d(uvws_h);
         DeviceArray<DeviceSpan<ComplexLinearData<double>, 2>, 1> alefts_d(alefts_h);
         DeviceArray<DeviceSpan<ComplexLinearData<double>, 2>, 1> arights_d(arights_h);
@@ -181,8 +181,8 @@ void _gridder(
     DeviceSpan<T, 3> subgrids,
     const DeviceSpan<WorkUnit, 1> workunits,
     const DeviceSpan<std::array<double, 3>, 1> uvws,
-    const DeviceSpan<ComplexLinearData<S>, 2> data,
-    const DeviceSpan<LinearData<S>, 2> weights,
+    const DeviceSpan<ComplexLinearData<float>, 2> data,
+    const DeviceSpan<LinearData<float>, 2> weights,
     const GridSpec subgridspec,
     const DeviceSpan<double, 1> lambdas,
     const DeviceSpan<S, 2> subtaper,
@@ -193,13 +193,13 @@ void _gridder(
 ) {
     // Set up the shared mem cache
     const size_t cachesize {128};
-    __shared__ char _cache[cachesize * (sizeof(ComplexLinearData<S>) + sizeof(S))];
-    auto data_cache = reinterpret_cast<ComplexLinearData<S>*>(_cache);
-    auto invlambdas_cache = reinterpret_cast<S*>(&data_cache[128]);
+    __shared__ char _cache[cachesize * (sizeof(ComplexLinearData<float>) + sizeof(S))];
+    auto data_cache = reinterpret_cast<ComplexLinearData<float>*>(_cache);
+    auto invlambdas_cache = reinterpret_cast<S*>(&data_cache[cachesize]);
 
     // Get workunit information
     size_t rowstart, rowend, chanstart, chanend;
-    double u0, v0, w0;
+    S u0, v0, w0;
     {
         const auto& workunit = workunits[blockIdx.y];
         rowstart = workunit.rowstart - rowoffset;
@@ -226,14 +226,14 @@ void _gridder(
         ComplexLinearData<S> cell {};
 
         for (size_t irow {rowstart}; irow < rowend; ++irow) {
+            auto uvw = uvws[irow];
+            S u = std::get<0>(uvw), v = std::get<1>(uvw), w = std::get<2>(uvw);
 
             // Precompute phase in _meters_
             // We can convert to the dimensionless value later by a single
             // multiplication by the inverse lambda per channel
-            auto [u, v, w] = uvws[irow];
-
-            S theta = 2 * ::pi_v<S> * (u * l + v * m + w * n);  // [meters]
-            S thetaoffset = 2 * ::pi_v<S> * (u0 * l + v0 * m + w0 * n);  // [dimensionless]
+            S theta {2 * ::pi_v<S> * (u * l + v * m + w * n)};  // [meters]
+            S thetaoffset {2 * ::pi_v<S> * (u0 * l + v0 * m + w0 * n)};  // [dimensionless]
 
             for (size_t ichan {chanstart}; ichan < chanend; ichan += nchanstep) {
                 const size_t N = min(nchanstep, chanend - ichan);
@@ -274,7 +274,7 @@ void _gridder(
                     // Retrieve value of uvdatum from the cache
                     // This shared mem load is broadcast across the warp and so we
                     // don't need to worry about bank conflicts
-                    ComplexLinearData<S> datum = data_cache[j];
+                    auto datum = static_cast<ComplexLinearData<S>>(data_cache[j]);
 
                     auto phase = cis(theta * invlambdas_cache[j] - thetaoffset);
 
@@ -325,8 +325,8 @@ void gridder(
     DeviceSpan<T, 3> subgrids,
     const DeviceSpan<WorkUnit, 1> workunits,
     const DeviceSpan<std::array<double, 3>, 1> uvws,
-    const DeviceSpan<ComplexLinearData<S>, 2> data,
-    const DeviceSpan<LinearData<S>, 2> weights,
+    const DeviceSpan<ComplexLinearData<float>, 2> data,
+    const DeviceSpan<LinearData<float>, 2> weights,
     const GridSpec subgridspec,
     const DeviceSpan<double, 1> lambdas,
     const DeviceSpan<S, 2> subtaper,
