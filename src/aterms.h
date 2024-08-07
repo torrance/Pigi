@@ -8,24 +8,22 @@
 #include "beam.h"
 #include "logger.h"
 #include "memory.h"
-#include "mset.h"
 #include "outputtypes.h"
 #include "util.h"
 
-template <typename P>
 class Aterms {
 public:
-    using aterm_t = std::shared_ptr<HostArray<ComplexLinearData<P>, 2>>;
+    using aterm_t = std::shared_ptr<HostArray<ComplexLinearData<double>, 2>>;
 
     // This constructor is only used in tests as a conversion from beam matrix to Aterms
     // object
-    Aterms(const HostArray<ComplexLinearData<P>, 2>& aterm) {
+    Aterms(const HostArray<ComplexLinearData<double>, 2>& aterm) {
         aterms.push_back(std::make_tuple(
             Interval{
                 -std::numeric_limits<double>::infinity(),
                 std::numeric_limits<double>::infinity()
             },
-            std::make_shared<HostArray<ComplexLinearData<P>, 2>>(aterm)
+            std::make_shared<HostArray<ComplexLinearData<double>, 2>>(aterm)
         ));
     }
 
@@ -44,46 +42,68 @@ private:
     std::vector<std::tuple<Interval, aterm_t>> aterms {};
 };
 
-template <typename P>
-Aterms<P> mkAterms(
-    MeasurementSet& mset,
+Aterms mkAterms(
+    const casacore::MeasurementSet& mset,
     const GridSpec& gridspec,
-    const double maxDuration,
-    const RaDec& gridorigin
+    double maxDuration,
+    const RaDec& gridorigin,
+    const double freq
 ) {
-    std::vector<std::tuple<Interval, typename Aterms<P>::aterm_t>> aterms;
+    if (maxDuration <= 0) maxDuration = std::numeric_limits<double>::infinity();
+
+    std::vector<std::tuple<Interval, typename Aterms::aterm_t>> aterms;
+
+    std::string telescope = casacore::MSObservationColumns(
+        mset.observation()
+    ).telescopeName().get(0);
 
     // TODO: Remove these explicit branches on telescope type
-    if (mset.telescopeName() == "MWA") {
-        for (auto& [start, end, delays] : mset.mwaDelays()) {
-            int Nintervals = 1;
-            if (maxDuration > 0) {
-                Nintervals = std::ceil((end - start) / (maxDuration / 86400.));
+    if (telescope == "MWA") {
+        // Get MWA delays
+        using mwadelay_t = std::tuple<double, double, std::array<uint32_t, 16>>;
+        std::vector<mwadelay_t> delays;
+        {
+            auto mwaTilePointingTbl = mset.keywordSet().asTable("MWA_TILE_POINTING");
+            auto intervalsCol = casacore::ArrayColumn<double>(mwaTilePointingTbl, "INTERVAL");
+            auto delaysCol = casacore::ArrayColumn<int>(mwaTilePointingTbl, "DELAYS");
+
+            for (size_t i {}; i < mwaTilePointingTbl.nrow(); ++i) {
+                auto intervalRow = intervalsCol.get(i).tovector();
+                auto delaysRow = delaysCol.get(i);
+
+                // Copy casacore array to fixed array
+                std::array<uint32_t, 16> delays_uint32;
+                std::copy(delaysRow.begin(), delaysRow.end(), delays_uint32.begin());
+
+                delays.push_back(std::make_tuple(
+                    intervalRow[0] / 86400., intervalRow[1] / 86400., delays_uint32
+                ));
             }
+        }
 
-            // Break it up into N evenly-sized intervals
-            double width = (end - start) / Nintervals;
+        for (auto& [start, end, delays] : delays) {
+            for (double t0 {start}; t0 < end; t0 += maxDuration) {
+                double t1 = std::min(t0 + maxDuration, end);
 
-            for (int n {}; n < Nintervals; ++n) {
-                Interval interval(start + n * width, start + (n + 1) * width);
+                Interval interval(t0, t1);
 
-                auto jones = Beam::MWA<P>(interval.mid(), delays).gridResponse(
-                    gridspec, gridorigin, mset.midfreq()
+                auto jones = Beam::MWA<double>(interval.mid(), delays).gridResponse(
+                    gridspec, gridorigin, freq
                 );
                 aterms.push_back(std::make_tuple(
-                    interval, std::make_shared<HostArray<ComplexLinearData<P>, 2>>(jones)
+                    interval, std::make_shared<HostArray<ComplexLinearData<double>, 2>>(jones)
                 ));
             }
         }
     } else {
         Logger::warning("Unkown telescope: defaulting to uniform beam");
-        auto jones = Beam::Uniform<P>().gridResponse(gridspec, gridorigin, mset.midfreq());
+        auto jones = Beam::Uniform<double>().gridResponse(gridspec, gridorigin, freq);
         aterms.push_back(std::make_tuple(
             Interval{
                 -std::numeric_limits<double>::infinity(),
                 std::numeric_limits<double>::infinity()
             },
-            std::make_shared<HostArray<ComplexLinearData<P>, 2>>(jones)
+            std::make_shared<HostArray<ComplexLinearData<double>, 2>>(jones)
         ));
     }
 

@@ -150,7 +150,7 @@ public:
                     double w = *uvwIter; ++uvwIter;
 
                     m_metadata[irow + i] = RowMetadata{
-                        .time = *timeIter,
+                        .time = *timeIter / 86400.,  // Convert from mjd [seconds] to [days]
                         .baseline = Baseline{ant1, ant2},
                         .u = u, .v = v, .w = w
                     };
@@ -218,6 +218,18 @@ public:
 
     const RaDec phasecenter() const { return m_phasecenter; }
     void phasecenter(RaDec radec) { m_phasecenter = radec; }
+
+    double midfreq() const {
+        return std::accumulate(m_freqs.begin(), m_freqs.end(), 0.) / m_freqs.size();
+    }
+
+    HostSpan<double, 1> freqs(std::array<size_t, 2> chanslice) {
+        auto& [chanstart, chanend] = chanslice;
+        return {
+            std::array<long long, 1>(static_cast<long long>(chanend - chanstart)),
+            m_freqs.data() + chanstart
+        };
+    }
 
     const std::vector<double>& lambdas() const { return m_lambdas; }
 

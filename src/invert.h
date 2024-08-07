@@ -1,4 +1,5 @@
 #include <algorithm>
+#include <unordered_map>
 #include <vector>
 
 #include <hip/hip_runtime.h>
@@ -16,6 +17,7 @@ HostArray<T<S>, 2> invert(
     DataTable& tbl,
     std::vector<WorkUnit>& workunits,
     GridConfig gridconf,
+    Aterms& aterms,
     bool makePSF = false
 ) {
     GridSpec gridspec = gridconf.padded();
@@ -55,6 +57,28 @@ HostArray<T<S>, 2> invert(
 
         HostSpan<WorkUnit, 1> workunits_h({nworkunits}, workunits.data() + istart);
 
+        // Create aterms arrays
+        HostArray<DeviceSpan<ComplexLinearData<double>, 2>, 1> alefts_h(nworkunits);
+        HostArray<DeviceSpan<ComplexLinearData<double>, 2>, 1> arights_h(nworkunits);
+
+        // Now transfer across all required Aterms and update the Aleft, Aright values
+        // in workunits_h. We use a dictionary copy across only _unique_ Aterms, since
+        // these may be shared across workunits.
+        std::unordered_map<
+            Aterms::aterm_t, DeviceArray<ComplexLinearData<double>, 2>
+        > aterm_map;
+        for (size_t i {}; auto w : workunits_h) {
+            auto [ant1, ant2] = w.baseline;
+
+            Aterms::aterm_t aleft = aterms.get(w.time, ant1);
+            alefts_h[i] = (*aterm_map.try_emplace(aleft, *aleft).first).second;
+
+            Aterms::aterm_t aright = aterms.get(w.time, ant2);
+            arights_h[i] = (*aterm_map.try_emplace(aright, *aright).first).second;
+
+            ++i;
+        }
+
         auto data_h = tbl.data({rowstart, rowend});
         auto weights_h = tbl.weights({rowstart, rowend});
 
@@ -68,6 +92,8 @@ HostArray<T<S>, 2> invert(
         DeviceArray<ComplexLinearData<S>, 2> data_d(data_h);
         DeviceArray<LinearData<S>, 2> weights_d(weights_h);
         DeviceArray<std::array<double, 3>, 1> uvws_d(uvws_h);
+        DeviceArray<DeviceSpan<ComplexLinearData<double>, 2>, 1> alefts_d(alefts_h);
+        DeviceArray<DeviceSpan<ComplexLinearData<double>, 2>, 1> arights_d(arights_h);
 
         // Allocate subgrid stack
         DeviceArray<T<S>, 3> subgrids_d({subgridspec.Nx, subgridspec.Ny, nbatch});
@@ -75,7 +101,7 @@ HostArray<T<S>, 2> invert(
         // Grid
         gridder<T<S>, S>(
             subgrids_d, workunits_d, uvws_d, data_d, weights_d,
-            subgridspec, lambdas_d, subtaperd, rowstart, makePSF
+            subgridspec, lambdas_d, subtaperd, alefts_d, arights_d, rowstart, makePSF
         );
 
         // FFT all subgrids as one batch
@@ -160,6 +186,8 @@ void _gridder(
     const GridSpec subgridspec,
     const DeviceSpan<double, 1> lambdas,
     const DeviceSpan<S, 2> subtaper,
+    const DeviceSpan<DeviceSpan<ComplexLinearData<double>, 2>, 1> alefts,
+    const DeviceSpan<DeviceSpan<ComplexLinearData<double>, 2>, 1> arights,
     size_t rowoffset,
     bool makePSF
 ) {
@@ -247,14 +275,8 @@ void _gridder(
                     // This shared mem load is broadcast across the warp and so we
                     // don't need to worry about bank conflicts
                     ComplexLinearData<S> datum = data_cache[j];
-                    // datum = {1, 0, 0, 1};
 
                     auto phase = cis(theta * invlambdas_cache[j] - thetaoffset);
-                    // auto invl = invlambdas_cache[j];
-                    // S theta = 2 * ::pi_v<S> * (
-                    //     (u * invl - u0) * l + (v * invl - v0) * m + (w * invl - w0) * n
-                    // );
-                    // auto phase = cis(theta);
 
                     // Equivalent of: cell += uvdata.data * phase
                     // Written out explicitly to use fma operations
@@ -270,26 +292,26 @@ void _gridder(
         if (idx >= subgridspec.size()) return;
 
         T output;
-        output = static_cast<T>(cell);
+        if (makePSF) {
+            // No beam correction for PSF
+            output = static_cast<T>(cell);
+        } else {
+            // Grab A terms and apply beam corrections and normalization
+            const auto Al = static_cast<ComplexLinearData<S>>(alefts[blockIdx.y][idx]).inv();
+            const auto Ar = static_cast<ComplexLinearData<S>>(arights[blockIdx.y][idx]).inv().adjoint();
 
-        // if constexpr(makePSF) {
-        //     // No beam correction for PSF
-        //     output = static_cast<T>(cell);
-        // } else {
-        //     // Grab A terms and apply beam corrections and normalization
-        //     const auto Al = Aleft[idx].inv();
-        //     const auto Ar = Aright[idx].inv().adjoint();
+            // Apply beam to cell: inv(Aleft) * cell * inv(Aright)^H
+            // Then conversion from LinearData to output T
+            output = static_cast<T>(
+                matmul(matmul(Al, cell), Ar)
+            );
 
-        //     // Apply beam to cell: inv(Aleft) * cell * inv(Aright)^H
-        //     // Then conversion from LinearData to output T
-        //     output = static_cast<T>(matmul(matmul(Al, cell), Ar));
+            // Calculate norm
+            T norm = matmul(Al, Ar).norm();
 
-        //     // Calculate norm
-        //     T norm = T(matmul(Al, Ar).norm());
-
-        //     // Finally, apply norm
-        //     output /= norm;
-        // }
+            // Finally, apply norm
+            output /= norm;
+        }
 
         // Perform final FFT fft normalization and apply taper
         output *= subtaper[idx] / subgridspec.size();
@@ -308,6 +330,8 @@ void gridder(
     const GridSpec subgridspec,
     const DeviceSpan<double, 1> lambdas,
     const DeviceSpan<S, 2> subtaper,
+    const DeviceSpan<DeviceSpan<ComplexLinearData<double>, 2>, 1> alefts,
+    const DeviceSpan<DeviceSpan<ComplexLinearData<double>, 2>, 1> arights,
     size_t rowoffset,
     bool makePSF
 ) {
@@ -323,7 +347,8 @@ void gridder(
     hipLaunchKernelGGL(
         fn, dim3(nblocksx, nblocksy, 1), dim3(nthreadsx, nthreadsy, 1),
         0, hipStreamPerThread,
-        subgrids, workunits, uvws, data, weights, subgridspec, lambdas, subtaper, rowoffset, makePSF
+        subgrids, workunits, uvws, data, weights, subgridspec, lambdas,
+        subtaper, alefts, arights, rowoffset, makePSF
     );
 }
 
