@@ -8,6 +8,10 @@
 #include "logger.h"
 
 struct WorkUnit {
+    double time;
+    double freq;
+    DataTable::Baseline baseline;
+
     // The center of a workunit is Nx / 2, Ny / 2, using integer division.
     // This is to be consistent with where the center is in an FFT.
 
@@ -142,8 +146,9 @@ std::vector<WorkUnit> partition(DataTable& tbl, GridConfig gridconf) {
     // as WorkUnits are created.
     std::vector<WorkUnitCandidate> candidates;
 
-    // We use priorbaseline to track changes in the baseline during the loop
-    std::optional<DataTable::Baseline> priorbaseline;
+    // Set up other mutable state used during the loop
+    DataTable::Baseline currentbaseline = tbl.metadata(0).baseline;
+    bool createnew {false};
 
     const auto lambdas = tbl.lambdas();
 
@@ -158,29 +163,47 @@ std::vector<WorkUnit> partition(DataTable& tbl, GridConfig gridconf) {
             auto [u2px, v2px] = padded.UVtoGrid(u2, v2);
 
             if (!candidate.add(u1px, v1px, w1) || !candidate.add(u2px, v2px, w2)) {
-                priorbaseline.reset();  // use this value as a signal to create new candidates
+                createnew = true;
                 break;
             }
         }
 
         // Split the channel width into chunks that fit comfortably
         // within a subgrid (and then a little bit extra)
-        if (!priorbaseline || tbl.metadata(irow).baseline != priorbaseline.value()) {
-            priorbaseline = tbl.metadata(irow).baseline;
-
+        if (createnew || tbl.metadata(irow).baseline != currentbaseline) {
             // Save any existing candidates as workunits
             for (auto& c : candidates) {
                 long long upx = std::llround(c.ulowpx + c.uhighpx) / 2;
                 long long vpx = std::llround(c.vlowpx + c.vhighpx) / 2;
                 auto [u, v] = padded.gridToUV<double>(upx, vpx);
 
+                double meantime = [&] {
+                    double meantime {};
+                    for (auto m : tbl.metadata({c.rowstart, irow})) {
+                        meantime += m.time;
+                    }
+                    return meantime / (irow - c.rowstart);
+                }();
+                double meanfreq = [&] {
+                    double meanfreq {};
+                    for (auto freq : tbl.freqs({c.chanstart, c.chanend + 1})) {
+                        meanfreq += freq;
+                    }
+                    return meanfreq / (c.chanend + 1 - c.chanstart);
+                }();
+
                 workunits.push_back(WorkUnit(
+                    meantime, meanfreq, currentbaseline,
                     upx, vpx, u, v, c.w0,
                     c.rowstart, irow, c.chanstart, c.chanend + 1
                 ));
             }
 
+            // Reset loop state
+            createnew = false;
+            currentbaseline = tbl.metadata(irow).baseline;
             candidates.clear();
+
             for (size_t ichan {}; ichan < tbl.nchans(); ++ichan) {
                 auto [u, v, w] = tbl.uvw(irow, ichan);
                 auto [upx, vpx] = padded.UVtoGrid(u, v);
@@ -216,7 +239,23 @@ std::vector<WorkUnit> partition(DataTable& tbl, GridConfig gridconf) {
         long long vpx = std::llround(c.vlowpx + c.vhighpx) / 2;
         auto [u, v] = padded.gridToUV<double>(upx, vpx);
 
+        double meantime = [&] {
+            double meantime {};
+            for (auto m : tbl.metadata({c.rowstart, tbl.nrows()})) {
+                meantime += m.time;
+            }
+            return meantime / (tbl.nrows() - c.rowstart);
+        }();
+        double meanfreq = [&] {
+            double meanfreq {};
+            for (auto freq : tbl.freqs({c.chanstart, c.chanend + 1})) {
+                meanfreq += freq;
+            }
+            return meanfreq / (c.chanend + 1 - c.chanstart);
+        }();
+
         workunits.push_back(WorkUnit(
+            meantime, meanfreq, currentbaseline,
             upx, vpx, u, v, c.w0,
             c.rowstart, tbl.nrows(), c.chanstart, c.chanend + 1
         ));

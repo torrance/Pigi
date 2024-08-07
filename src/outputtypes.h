@@ -12,6 +12,7 @@ struct alignas(16) LinearData {
     T xx {}, yx {}, xy {}, yy {};
 
     template <typename S>
+    __host__ __device__
     explicit operator LinearData<S>() const {
         return LinearData<S> {
             static_cast<S>(xx), static_cast<S>(yx),
@@ -144,8 +145,9 @@ struct fmt::formatter<LinearData<T>> {
     }
 };
 
+#if !defined(__CUDA_ARCH__)
 template<typename T, typename S>
-__host__ __device__
+__host__
 inline auto matmul(const LinearData<T>& lhs, const LinearData<S>& rhs) {
     using R = decltype(lhs.xx * lhs.yy);
     return LinearData<R> {
@@ -155,6 +157,27 @@ inline auto matmul(const LinearData<T>& lhs, const LinearData<S>& rhs) {
         lhs.yx * rhs.xy + lhs.yy * rhs.yy
     };
 }
+#endif
+
+#if defined(__clang__) || defined(__CUDA_ARCH__)
+template<typename T, typename S>
+__device__
+inline auto matmul(const LinearData<T>& lhs, const LinearData<S>& rhs) {
+    using R = decltype(lhs.xx * lhs.yy);
+    LinearData<R> res;
+
+    cmac(res.xx, lhs.xx, rhs.xx);
+    cmac(res.xx, lhs.xy, rhs.yx);
+    cmac(res.yx, lhs.yx, rhs.xx);
+    cmac(res.yx, lhs.yy, rhs.yx);
+    cmac(res.xy, lhs.xx, rhs.xy);
+    cmac(res.xy, lhs.xy, rhs.yy);
+    cmac(res.yy, lhs.yx, rhs.xy);
+    cmac(res.yy, lhs.yy, rhs.yy);
+
+    return res;
+}
+#endif
 
 template <typename P>
 __device__
