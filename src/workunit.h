@@ -148,18 +148,14 @@ std::vector<WorkUnit> partition(DataTable& tbl, GridConfig gridconf) {
     const auto lambdas = tbl.lambdas();
 
     for (size_t irow {}; irow < tbl.nrows(); ++irow) {
-        auto m = tbl.metadata(irow);
-
         // For each candidate, check that the first and last channel fit
         // fmt::println("Testing candidates on new row...");
         for (auto& candidate : candidates) {
-            double u1px = m.u / lambdas[candidate.chanstart] / subgrid.scaleu;
-            double v1px = m.v / lambdas[candidate.chanstart] / subgrid.scalev;
-            double w1 = m.w / lambdas[candidate.chanstart];
+            auto [u1, v1, w1] = tbl.uvw(irow, candidate.chanstart);
+            auto [u1px, v1px] = padded.UVtoGrid(u1, v1);
 
-            double u2px = m.u / lambdas[candidate.chanend] / subgrid.scaleu;
-            double v2px = m.v / lambdas[candidate.chanend] / subgrid.scalev;
-            double w2 = m.w / lambdas[candidate.chanend];
+            auto [u2, v2, w2] = tbl.uvw(irow, candidate.chanend);
+            auto [u2px, v2px] = padded.UVtoGrid(u2, v2);
 
             if (!candidate.add(u1px, v1px, w1) || !candidate.add(u2px, v2px, w2)) {
                 priorbaseline.reset();  // use this value as a signal to create new candidates
@@ -169,19 +165,14 @@ std::vector<WorkUnit> partition(DataTable& tbl, GridConfig gridconf) {
 
         // Split the channel width into chunks that fit comfortably
         // within a subgrid (and then a little bit extra)
-        if (!priorbaseline || m.baseline != priorbaseline.value()) {
-            priorbaseline = m.baseline;
+        if (!priorbaseline || tbl.metadata(irow).baseline != priorbaseline.value()) {
+            priorbaseline = tbl.metadata(irow).baseline;
 
             // Save any existing candidates as workunits
             for (auto& c : candidates) {
                 long long upx = std::llround(c.ulowpx + c.uhighpx) / 2;
                 long long vpx = std::llround(c.vlowpx + c.vhighpx) / 2;
-                double u = upx * padded.scaleu;
-                double v = vpx * padded.scalev;
-
-                // Offset wrt to the bottom left corner
-                upx += padded.Nx / 2;
-                vpx += padded.Ny / 2;
+                auto [u, v] = padded.gridToUV<double>(upx, vpx);
 
                 workunits.push_back(WorkUnit(
                     upx, vpx, u, v, c.w0,
@@ -190,15 +181,11 @@ std::vector<WorkUnit> partition(DataTable& tbl, GridConfig gridconf) {
             }
 
             candidates.clear();
-            for (size_t chan {}; chan < tbl.nchans(); ++chan) {
-                double upx = m.u / lambdas[chan] / subgrid.scaleu;
-                double vpx = m.v / lambdas[chan] / subgrid.scalev;
-                double w = m.w / lambdas[chan];
+            for (size_t ichan {}; ichan < tbl.nchans(); ++ichan) {
+                auto [u, v, w] = tbl.uvw(irow, ichan);
+                auto [upx, vpx] = padded.UVtoGrid(u, v);
 
-                if (
-                    candidates.empty() ||
-                    !candidates.back().add(upx, vpx, w, chan)
-                ) {
+                if (candidates.empty() || !candidates.back().add(upx, vpx, w, ichan)) {
                     // Create new candidate
                     // We initialize with 0.7 of the full span. This is fudge factor
                     // to allow the uvw positions to move in time, and not immediately
@@ -210,7 +197,7 @@ std::vector<WorkUnit> partition(DataTable& tbl, GridConfig gridconf) {
                     w = (std::floor(w / wstep) + 0.5) * wstep;
 
                     candidates.push_back(WorkUnitCandidate(
-                        upx, vpx, w, 0.7 * maxspanpx, wstep / 2, irow, chan
+                        upx, vpx, w, 0.7 * maxspanpx, wstep / 2, irow, ichan
                     ));
                 }
             }
@@ -227,12 +214,7 @@ std::vector<WorkUnit> partition(DataTable& tbl, GridConfig gridconf) {
     for (auto& c : candidates) {
         long long upx = std::llround(c.ulowpx + c.uhighpx) / 2;
         long long vpx = std::llround(c.vlowpx + c.vhighpx) / 2;
-        double u = upx * padded.scaleu;
-        double v = vpx * padded.scalev;
-
-        // Offset wrt to the bottom left corner
-        upx += padded.Nx / 2;
-        vpx += padded.Ny / 2;
+        auto [u, v] = padded.gridToUV<double>(upx, vpx);
 
         workunits.push_back(WorkUnit(
             upx, vpx, u, v, c.w0,
