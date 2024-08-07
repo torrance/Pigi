@@ -2,23 +2,30 @@
 
 #include <hip/hip_runtime.h>
 
+#include "datatable.h"
 #include "gridspec.h"
 #include "memory.h"
 #include "outputtypes.h"
 #include "util.h"
-#include "uvdatum.h"
 
 
 template <typename T, typename S>
 __global__ void _idft(
     DeviceSpan<T, 2> img,
+    DeviceSpan<double, 1> lambdas,
+    DeviceSpan<std::array<double, 3>, 1> uvws,
+    DeviceSpan<ComplexLinearData<float>, 2> data,
+    DeviceSpan<LinearData<float>, 2> weights,
     DeviceSpan<ComplexLinearData<S>, 2> jones,
-    DeviceSpan<UVDatum<S>, 1> uvdata,
     GridSpec gridspec
 ) {
     const size_t cachesize {256};
-    __shared__ char _cache[cachesize * sizeof(UVDatum<S>)];
-    auto cache = reinterpret_cast<UVDatum<S>*>(_cache);
+    __shared__ char _cache[cachesize * (sizeof(ComplexLinearData<float>) + sizeof(S))];
+    auto data_cache = reinterpret_cast<ComplexLinearData<float>*>(_cache);
+    auto invlambdas_cache = reinterpret_cast<S*>(&data_cache[cachesize]);
+
+    const size_t nrows = uvws.size();
+    const size_t nchans = lambdas.size();
 
     for (
         size_t idx = blockIdx.x * blockDim.x + threadIdx.x;
@@ -30,31 +37,34 @@ __global__ void _idft(
 
         ComplexLinearData<S> cell;
 
-        for (size_t i {}; i < uvdata.size(); i += cachesize) {
-            const size_t N = min(cachesize, uvdata.size() - i);
+        for (size_t irow {}; irow < nrows; ++irow) {
+            auto [u, v, w] = uvws[irow];
+            S theta = 2 * ::pi_v<S> * (u * l + v * m + w * n);  // [meters]
 
-            // Populate cache
-            for (size_t j = threadIdx.x; j < N; j += blockDim.x) {
-                cache[j] = uvdata[i + j];
+            for (size_t ichan {}; ichan < nchans; ichan += cachesize) {
+                const size_t N = min(cachesize, nchans - ichan);
+
+                // Populate cache
+                for (size_t j = threadIdx.x; j < N; j += blockDim.x) {
+                    data_cache[j] = data[irow * nchans + ichan + j];
+                    data_cache[j] *= weights[irow * nchans + ichan + j];
+                    invlambdas_cache[j] = 1. / lambdas[ichan + j];
+                }
+                __syncthreads();
+
+                // Read through cache
+                for (size_t j {}; j < N; ++j) {
+                    auto datum = static_cast<ComplexLinearData<S>>(data_cache[j]);
+                    datum *= cis(theta * invlambdas_cache[j]);
+                    cell += datum;
+                }
+                __syncthreads();
             }
-            __syncthreads();
-
-            // Read through cache
-            for (size_t j {}; j < N; ++j) {
-                auto uvdatum = cache[j];
-
-                uvdatum.data *= uvdatum.weights;
-                uvdatum.data *= cispi(
-                    2 * (uvdatum.u * l + uvdatum.v * m + uvdatum.w * n)
-                );
-                cell += uvdatum.data;
-            }
-            __syncthreads();
         }
 
         // Retrieve and apply beam correction
         if (idx < gridspec.size()) {
-            auto j = jones[idx].inv();
+            auto j = static_cast<ComplexLinearData<S>>(jones[idx]).inv();
             img[idx] = static_cast<T>(
                 matmul(matmul(j, cell), j.adjoint())
             );
@@ -65,13 +75,21 @@ __global__ void _idft(
 template <template <typename> typename T, typename S>
 void idft(
     HostSpan<T<S>, 2> img,
+    DataTable& tbl,
     HostSpan<ComplexLinearData<S>, 2> jones,
-    HostSpan<UVDatum<S>, 1> uvdata,
     GridSpec gridspec
 ) {
+    std::vector<std::array<double, 3>> uvws_h(tbl.nrows());
+    for (size_t i {}; auto m : tbl.metadata()) {
+        uvws_h[i++] = {m.u, m.v, m.w};
+    }
+
     DeviceArray<T<S>, 2> img_d {img};
     DeviceArray<ComplexLinearData<S>, 2> jones_d {jones};
-    DeviceArray<UVDatum<S>, 1> uvdata_d {uvdata};
+    DeviceArray<double, 1> lambdas_d(tbl.lambdas());
+    DeviceArray<std::array<double, 3>, 1> uvws_d(uvws_h);
+    DeviceArray<ComplexLinearData<float>, 2> data_d(tbl.data());
+    DeviceArray<LinearData<float>, 2> weights_d(tbl.weights());
 
     auto fn = _idft<T<S>, S>;
     auto [nblocks, nthreads] = getKernelConfig(
@@ -79,7 +97,7 @@ void idft(
     );
     hipLaunchKernelGGL(
         fn, nblocks, nthreads, 0, hipStreamPerThread,
-        img_d, jones_d, uvdata_d, gridspec
+        img_d, lambdas_d, uvws_d, data_d, weights_d, jones_d, gridspec
     );
 
     copy(img, img_d);
