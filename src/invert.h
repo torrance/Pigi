@@ -55,13 +55,12 @@ HostArray<T<S>, 2> invert(
 
         HostSpan<WorkUnit, 1> workunits_h({nworkunits}, workunits.data() + istart);
 
-        auto data_h = tbl.data(rowstart, rowend);
-        auto weights_h = tbl.weights(rowstart, rowend);
+        auto data_h = tbl.data({rowstart, rowend});
+        auto weights_h = tbl.weights({rowstart, rowend});
 
         HostArray<std::array<double, 3>, 1> uvws_h(nrows);
-        for (size_t i {rowstart}, j {}; i < rowend; ++i, ++j) {
-            auto m = tbl.metadata(i);
-            uvws_h[j] = {m.u, m.v, m.w};
+        for (size_t i {}; auto m : tbl.metadata({rowstart, rowend})) {
+            uvws_h[i++] = {m.u, m.v, m.w};
         }
 
         // Copy across data
