@@ -148,7 +148,7 @@ std::vector<WorkUnit> partition(DataTable& tbl, GridConfig gridconf) {
 
     // Set up other mutable state used during the loop
     DataTable::Baseline currentbaseline = tbl.metadata(0).baseline;
-    bool createnew {false};
+    bool createnew {true};
 
     const auto lambdas = tbl.lambdas();
 
