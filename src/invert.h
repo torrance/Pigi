@@ -54,7 +54,7 @@ HostArray<T<S>, 2> invert(
 
         Logger::debug(
             "Invert: batching rows {}-{}/{} ({} workunits)",
-            rowstart, rowend, nrows, nworkunits
+            rowstart, rowend, workunits.size(), nworkunits
         );
 
         HostSpan<WorkUnit, 1> workunits_h({nworkunits}, workunits.data() + istart);
