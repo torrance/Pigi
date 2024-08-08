@@ -261,8 +261,8 @@ public:
         };
     }
 
-    std::array<double, 3> uvw(size_t row, size_t chan) {
-        RowMetadata& m = m_metadata[row];
+    std::array<double, 3> uvw(size_t row, size_t chan) const {
+        const RowMetadata& m = m_metadata[row];
         double lambda = m_lambdas[chan];
 
         return {m.u / lambda, m.v / lambda, m.w / lambda};
