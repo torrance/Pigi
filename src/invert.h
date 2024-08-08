@@ -4,10 +4,12 @@
 
 #include <hip/hip_runtime.h>
 
+#include "aterms.h"
 #include "datatable.h"
 #include "fft.h"
 #include "hip.h"
 #include "memory.h"
+#include "taper.h"
 #include "timer.h"
 #include "util.h"
 #include "workunit.h"
@@ -37,7 +39,7 @@ HostArray<T<S>, 2> invert(
     auto subplan = fftPlan<T<S>>(subgridspec, nbatch);
     auto wplan = fftPlan<T<S>>(gridspec);
 
-    // Lambdas does not change row to row
+    // Lambdas does not change row to row; send to device now
     const DeviceArray<double, 1> lambdas_d(tbl.lambdas());
 
     for (size_t istart {}; istart < workunits.size(); istart += nbatch) {
@@ -193,9 +195,11 @@ void _gridder(
 ) {
     // Set up the shared mem cache
     const size_t cachesize {128};
-    __shared__ char _cache[cachesize * (sizeof(ComplexLinearData<float>) + sizeof(S))];
+    __shared__ char _cache[
+        cachesize * (sizeof(ComplexLinearData<float>) + sizeof(S))
+    ];
     auto data_cache = reinterpret_cast<ComplexLinearData<float>*>(_cache);
-    auto invlambdas_cache = reinterpret_cast<S*>(&data_cache[cachesize]);
+    auto invlambdas_cache = reinterpret_cast<S*>(data_cache + cachesize);
 
     // Get workunit information
     size_t rowstart, rowend, chanstart, chanend;
@@ -211,8 +215,6 @@ void _gridder(
         w0 = workunit.w;
     }
 
-    const size_t nchans = chanend - chanstart;
-    const size_t nchanstep = std::min(nchans, cachesize);
     const size_t rowstride = lambdas.size();
 
     for (
@@ -235,8 +237,8 @@ void _gridder(
             S theta {2 * ::pi_v<S> * (u * l + v * m + w * n)};  // [meters]
             S thetaoffset {2 * ::pi_v<S> * (u0 * l + v0 * m + w0 * n)};  // [dimensionless]
 
-            for (size_t ichan {chanstart}; ichan < chanend; ichan += nchanstep) {
-                const size_t N = min(nchanstep, chanend - ichan);
+            for (size_t ichan {chanstart}; ichan < chanend; ichan += cachesize) {
+                const size_t N = min(cachesize, chanend - ichan);
 
                 // Populate cache
                 __syncthreads();
