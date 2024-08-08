@@ -12,12 +12,13 @@
 template <typename T, typename S>
 __global__ void _idft(
     DeviceSpan<T, 2> img,
-    DeviceSpan<double, 1> lambdas,
-    DeviceSpan<std::array<double, 3>, 1> uvws,
-    DeviceSpan<ComplexLinearData<float>, 2> data,
-    DeviceSpan<LinearData<float>, 2> weights,
-    DeviceSpan<ComplexLinearData<S>, 2> jones,
-    GridSpec gridspec
+    const DeviceSpan<double, 1> lambdas,
+    const DeviceSpan<std::array<double, 3>, 1> uvws,
+    const DeviceSpan<ComplexLinearData<float>, 2> data,
+    const DeviceSpan<LinearData<float>, 2> weights,
+    const DeviceSpan<ComplexLinearData<S>, 2> jones,
+    const GridSpec gridspec,
+    const bool normalize
 ) {
     const size_t cachesize {256};
     __shared__ char _cache[cachesize * (sizeof(ComplexLinearData<float>) + sizeof(S))];
@@ -68,6 +69,11 @@ __global__ void _idft(
             img[idx] = static_cast<T>(
                 matmul(matmul(j, cell), j.adjoint())
             );
+
+            if(normalize) {
+                T norm = matmul(j, j).norm();
+                img[idx] /= norm;
+            }
         }
     }
 }
@@ -76,8 +82,9 @@ template <template <typename> typename T, typename S>
 void idft(
     HostSpan<T<S>, 2> img,
     DataTable& tbl,
-    HostSpan<ComplexLinearData<S>, 2> jones,
-    GridSpec gridspec
+    const HostSpan<ComplexLinearData<S>, 2> jones,
+    const GridSpec gridspec,
+    const bool normalize = false
 ) {
     std::vector<std::array<double, 3>> uvws_h(tbl.nrows());
     for (size_t i {}; auto m : tbl.metadata()) {
@@ -97,7 +104,7 @@ void idft(
     );
     hipLaunchKernelGGL(
         fn, nblocks, nthreads, 0, hipStreamPerThread,
-        img_d, lambdas_d, uvws_d, data_d, weights_d, jones_d, gridspec
+        img_d, lambdas_d, uvws_d, data_d, weights_d, jones_d, gridspec, normalize
     );
 
     copy(img, img_d);
