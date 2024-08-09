@@ -404,7 +404,7 @@ void degridder(
     auto fn = _degridder<T, S>;
 
     // x-dimension distributes uvdata
-    int nthreadsx {128};
+    int nthreadsx {256};
     int nblocksx {1};
 
     // y-dimension breaks the subgrid down into 8 blocks
