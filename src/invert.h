@@ -66,7 +66,6 @@ HostArray<T<S>, 2> invert(
                 nworkunits > workunits.size() / 2 ||  // require >= 2 batches minimum
                 wkend == workunits.size()             // final iteration
             ) {
-                Logger::info("Creating batch of size {} GB", mem / 1024. / 1024. / 1024.);
                 batches.push({wkstart, wkend, rowstart, rowend});
                 wkstart = wkend;
             }
