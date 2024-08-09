@@ -25,6 +25,8 @@ void predict(
     Aterms& aterms,
     const DegridOp degridop
 ) {
+    auto timer = Timer::get("predict");
+
     const auto gridspec = gridconf.padded();
     const auto subgridspec = gridconf.subgrid();
 
@@ -55,6 +57,8 @@ void predict(
     const DeviceArray<double, 1> lambdas_d(tbl.lambdas());
 
     for (size_t wkstart {}; wkstart < workunits.size(); wkstart += nbatch) {
+        auto timer = Timer::get("predict::batch");
+
         // wkstart, wkend are the bounds of the workunits to be used this batch
         size_t wkend = std::min(wkstart + nbatch, workunits.size());
         long long nworkunits = wkend - wkstart;
@@ -119,27 +123,37 @@ void predict(
 
         // ...and process each wlayer serially
         for (auto& [w0, idxs] : widxs) {
+            auto timer = Timer::get("predict::batch::wlayers");
             wlayer.zero();
 
             // Apply w-decorrection to img and copy to wlayer
-            map([w0=w0, gridspec=gridspec] __device__ (auto idx, auto img, auto& wlayer) {
-                auto [l, m] = gridspec.linearToSky<S>(idx);
-                img *= cispi(-2 * w0 * ndash(l, m));
-                wlayer = img;
-            }, Iota(), imgd, wlayer);
+            PIGI_TIMER(
+                "predict::batch::wlayers::wdecorrection",
+                map([w0=w0, gridspec=gridspec] __device__ (auto idx, auto img, auto& wlayer) {
+                    auto [l, m] = gridspec.linearToSky<S>(idx);
+                    img *= cispi(-2 * w0 * ndash(l, m));
+                    wlayer = img;
+                }, Iota(), imgd, wlayer)
+            );
 
             // Transform from sky => visibility domain
-            fftExec(wplan, wlayer, HIPFFT_FORWARD);
+            PIGI_TIMER(
+                "predict::batch::wlayers::fft",
+                fftExec(wplan, wlayer, HIPFFT_FORWARD)
+            );
 
             // Reset deltal, deltam shift to visibilities
-            map([
-                =,
-                deltal=static_cast<S>(gridspec.deltal),
-                deltam=static_cast<S>(gridspec.deltam)
-            ] __device__ (auto idx, auto& wlayer) {
-                auto [u, v] = gridspec.linearToUV<S>(idx);
-                wlayer *= cispi(-2 * (u * deltal + v * deltam));
-            }, Iota(), wlayer);
+            PIGI_TIMER(
+                "predict::batch::wlayers::deltalm",
+                map([
+                    =,
+                    deltal=static_cast<S>(gridspec.deltal),
+                    deltam=static_cast<S>(gridspec.deltam)
+                ] __device__ (auto idx, auto& wlayer) {
+                    auto [u, v] = gridspec.linearToUV<S>(idx);
+                    wlayer *= cispi(-2 * (u * deltal + v * deltam));
+                }, Iota(), wlayer)
+            );
 
             // Populate subgrid stack with subgrids from this wlayer
             extractSubgrid<T<S>>(
@@ -152,7 +166,7 @@ void predict(
 
         // Apply deltal, deltam shift to visibilities
         PIGI_TIMER(
-            "predict::wlayer::degridder::thread::deltalm",
+            "predict::batch::subgridsdeltalm",
             map([
                 =,
                 deltal=static_cast<S>(subgridspec.deltal),
@@ -166,7 +180,10 @@ void predict(
         );
 
         // Shift to sky domain
-        fftExec(subplan, subgrids_d, HIPFFT_BACKWARD);
+        PIGI_TIMER(
+            "predict::batch::subgridfft",
+            fftExec(subplan, subgrids_d, HIPFFT_BACKWARD)
+        );
 
         // Degrid
         degridder<T<S>, S>(
@@ -324,7 +341,7 @@ void degridder(
     size_t rowoffset,
     const DegridOp degridop
 ) {
-    auto timer = Timer::get("predict::wlayer::degridder::thread::dft");
+    auto timer = Timer::get("predict::batch::degridder");
 
     auto fn = _degridder<T, S>;
 
@@ -389,7 +406,7 @@ auto extractSubgrid(
     const GridSpec gridspec,
     const GridSpec subgridspec
 ) {
-    auto timer = Timer::get("predict::wlayer::degridder::thread::splitter");
+    auto timer = Timer::get("predict::batch::wlayers::splitter");
 
     auto fn = _extractSubgrid<T>;
     auto [nblocksx, nthreadsx] = getKernelConfig(

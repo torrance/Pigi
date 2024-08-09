@@ -22,6 +22,8 @@ HostArray<T<S>, 2> invert(
     Aterms& aterms,
     bool makePSF = false
 ) {
+    auto timer = Timer::get("invert");
+
     GridSpec gridspec = gridconf.padded();
     GridSpec subgridspec = gridconf.subgrid();
 
@@ -43,6 +45,8 @@ HostArray<T<S>, 2> invert(
     const DeviceArray<double, 1> lambdas_d(tbl.lambdas());
 
     for (size_t istart {}; istart < workunits.size(); istart += nbatch) {
+        auto timer = Timer::get("invert::batch");
+
         // istart, iend are the bounds of the workunits to be used this batch
         size_t iend = std::min(istart + nbatch, workunits.size());
         long long nworkunits = iend - istart;
@@ -107,11 +111,14 @@ HostArray<T<S>, 2> invert(
         );
 
         // FFT all subgrids as one batch
-        fftExec(subplan, subgrids_d, HIPFFT_FORWARD);
+        PIGI_TIMER(
+            "invert::batch::subgridfft",
+            fftExec(subplan, subgrids_d, HIPFFT_FORWARD)
+        );
 
         // Reset deltal, deltam shift prior to adding to master grid
         PIGI_TIMER(
-            "invert::wlayer::gridder::thread::deltlm",
+            "invert::batch::subgridsdeltalm",
             map([
                 =,
                 deltal=static_cast<S>(subgridspec.deltal),
@@ -121,7 +128,7 @@ HostArray<T<S>, 2> invert(
                 idx %= stride;
                 auto [u, v] = subgridspec.linearToUV<S>(idx);
                 px *= cispi(-2 * (u * deltal + v * deltam));
-            }, Iota(), subgrids_d);
+            }, Iota(), subgrids_d)
         );
 
         // Group subgrids into w layers
@@ -133,6 +140,8 @@ HostArray<T<S>, 2> invert(
 
         // ...and process each wlayer serially
         for (auto& [w0, idxs] : widxs) {
+            auto timer = Timer::get("invert::batch::wlayers");
+
             wlayer.zero();
 
             // Add each subgrid from this w-layer
@@ -142,26 +151,35 @@ HostArray<T<S>, 2> invert(
             );
 
             // Apply deltal, deltam shift
-            map([
-                =,
-                deltal=static_cast<S>(gridspec.deltal),
-                deltam=static_cast<S>(gridspec.deltam)
-            ] __device__ (auto idx, auto& wlayer) {
-                auto [u, v] = gridspec.linearToUV<S>(idx);
-                wlayer *= cispi(2 * (u * deltal + v * deltam));
-            }, Iota(), wlayer);
+            PIGI_TIMER(
+                "invert::batch::wlayers::deltalm",
+                map([
+                    =,
+                    deltal=static_cast<S>(gridspec.deltal),
+                    deltam=static_cast<S>(gridspec.deltam)
+                ] __device__ (auto idx, auto& wlayer) {
+                    auto [u, v] = gridspec.linearToUV<S>(idx);
+                    wlayer *= cispi(2 * (u * deltal + v * deltam));
+                }, Iota(), wlayer)
+            );
 
             // FFT the full wlayer
-            fftExec(wplan, wlayer, HIPFFT_BACKWARD);
+            PIGI_TIMER(
+                "invert::batch::wlayers::fft",
+                fftExec(wplan, wlayer, HIPFFT_BACKWARD)
+            );
 
             // Apply wcorrection and append layer onto img
-            map([gridspec=gridspec, w0=static_cast<S>(w0)] __device__ (
-                auto idx, auto& imgd, auto wlayer
-            ) {
-                auto [l, m] = gridspec.linearToSky<S>(idx);
-                wlayer *= cispi(2 * w0 * ndash(l, m));
-                imgd += wlayer;
-            }, Iota(), imgd, wlayer);
+            PIGI_TIMER(
+                "invert::batch::wlayers::wcorrection",
+                map([gridspec=gridspec, w0=static_cast<S>(w0)] __device__ (
+                    auto idx, auto& imgd, auto wlayer
+                ) {
+                    auto [l, m] = gridspec.linearToSky<S>(idx);
+                    wlayer *= cispi(2 * w0 * ndash(l, m));
+                    imgd += wlayer;
+                }, Iota(), imgd, wlayer)
+            );
         }
     }
 
@@ -337,6 +355,8 @@ void gridder(
     size_t rowoffset,
     bool makePSF
 ) {
+    auto timer = Timer::get("invert::batch::gridder");
+
     // x-dimension corresponds to cells in the subgrid
     int nthreadsx {128}; // hardcoded to match the cache size
     int nblocksx = cld<size_t>(subgridspec.size(), nthreadsx);
@@ -399,7 +419,7 @@ void addsubgrid(
     const DeviceSpan<WorkUnit, 1> workunits, const DeviceSpan<T, 3> subgrids,
     const GridSpec gridspec, const GridSpec subgridspec
 ) {
-    auto timer = Timer::get("invert::wlayer::gridder::thread::adder");
+    auto timer = Timer::get("invert::batch::wlayers::adder");
 
     auto fn = _addsubgrid<T>;
     auto [nblocksx, nthreadsx] = getKernelConfig(
