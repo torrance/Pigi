@@ -39,8 +39,8 @@ std::vector<WorkUnit> partition(DataTable& tbl, GridConfig gridconf) {
         double ulowpx {}, uhighpx, vlowpx, vhighpx;  // in pixels
         double maxspanpx;
         double w0, wmax;                             // in wavelengths
-        size_t chanstart {}, chanend {};
         size_t rowstart;
+        size_t chanstart {}, chanend {};
 
         WorkUnitCandidate(
             double upx, double vpx, double w0, double maxspanpx, double wmax,

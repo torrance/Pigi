@@ -61,10 +61,12 @@ void fftshift(DeviceSpan<T, N> grid, FFTShift stage) requires (N == 2 || N == 3)
 }
 
 template <typename T>
-hipfftHandle fftPlan([[maybe_unused]] const GridSpec gridspec, int nbatch=1) {
+hipfftHandle fftPlan(const GridSpec gridspec, int nbatch=1) {
     // This is a dummy template that allows the following specialisations.
     // It should never be instantiated, only the specialisations are allowed.
     static_assert(static_cast<int>(sizeof(T)) == -1, "No fftPlan specialisation provided");
+    [[maybe_unused]] GridSpec g = gridspec;
+    [[maybe_unused]] int n = nbatch;
     hipfftHandle plan;
     return plan;
 }

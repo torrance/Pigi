@@ -252,7 +252,7 @@ public:
     HostSpan<double, 1> freqs(std::array<size_t, 2> chanslice) {
         auto& [chanstart, chanend] = chanslice;
         return {
-            std::array<long long, 1>(static_cast<long long>(chanend - chanstart)),
+            std::array<long long, 1>{static_cast<long long>(chanend - chanstart)},
             m_freqs.data() + chanstart
         };
     }
@@ -267,7 +267,7 @@ public:
     HostSpan<RowMetadata, 1> metadata(std::array<size_t, 2> rowslice) {
         auto& [rowstart, rowend] = rowslice;
         return {
-            std::array<long long, 1>(static_cast<long long>(rowend - rowstart)),
+            std::array<long long, 1>{static_cast<long long>(rowend - rowstart)},
             m_metadata.data() + rowstart
         };
     }
@@ -281,10 +281,10 @@ public:
 
     HostSpan<ComplexLinearData<float>, 2> data() {
         return {
-            std::array<long long, 2>(
+            std::array<long long, 2>{
                 static_cast<long long>(m_nchans),
                 static_cast<long long>(m_nrows)
-            ),
+	    },
             m_data.data()
         };
     }
@@ -292,10 +292,10 @@ public:
     HostSpan<ComplexLinearData<float>, 2> data(const std::array<size_t, 2>& rowslice) {
         auto& [rowstart, rowend] = rowslice;
         return {
-            std::array<long long, 2>(
+            std::array<long long, 2>{
                 static_cast<long long>(m_nchans),
                 static_cast<long long>(rowend - rowstart)
-            ),
+	    },
             m_data.data() + rowstart * m_nchans
         };
     }
@@ -306,10 +306,10 @@ public:
 
     HostSpan<LinearData<float>, 2> weights() {
         return {
-            std::array<long long, 2>(
+            std::array<long long, 2>{
                 static_cast<long long>(m_nchans),
                 static_cast<long long>(m_nrows)
-            ),
+	    },
             m_weights.data()
         };
     }
@@ -317,10 +317,10 @@ public:
     HostSpan<LinearData<float>, 2> weights(const std::array<size_t, 2>& rowslice) {
         auto& [rowstart, rowend] = rowslice;
         return {
-            std::array<long long, 2>(
+            std::array<long long, 2>{
                 static_cast<long long>(m_nchans),
                 static_cast<long long>(rowend - rowstart)
-            ),
+	    },
             m_weights.data() + rowstart * m_nchans
         };
     }
