@@ -36,6 +36,8 @@ public:
         double u {}, v {}, w{};
     };
 
+    DataTable() = default;
+
     DataTable(
         const std::string& path,
         double maxduration,
@@ -236,6 +238,15 @@ public:
 
     double midfreq() const {
         return std::accumulate(m_freqs.begin(), m_freqs.end(), 0.) / m_freqs.size();
+    }
+
+    double midtime() const {
+        auto [low, high] = std::minmax_element(
+            m_metadata.begin(), m_metadata.end(), [] (auto lhs, auto rhs) {
+                return lhs.time < rhs.time;
+            }
+        );
+        return (low->time + high->time) / 2;
     }
 
     HostSpan<double, 1> freqs(std::array<size_t, 2> chanslice) {

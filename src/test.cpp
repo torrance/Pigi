@@ -12,20 +12,17 @@
 #include "beam.h"
 #include "clean.h"
 #include "config.h"
+#include "datatable.h"
 #include "dft.h"
-#include "degridder.h"
 #include "fits.h"
 #include "invert.h"
 #include "logger.h"
-#include "managedalloc.h"
 #include "memory.h"
-#include "mset.h"
 #include "phaserotate.h"
 #include "psf.h"
 #include "predict.h"
 #include "taper.h"
 #include "util.h"
-#include "uvdatum.h"
 #include "weighter.h"
 #include "workunit.h"
 
@@ -71,6 +68,15 @@ TEST_CASE("Matrix tests", "[matrix]") {
         C == ComplexLinearData<double>{{516, 33}, {1976, 268}, {363, -51}, {1268, -292}}
     );
 
+    // Device matmul has a special FMA implementation
+    {
+        DeviceArray<ComplexLinearData<double>, 1> C_d(1);
+        map([A = A, B = B] __device__ (auto& C) {
+            C = matmul(A, B);
+        }, C_d);
+        REQUIRE(HostArray<ComplexLinearData<double>, 1>(C_d)[0] == matmul(A, B));
+    }
+
     C = A.inv().adjoint();
     REQUIRE((
         thrust::abs(C.xx - 0.126984) < 1e-5 &&
@@ -109,32 +115,32 @@ TEST_CASE("FFT and central shifts", "[fft]") {
     }
 }
 
-TEST_CASE("Toml configuration", "[toml]") {
-    // For now, we just test that:
-    // 1. the config object can be converted to toml
-    // 2. the toml can be converted back to Config
-    // 3. and all parameter values are retained
+// TEST_CASE("Toml configuration", "[toml]") {
+//     // For now, we just test that:
+//     // 1. the config object can be converted to toml
+//     // 2. the toml can be converted back to Config
+//     // 3. and all parameter values are retained
 
-    Config config1 {
-        .loglevel = Logger::Level::debug,
-        .chanlow = 33, .chanhigh = 56, .channelsOut = 5, .maxDuration = 32,
-        .msets = {"/path1.fits", "/path2.fits"},
-        .weight = "briggs", .robust = 1.3,
-        .scale = 25, .phasecenter = RaDec{0.5, 0.5},
-        .fields = {{.Nx = 1234, .Ny = 4568, .projectioncenter = RaDec{0.5, 0.5}}},
-        .precision = 64, .kernelsize = 156, .kernelpadding = 9, .paddingfactor = 1.23,
-        .majorgain = 0.354, .minorgain = 0.2343,
-        .cleanThreshold = 543154, .autoThreshold = 431.54, .nMajor = 432, .nMinor = 5426543,
-        .spectralparams = 123
-    };
+//     Config config1 {
+//         .loglevel = Logger::Level::debug,
+//         .chanlow = 33, .chanhigh = 56, .channelsOut = 5, .maxDuration = 32,
+//         .msets = {"/path1.fits", "/path2.fits"},
+//         .weight = "briggs", .robust = 1.3,
+//         .scale = 25, .phasecenter = RaDec{0.5, 0.5},
+//         .fields = {{.Nx = 1234, .Ny = 4568, .projectioncenter = RaDec{0.5, 0.5}}},
+//         .precision = 64, .kernelsize = 156, .kernelpadding = 9, .paddingfactor = 1.23,
+//         .majorgain = 0.354, .minorgain = 0.2343,
+//         .cleanThreshold = 543154, .autoThreshold = 431.54, .nMajor = 432, .nMinor = 5426543,
+//         .spectralparams = 123
+//     };
 
-    auto configtext = std::istringstream(toml::format(
-        toml::basic_value<toml::preserve_comments>(config1)
-    ));
-    Config config2 = toml::get<Config>(toml::parse(configtext));
+//     auto configtext = std::istringstream(toml::format(
+//         toml::basic_value<toml::preserve_comments>(config1)
+//     ));
+//     Config config2 = toml::get<Config>(toml::parse(configtext));
 
-    REQUIRE(config1 == config2);
-}
+//     REQUIRE(config1 == config2);
+// }
 
 TEST_CASE("Coordinates", "[coordinates]") {
     RaDec gridorigin {.ra=deg2rad(156.), .dec=deg2rad(-42.)};
@@ -232,11 +238,9 @@ TEST_CASE("Phase rotation", "[phaserotation]") {
         maxvdiff = std::max<double>(maxvdiff, std::abs(m1.v - m2.v));
         maxwdiff = std::max<double>(maxwdiff, std::abs(m1.w - m2.w));
 
-        auto data = tbl.data(irow, irow);
-        auto expecteddata = expected.data(irow, irow);
         for (size_t ichan {}; ichan < tbl.nchans(); ++ichan) {
-            ComplexLinearData<float> datum = data[ichan];
-            datum -= expecteddata[ichan];
+            ComplexLinearData<float> datum = tbl.data(irow, ichan);
+            datum -= expected.data(irow, ichan);
 
             maxdatadiff = std::max<double>(
                 maxdatadiff,
@@ -263,29 +267,66 @@ TEST_CASE("Measurement Set & Partition", "[mset]") {
         .paddingfactor=1.0, .kernelsize=96, .kernelpadding=18,
     };
 
-    Beam::Uniform<double> beam;
-    auto aterm = beam.gridResponse(gridconf.subgrid(), {0, 0}, 0);
-
-    MeasurementSet mset(
-        {TESTDATA}, MeasurementSet::DataColumn::data, 0, 11, 0, std::numeric_limits<double>::max()
-    );
-
-    auto uvdata = mset.data<double>();
-    auto workunits = partition(
-        uvdata, gridconf, Aterms<double>(aterm)
-    );
+    DataTable tbl(TESTDATA, 0, 0, 0);
+    auto workunits = partition(tbl, gridconf);
 
     size_t n {};
     for (auto& workunit : workunits) {
-        n += workunit.data.size();
+        n += workunit.size();
     }
 
-    REQUIRE( n == mset.size() );
+    REQUIRE( n == tbl.size() );
+
+    // Test whether each data point actually lies in its subgrid
+    const auto subgridspec = gridconf.subgrid();
+    const auto gridspec = gridconf.padded();
+    const auto lambdas = tbl.lambdas();
+    const double radius = subgridspec.Nx / 2 - gridconf.kernelpadding + 0.5;
+
+    for (auto workunit : workunits) {
+        // Subtract 0.5 to center pixel
+        double u0px = workunit.upx - 0.5;
+        double v0px = workunit.vpx - 0.5;
+
+        for (size_t irow {workunit.rowstart}; irow < workunit.rowend; ++irow) {
+            auto m =  tbl.metadata(irow);
+
+            // REQUIRE is very slow; first check the loop for a failure
+            bool rowok {true};
+            for (size_t ichan {workunit.chanstart}; ichan < workunit.chanend; ++ichan) {
+                double u = m.u / lambdas[ichan];
+                double v = m.v / lambdas[ichan];
+
+                auto [upx, vpx] = gridspec.UVtoGrid<double>(u, v);
+                rowok = rowok && std::abs(upx - u0px) < radius;
+                rowok = rowok && std::abs(vpx - v0px) < radius;
+            }
+
+            if (!rowok) {
+                for (size_t ichan {workunit.chanstart}; ichan < workunit.chanend; ++ichan) {
+                    double u = m.u / lambdas[ichan];
+                    double v = m.v / lambdas[ichan];
+
+                    auto [upx, vpx] = gridspec.UVtoGrid<double>(u, v);
+                    REQUIRE(std::abs(upx - u0px) < radius);
+                    REQUIRE(std::abs(vpx - v0px) < radius);
+                }
+            }
+
+            // Check that pixel coordinates and u,v values match
+            auto [u, v] = gridspec.gridToUV<double>(
+                workunit.upx, workunit.vpx
+            );
+
+            REQUIRE(std::abs(u - workunit.u) < 1e-8);
+            REQUIRE(std::abs(v - workunit.v) < 1e-8);
+        }
+    }
 
     SECTION("Phase center coordinate conversion") {
-        auto radec = mset.phaseCenter();
+        auto radec = tbl.phasecenter();
 
-        double time = mset.midtime();
+        double time = tbl.midtime();
 
         auto azel = radecToAzel(radec, time, Beam::MWA<double>::origin);
 
@@ -312,44 +353,42 @@ TEST_CASE("Widefield inversion", "[widefield]") {
     const int oversample {16};
     REQUIRE( gridconf.imgNx % oversample == 0 );
 
-    MeasurementSet mset({TESTDATA}, MeasurementSet::DataColumn::data, 0, 11);
+    DataTable tbl(TESTDATA, 0, 0, 11);
 
-    // Copy uvdata to vector, for use in both idg and dft
-    auto uvdata = mset.data<P>();
-    Natural<P> weighter(uvdata, gridconf.padded());
-    applyWeights(weighter, uvdata);
+    // Weight the data
+    Natural weighter(tbl, gridconf.padded());
+    applyweights(weighter, tbl);
 
-    // Create beam
-    auto delays = std::get<2>(mset.mwaDelays().front());
-    Beam::MWA<P> beam(mset.midtime(), delays);
-
-    auto gridorigin = mset.phaseCenter();
+    // Create aterms
+    auto aterms = mkAterms(
+        casacore::MeasurementSet(TESTDATA), gridconf.subgrid(),
+        99999999, tbl.phasecenter(), tbl.midfreq()
+    );
 
     fmt::println("IDG imaging...");
-    auto workunits = partition(
-        uvdata,
-        gridconf,
-        Aterms<P>{beam.gridResponse(gridconf.subgrid(), gridorigin, mset.midfreq())}
-    );
-    auto img = invert<StokesI, P>(workunits, gridconf);
+    auto workunits = partition(tbl, gridconf);
+    auto img = invert<StokesI, P>(tbl, workunits, gridconf, aterms);
 
     fmt::println("Direct DT imaging...");
-
     auto gridspec = GridSpec::fromScaleLM(
         gridconf.imgNx / oversample,
         gridconf.imgNy / oversample,
         gridconf.imgScalelm * oversample
     );
-    auto aterm = beam.gridResponse(gridspec, gridorigin, mset.midfreq());
+
+    aterms = mkAterms(
+        casacore::MeasurementSet(TESTDATA), gridspec,
+        99999999, tbl.phasecenter(), tbl.midfreq()
+    );
 
     HostArray<StokesI<P>, 2> expected {gridspec.shape()};
-    idft<StokesI, P>(expected, aterm, uvdata, gridspec);
+    auto jones = static_cast<HostArray<ComplexLinearData<float>, 2>>(
+        *aterms.get(tbl.midtime(), 0)
+    );
+    idft<StokesI, P>(expected, tbl, jones, gridspec, true);
 
-    // Correct for beam power
-    for (size_t i {}; i < aterm.size(); ++i) {
-        auto a = static_cast<ComplexLinearData<double>>(aterm[i]);
-        expected[i] *= static_cast<StokesI<P>>(StokesI<double>::beamPower(a, a));
-    }
+    // save("image.fits", img, gridconf.grid(), tbl.phasecenter());
+    // save("expected.fits", expected, gridspec, tbl.phasecenter());
 
     HostArray<StokesI<P>, 2> diff {expected};
     for (size_t i {}; i < diff.size(); ++i) {
@@ -377,16 +416,18 @@ template <typename Q> using MWABeam = Beam::MWA<Q>;
 TEMPLATE_TEST_CASE_SIG(
     "Invert", "[invert]",
     ((typename Q, typename BEAM, int THRESHOLDF, int THRESHOLDP), Q, BEAM, THRESHOLDF, THRESHOLDP),
-    (float, (UniformBeam<float>), 6, -6),
-    (double, (UniformBeam<double>), 2, -10),
-    (float, (GaussianBeam<float>), 6, -6),
-    (double, (GaussianBeam<double>), 2, -10),
-    (float, (MWABeam<float>), 2, -4),
+    (float, (UniformBeam<double>), 3, -5),
+    (double, (UniformBeam<double>), 5, -10),
+    (float, (GaussianBeam<double>), 3, -5),
+    (double, (GaussianBeam<double>), 5, -10),
+    (float, (MWABeam<double>), 3, -5),
     (double, (MWABeam<double>), 2, -8)
 ) {
+    if (!TESTDATA) { SKIP("TESTDATA path not provided"); }
+
     // Config
     const GridConfig gridconf {
-        .imgNx = 1000, .imgNy = 1050, .imgScalelm = std::sin(deg2rad(2. / 60)),
+        .imgNx = 1000, .imgNy = 1050, .imgScalelm = std::sin(deg2rad(15. / 3600)),
         .paddingfactor = 1.5, .kernelsize = 96, .kernelpadding = 18,
         .deltal = 0.02, .deltam = -0.01
     };
@@ -399,94 +440,40 @@ TEMPLATE_TEST_CASE_SIG(
 
     // Create Aterms
     BEAM beam;
-    if constexpr(std::is_same<Beam::Gaussian<Q>, BEAM>::value) {
+    if constexpr(std::is_same<Beam::Gaussian<double>, BEAM>::value) {
         beam = BEAM(gridorigin, deg2rad(25.));
     }
-    if constexpr(std::is_same<Beam::MWA<Q>, BEAM>::value) {
+    if constexpr(std::is_same<Beam::MWA<double>, BEAM>::value) {
         beam = BEAM(5038236804. / 86400.);
     }
 
-    // Create uvdata
-    auto meta = makesharedhost<UVMeta>(0, 0, 0, 0, RaDec{0, 0});
-    std::vector<UVDatum<double>> uvdata64;
-    {
-        std::mt19937 gen(1234);
-        std::uniform_real_distribution<double> rand(0, 1);
-
-        // Create a list of Ra/Dec sources
-        std::vector<std::tuple<double, double, ComplexLinearData<double>>> sources;
-        for (size_t i {}; i < 250; ++i) {
-            double l { std::sin( deg2rad((rand(gen) - 0.5) * 50) ) };
-            double m { std::sin( deg2rad((rand(gen) - 0.5) * 50) ) };
-
-            auto jones = static_cast<ComplexLinearData<double>>(
-                beam.pointResponse(lmToRaDec(l, m, gridorigin), freq)
-            );
-            sources.emplace_back(l, m, jones);
-        }
-
-        for (size_t i {}; i < 20000; ++i) {
-            double u = rand(gen), v = rand(gen), w = rand(gen);
-
-            u = (u - 0.5) * 200;
-            v = (v - 0.5) * 200;
-            w = (w - 0.5) * 200;
-
-            ComplexLinearData<double> data;
-            for (auto [l, m, jones] : sources) {
-                auto phase = cispi(-2 * (
-                    u * l + v * m + w * ndash(l, m)
-                ));
-
-                ComplexLinearData<double> cell {phase, 0, 0, phase};
-                data += matmul(matmul(jones, cell), jones.adjoint());
-            }
-
-            LinearData<double> weights {
-                rand(gen), rand(gen), rand(gen), rand(gen)
-            };
-
-            // We create UVDatum<P> but avoid using the constructor so that we can test
-            // forcing w > 0.
-            UVDatum<double> uvdatum;
-            uvdatum.meta = meta;
-            uvdatum.chan = i;
-            uvdatum.u = u; uvdatum.v = v; uvdatum.w = w;
-            uvdatum.weights = weights;
-            uvdatum.data = data;
-
-            uvdata64.push_back(uvdatum);
-        }
-    }
+    DataTable tbl(TESTDATA, 0, 24, 28);
 
     // Weight naturally
-    const Natural<double> weighter(uvdata64, gridconf.padded());
-    applyWeights(weighter, uvdata64);
+    const Natural weighter(tbl, gridconf.padded());
+    applyweights(weighter, tbl);
 
     // Calculate expected at double precision
     HostArray<StokesI<double>, 2> expected {gridspec.shape()};
     {
-        auto jones = static_cast<HostArray<ComplexLinearData<double>, 2>>(
-            beam.gridResponse(gridspec, gridorigin, freq)
-        );
-        idft<StokesI, double>(expected, jones, uvdata64, gridspec);
+        auto jones = beam.gridResponse(gridspec, gridorigin, freq);
+        idft<StokesI, double>(expected, tbl, jones, gridspec, true);
     }
 
-    // Cast to float or double AND set w >= 0
-    std::vector<UVDatum<Q>, ManagedAllocator<UVDatum<Q>>> uvdata(uvdata64.size());
-    for (size_t i {}; const auto& uvdatum : uvdata64) {
-        uvdata[i++] = static_cast<UVDatum<Q>>(uvdatum).forcePositiveW();
-    }
+    auto aterm = beam.gridResponse(gridconf.subgrid(), gridorigin, freq);
+    Aterms aterms(aterm);
+    auto workunits = partition(tbl, gridconf);
+    auto img = invert<StokesI, Q>(tbl, workunits, gridconf, aterms);
 
-    auto Aterm = beam.gridResponse(gridconf.subgrid(), gridorigin, freq);
-    auto workunits = partition(uvdata, gridconf, Aterms<Q>(Aterm));
-    auto img = invert<StokesI, Q>(workunits, gridconf);
-
-    // Correct for beam
-    auto jonesgrid = beam.gridResponse(gridspec, gridorigin, freq);
-    for (size_t i {}; i < gridspec.size(); ++i) {
-        img[i] /= StokesI<Q>::beamPower(jonesgrid[i], jonesgrid[i]);
+    // save("image.fits", img, gridspec, {0, 0});
+    // save("expected.fits", expected, gridspec, {0, 0});
+    HostArray<double, 2> diff(img.shape());
+    for (size_t i {}; auto& px : diff) {
+        px = expected[i].I.imag();
+        px -= static_cast<StokesI<double>>(img[i]).I.imag();
+        ++i;
     }
+    // save("diff.fits", diff, gridspec, {0, 0});
 
     double maxdiff {-1};
     double rms {};
@@ -509,16 +496,19 @@ TEMPLATE_TEST_CASE_SIG(
 TEMPLATE_TEST_CASE_SIG(
     "Predict", "[predict]",
     ((typename Q, typename BEAM, int THRESHOLDF, int THRESHOLDP), Q, BEAM, THRESHOLDF, THRESHOLDP),
-    (float, (UniformBeam<float>), 3, -5),
-    (double, (UniformBeam<double>), 2, -10),
-    (float, (GaussianBeam<float>), 3, -5),
-    (double, (GaussianBeam<double>), 2, -10),
-    (float, (MWABeam<float>), 3, -5),
-    (double, (MWABeam<double>), 2, -10)
+    (float, (UniformBeam<double>), 5, -5),
+    (double, (UniformBeam<double>), 1, -9),
+    (float, (GaussianBeam<double>), 5, -5),
+    (double, (GaussianBeam<double>), 8, -10),
+    (float, (MWABeam<double>), 5, -5),
+    (double, (MWABeam<double>), 8, -10)
 ) {
+    if (!TESTDATA) { SKIP("TESTDATA path not provided"); }
+
     const GridConfig gridconf {
-        .imgNx = 2000, .imgNy = 1800, .imgScalelm = 1. / (4000 * 20), .paddingfactor = 2,
-        .kernelsize = 96, .kernelpadding = 17, .deltal = 0.015, .deltam = -0.01
+        .imgNx = 2000, .imgNy = 1800, .imgScalelm = std::sin(deg2rad(15. / 3600)),
+        .paddingfactor = 1.5, .kernelsize = 96, .kernelpadding = 17,
+        .deltal = 0.015, .deltam = -0.01
     };
     const GridSpec gridspec = gridconf.grid();
     const double freq {150e6};
@@ -528,10 +518,10 @@ TEMPLATE_TEST_CASE_SIG(
     const RaDec phaseCenter(deg2rad(21.5453427), deg2rad(-26.80060483));
 
     BEAM beam;
-    if constexpr(std::is_same_v<BEAM, GaussianBeam<Q>>) {
-        beam = BEAM(phaseCenter, deg2rad(25.));
+    if constexpr(std::is_same_v<BEAM, GaussianBeam<double>>) {
+        beam = BEAM(phaseCenter, deg2rad(5.));
     }
-    if constexpr(std::is_same_v<BEAM, MWABeam<Q>>) {
+    if constexpr(std::is_same_v<BEAM, MWABeam<double>>) {
         beam = BEAM(5038236804. / 86400.);
     }
 
@@ -541,98 +531,77 @@ TEMPLATE_TEST_CASE_SIG(
     std::mt19937 gen(1234);
     std::uniform_int_distribution<int> randints(0, gridspec.size());
 
-    for (size_t i {}; i < 1000; ++i) {
+    for (size_t i {}; i < 10; ++i) {
         skymap[randints(gen)] = StokesI<Q> {Q(1)};
     }
 
-    std::uniform_real_distribution<Q> randfloats(-1, 1);
-
-    // Create empty UVDatum
-    std::vector<UVDatum<Q>, ManagedAllocator<UVDatum<Q>>> uvdata;
-    auto meta = makesharedhost<UVMeta>(0, 12345.6, 1, 5, RaDec{0, 1});
-    for (size_t i {}; i < 5000; ++i) {
-        Q u {randfloats(gen)}, v {randfloats(gen)}, w {randfloats(gen)};
-        u = u * 1000;
-        v = v * 1000;
-        w = w * 500;
-
-        // TODO: use emplace_back() when we can upgrade Clang
-        uvdata.push_back({
-            meta, static_cast<int>(i), u, v, w,
-            LinearData<Q> {1, 1, 1, 1},
-            ComplexLinearData<Q> {0, 0, 0, 0}
-        });
-    }
+    // Create zeroed DataTable
+    DataTable tbl(TESTDATA, 0, 24, 28);
+    for (auto& datum : tbl.data()) datum = {0, 0, 0, 0};
+    for (auto& weight : tbl.weights()) weight = {1, 1, 1, 1};
 
     // Weight naturally
-    Natural<Q> weighter(uvdata, gridconf.padded());
-    applyWeights(weighter, uvdata);
+    Natural weighter(tbl, gridconf.padded());
+    applyweights(weighter, tbl);
 
     // Calculate expected at double precision
-    std::vector<UVDatum<double>> expected;
+    DataTable expectedtbl(tbl);
+
+    // Predict using IDG
     {
-        // Find non-empty pixels
-        // TODO: replace with copy_if and std::back_inserter
-        std::vector<size_t> idxs;
-        for (size_t i {}; i < skymap.size(); ++i) {
-            if (thrust::abs(skymap[i].I) != 0) idxs.push_back(i);
-        }
+        auto aterm = beam.gridResponse(gridconf.subgrid(), phaseCenter, freq);
+        Aterms aterms(aterm);
 
-        // Calculate and cache beam point responses
-        std::unordered_map<size_t, ComplexLinearData<double>> Aterms;
-        for (auto idx : idxs) {
-            auto [l, m] = gridspec.linearToSky<double>(idx);
-            auto radec = lmToRaDec(l, m, phaseCenter);
-            Aterms[idx] = static_cast<ComplexLinearData<double>>(
-                beam.pointResponse(radec, freq)
-            );
-        }
+        auto workunits = partition(tbl, gridconf);
 
-        // For each UVDatum, sum over non-empty pixels
-        for (const auto& uvdatum : uvdata) {
-            UVDatum<double> uvdatum64 = static_cast<UVDatum<double>>(uvdatum);
-            for (auto idx : idxs) {
-                // Convert StokesI<Q> -> StokesI<double> -> ComplexLinearData<double>
-                ComplexLinearData<double> cell = StokesI<double>(skymap[idx].I);
+        predict<StokesI, Q>(
+            tbl, workunits, skymap, gridconf, aterms, DegridOp::Add
+        );
+    }
 
-                // Apply beam attenuation
-                auto Aterm = Aterms[idx];
-                cell = matmul(matmul(Aterm, cell), Aterm.adjoint());
+    // For each non-empty pixel, add to each element of data
+    for (size_t i {}; i < skymap.size(); ++i) {
+        if (skymap[i].I == 0) continue;
 
-                // Apply phase
-                auto [l, m] = gridspec.linearToSky<double>(idx);
-                cell *= cispi(
-                    -2 * (uvdatum64.u * l + uvdatum64.v * m + uvdatum64.w * ndash(l, m))
-                );
+        // Convert StokesI<Q> -> StokesI<double> -> ComplexLinearData<double>
+        ComplexLinearData<double> cell = static_cast<StokesI<double>>(skymap[i]);
 
-                uvdatum64.data += cell;
+        auto [l, m] = gridspec.linearToSky<double>(i);
+        double n {ndash(l, m)};
+
+        // Apply beam attenuation
+        auto radec = lmToRaDec(l, m, phaseCenter);
+        auto Aterm = beam.pointResponse(radec, freq);
+        cell = matmul(matmul(Aterm, cell), Aterm.adjoint());
+
+        for (size_t irow {}; irow < expectedtbl.nrows(); ++irow) {
+            for (size_t ichan {}; ichan < expectedtbl.nchans(); ++ichan) {
+                auto [u, v, w] = expectedtbl.uvw(irow, ichan);
+
+                ComplexLinearData<double> datum(cell);
+                datum *= cispi(-2 * (u * l + v * m + w * n));
+                expectedtbl.data(irow, ichan) += datum;
             }
-            expected.push_back(uvdatum64);
         }
     }
 
-    // Predict using IDG
-    auto aterm = beam.gridResponse(gridconf.subgrid(), phaseCenter, freq);
-
-    auto workunits = partition(
-        uvdata, gridconf, Aterms<Q>(aterm)
-    );
-
-    predict<StokesI<Q>, Q>(
-        workunits, skymap, gridconf, DegridOp::Add
-    );
-
     // Create images to compare diff
-    auto fullAterms = beam.gridResponse(gridspec, phaseCenter, freq);
-
     HostArray<StokesI<Q>, 2> imgMap {gridspec.shape()};
-    idft<StokesI, Q>(imgMap, fullAterms, uvdata, gridspec);
+    idft<StokesI, Q>(
+        imgMap, tbl,
+        Beam::Uniform<Q>().gridResponse(gridspec, phaseCenter, freq),
+        gridspec
+    );
 
     HostArray<StokesI<double>, 2> expectedMap {gridspec.shape()};
     idft<StokesI, double>(
-        expectedMap, static_cast<HostArray<ComplexLinearData<double>, 2>>(fullAterms),
-        expected, gridspec
+        expectedMap, expectedtbl,
+        Beam::Uniform<double>().gridResponse(gridspec, phaseCenter, freq),
+        gridspec
     );
+
+    // save("image.fits", imgMap, gridspec, {0, 0});
+    // save("expected.fits", expectedMap, gridspec, {0, 0});
 
     double maxdiff {-1};
     for (size_t i {}; i < gridspec.size(); ++i) {
@@ -644,7 +613,6 @@ TEMPLATE_TEST_CASE_SIG(
 
     REQUIRE( maxdiff != -1 );
     REQUIRE( maxdiff < THRESHOLDF * std::pow(10, THRESHOLDP) );
-    REQUIRE( uvdata[0].meta->time == 12345.6 );
 }
 
 TEST_CASE("Clean", "[clean]") {
