@@ -27,170 +27,220 @@ HostArray<T<S>, 2> invert(
     GridSpec gridspec = gridconf.padded();
     GridSpec subgridspec = gridconf.subgrid();
 
-    // Allocate both grids now which will be used in the summation over w layers
+    // Start by precomputing batch boundaries and loading up the channel
+    // used by the threads to determine their scope of work.
+    Channel<std::array<size_t, 4>> batches;
+    {
+        size_t maxmem = 6llu * 1024 * 1024 * 1024;  // hardcode to 6 GB
+
+        // Precompute memory
+        // TODO: add mem usage of Aterms
+        size_t basemem = gridspec.size() * sizeof(T<S>); // wlayer
+        size_t workunitmem = (
+            sizeof(WorkUnit) +
+            gridconf.subgrid().size() * sizeof(T<S>)
+        );
+        size_t rowmem = (
+            sizeof(DataTable::RowMetadata) +
+            tbl.nchans() * sizeof(ComplexLinearData<float>)
+        );
+
+        // Loop state
+        for (size_t wkstart {}, wkend {1}; wkend <= workunits.size(); ++wkend) {
+            // Align wkend with a new row
+            while (
+                wkend <= workunits.size() && workunits[wkend - 1].chanend < tbl.nchans()
+            ) ++wkend;
+
+            size_t rowstart = workunits[wkstart].rowstart;
+            size_t rowend = workunits[wkend - 1].rowend;
+
+            size_t nrows = rowend - rowstart;
+            size_t nworkunits = wkend - wkstart;
+
+            // Calculate size of current bounds
+            size_t mem = basemem + nworkunits * workunitmem + nrows * rowmem;
+
+            if (
+                mem > maxmem ||                       // maximum batch size
+                nworkunits > workunits.size() / 2 ||  // require >= 2 batches minimum
+                wkend == workunits.size()             // final iteration
+            ) {
+                Logger::info("Creating batch of size {} GB", mem / 1024. / 1024. / 1024.);
+                batches.push({wkstart, wkend, rowstart, rowend});
+                wkstart = wkend;
+            }
+        }
+        batches.close();
+    }
+
+    // Allocate img, which will be summed by each thread
     DeviceArray<T<S>, 2> imgd(gridspec.Nx, gridspec.Ny);
-    DeviceArray<T<S>, 2> wlayer(gridspec.Nx, gridspec.Ny);
 
     // Construct the taper and send to the device
     DeviceArray<S, 2> subtaperd {pswf<S>(subgridspec)};
 
-    // TODO: set batch dynamically, based on memory allowance
-    const size_t nbatch {4096};
-
-    // Create FFT plans
-    auto subplan = fftPlan<T<S>>(subgridspec, nbatch);
-    auto wplan = fftPlan<T<S>>(gridspec);
-
     // Lambdas does not change row to row; send to device now
     const DeviceArray<double, 1> lambdas_d(tbl.lambdas());
 
-    for (size_t istart {}; istart < workunits.size(); istart += nbatch) {
-        auto timer = Timer::get("invert::batch");
+    std::vector<std::thread> threads;
+    for (size_t threadid {}; threadid < 2; ++threadid) {
+        threads.emplace_back([&] {
+            auto timer = Timer::get("invert::batch");
 
-        // istart, iend are the bounds of the workunits to be used this batch
-        size_t iend = std::min(istart + nbatch, workunits.size());
-        long long nworkunits = iend - istart;
+            // Set up some state used for each batch iteration
+            DeviceArray<T<S>, 2> wlayer(gridspec.Nx, gridspec.Ny);
+            auto wplan = fftPlan<T<S>>(gridspec);
 
-        // Record the corresponding row dimensions of this batch
-        size_t rowstart = workunits[istart].rowstart;
-        size_t rowend = workunits[iend - 1].rowend;
-        long long nrows = rowend - rowstart;
+            // Now loop over the batches until they are exhausted
+            while (auto batch = batches.pop()) {
+                auto [wkstart, wkend, rowstart, rowend] = *batch;
+                long long nworkunits = wkend - wkstart;
+                long long nrows = rowend - rowstart;
 
-        Logger::debug(
-            "Invert: batching rows {}-{}/{} ({} workunits)",
-            rowstart, rowend, workunits.size(), nworkunits
-        );
+                Logger::info(
+                    "Invert: batching rows {}-{}/{} ({} workunits)",
+                    rowstart, rowend, workunits.size(), nworkunits
+                );
 
-        HostSpan<WorkUnit, 1> workunits_h({nworkunits}, workunits.data() + istart);
+                HostSpan<WorkUnit, 1> workunits_h({nworkunits}, workunits.data() + wkstart);
 
-        // Create aterms arrays
-        HostArray<DeviceSpan<ComplexLinearData<double>, 2>, 1> alefts_h(nworkunits);
-        HostArray<DeviceSpan<ComplexLinearData<double>, 2>, 1> arights_h(nworkunits);
+                // Create aterms arrays
+                HostArray<DeviceSpan<ComplexLinearData<double>, 2>, 1> alefts_h(nworkunits);
+                HostArray<DeviceSpan<ComplexLinearData<double>, 2>, 1> arights_h(nworkunits);
 
-        // Now transfer across all required Aterms and update the Aleft, Aright values
-        // in workunits_h. We use a dictionary copy across only _unique_ Aterms, since
-        // these may be shared across workunits.
-        std::unordered_map<
-            Aterms::aterm_t, DeviceArray<ComplexLinearData<double>, 2>
-        > aterm_map;
-        for (size_t i {}; auto w : workunits_h) {
-            auto [ant1, ant2] = w.baseline;
+                // Now transfer across all required Aterms and update the Aleft, Aright values
+                // in workunits_h. We use a dictionary copy across only _unique_ Aterms, since
+                // these may be shared across workunits.
+                std::unordered_map<
+                    Aterms::aterm_t, DeviceArray<ComplexLinearData<double>, 2>
+                > aterm_map;
+                for (size_t i {}; auto w : workunits_h) {
+                    auto [ant1, ant2] = w.baseline;
 
-            Aterms::aterm_t aleft = aterms.get(w.time, ant1);
-            alefts_h[i] = (*aterm_map.try_emplace(aleft, *aleft).first).second;
+                    Aterms::aterm_t aleft = aterms.get(w.time, ant1);
+                    alefts_h[i] = (*aterm_map.try_emplace(aleft, *aleft).first).second;
 
-            Aterms::aterm_t aright = aterms.get(w.time, ant2);
-            arights_h[i] = (*aterm_map.try_emplace(aright, *aright).first).second;
+                    Aterms::aterm_t aright = aterms.get(w.time, ant2);
+                    arights_h[i] = (*aterm_map.try_emplace(aright, *aright).first).second;
 
-            ++i;
-        }
+                    ++i;
+                }
 
-        auto data_h = tbl.data({rowstart, rowend});
-        auto weights_h = tbl.weights({rowstart, rowend});
+                auto data_h = tbl.data({rowstart, rowend});
+                auto weights_h = tbl.weights({rowstart, rowend});
 
-        HostArray<std::array<double, 3>, 1> uvws_h(nrows);
-        for (size_t i {}; auto m : tbl.metadata({rowstart, rowend})) {
-            uvws_h[i++] = {m.u, m.v, m.w};
-        }
+                HostArray<std::array<double, 3>, 1> uvws_h(nrows);
+                for (size_t i {}; auto m : tbl.metadata({rowstart, rowend})) {
+                    uvws_h[i++] = {m.u, m.v, m.w};
+                }
 
-        // Copy across data
-        DeviceArray<WorkUnit, 1> workunits_d(workunits_h);
-        DeviceArray<ComplexLinearData<float>, 2> data_d(data_h);
-        DeviceArray<LinearData<float>, 2> weights_d(weights_h);
-        DeviceArray<std::array<double, 3>, 1> uvws_d(uvws_h);
-        DeviceArray<DeviceSpan<ComplexLinearData<double>, 2>, 1> alefts_d(alefts_h);
-        DeviceArray<DeviceSpan<ComplexLinearData<double>, 2>, 1> arights_d(arights_h);
+                // Copy across data
+                DeviceArray<WorkUnit, 1> workunits_d(workunits_h);
+                DeviceArray<ComplexLinearData<float>, 2> data_d(data_h);
+                DeviceArray<LinearData<float>, 2> weights_d(weights_h);
+                DeviceArray<std::array<double, 3>, 1> uvws_d(uvws_h);
+                DeviceArray<DeviceSpan<ComplexLinearData<double>, 2>, 1> alefts_d(alefts_h);
+                DeviceArray<DeviceSpan<ComplexLinearData<double>, 2>, 1> arights_d(arights_h);
 
-        // Allocate subgrid stack
-        DeviceArray<T<S>, 3> subgrids_d({subgridspec.Nx, subgridspec.Ny, nbatch});
+                // Allocate subgrid stack
+                DeviceArray<T<S>, 3> subgrids_d({subgridspec.Nx, subgridspec.Ny, nworkunits});
 
-        // Grid
-        gridder<T<S>, S>(
-            subgrids_d, workunits_d, uvws_d, data_d, weights_d,
-            subgridspec, lambdas_d, subtaperd, alefts_d, arights_d, rowstart, makePSF
-        );
+                // Grid
+                gridder<T<S>, S>(
+                    subgrids_d, workunits_d, uvws_d, data_d, weights_d,
+                    subgridspec, lambdas_d, subtaperd, alefts_d, arights_d, rowstart, makePSF
+                );
 
-        // FFT all subgrids as one batch
-        PIGI_TIMER(
-            "invert::batch::subgridfft",
-            fftExec(subplan, subgrids_d, HIPFFT_FORWARD)
-        );
+                // FFT all subgrids as one batch
+                PIGI_TIMER(
+                    "invert::batch::subgridfft",
+                    auto subplan = fftPlan<T<S>>(subgridspec, nworkunits);
+                    fftExec(subplan, subgrids_d, HIPFFT_FORWARD);
+                    hipfftDestroy(subplan);
+                );
 
-        // Reset deltal, deltam shift prior to adding to master grid
-        PIGI_TIMER(
-            "invert::batch::subgridsdeltalm",
-            map([
-                =,
-                deltal=static_cast<S>(subgridspec.deltal),
-                deltam=static_cast<S>(subgridspec.deltam),
-                stride=subgridspec.size()
-            ] __device__ (auto idx, auto& px) {
-                idx %= stride;
-                auto [u, v] = subgridspec.linearToUV<S>(idx);
-                px *= cispi(-2 * (u * deltal + v * deltam));
-            }, Iota(), subgrids_d)
-        );
+                // Reset deltal, deltam shift prior to adding to master grid
+                PIGI_TIMER(
+                    "invert::batch::subgridsdeltalm",
+                    map([
+                        =,
+                        deltal=static_cast<S>(subgridspec.deltal),
+                        deltam=static_cast<S>(subgridspec.deltam),
+                        stride=subgridspec.size()
+                    ] __device__ (auto idx, auto& px) {
+                        idx %= stride;
+                        auto [u, v] = subgridspec.linearToUV<S>(idx);
+                        px *= cispi(-2 * (u * deltal + v * deltam));
+                    }, Iota(), subgrids_d)
+                );
 
-        // Group subgrids into w layers
-        std::unordered_map<double, std::vector<size_t>> widxs;
-        for (size_t i {istart}; i < iend; ++i) {
-            auto workunit = workunits[i];
-            widxs[workunit.w].push_back(i - istart);
-        }
+                // Group subgrids into w layers
+                std::unordered_map<double, std::vector<size_t>> widxs;
+                for (size_t i {wkstart}; i < wkend; ++i) {
+                    auto workunit = workunits[i];
+                    widxs[workunit.w].push_back(i - wkstart);
+                }
 
-        // ...and process each wlayer serially
-        for (auto& [w0, idxs] : widxs) {
-            auto timer = Timer::get("invert::batch::wlayers");
+                // ...and process each wlayer serially
+                for (auto& [w0, idxs] : widxs) {
+                    auto timer = Timer::get("invert::batch::wlayers");
 
-            wlayer.zero();
+                    wlayer.zero();
 
-            // Add each subgrid from this w-layer
-            addsubgrid(
-                wlayer, DeviceArray<size_t, 1>(idxs),
-                workunits_d, subgrids_d, gridspec, subgridspec
-            );
+                    // Add each subgrid from this w-layer
+                    addsubgrid(
+                        wlayer, DeviceArray<size_t, 1>(idxs),
+                        workunits_d, subgrids_d, gridspec, subgridspec
+                    );
 
-            // Apply deltal, deltam shift
-            PIGI_TIMER(
-                "invert::batch::wlayers::deltalm",
-                map([
-                    =,
-                    deltal=static_cast<S>(gridspec.deltal),
-                    deltam=static_cast<S>(gridspec.deltam)
-                ] __device__ (auto idx, auto& wlayer) {
-                    auto [u, v] = gridspec.linearToUV<S>(idx);
-                    wlayer *= cispi(2 * (u * deltal + v * deltam));
-                }, Iota(), wlayer)
-            );
+                    // Apply deltal, deltam shift
+                    PIGI_TIMER(
+                        "invert::batch::wlayers::deltalm",
+                        map([
+                            =,
+                            deltal=static_cast<S>(gridspec.deltal),
+                            deltam=static_cast<S>(gridspec.deltam)
+                        ] __device__ (auto idx, auto& wlayer) {
+                            auto [u, v] = gridspec.linearToUV<S>(idx);
+                            wlayer *= cispi(2 * (u * deltal + v * deltam));
+                        }, Iota(), wlayer)
+                    );
 
-            // FFT the full wlayer
-            PIGI_TIMER(
-                "invert::batch::wlayers::fft",
-                fftExec(wplan, wlayer, HIPFFT_BACKWARD)
-            );
+                    // FFT the full wlayer
+                    PIGI_TIMER(
+                        "invert::batch::wlayers::fft",
+                        fftExec(wplan, wlayer, HIPFFT_BACKWARD)
+                    );
 
-            // Apply wcorrection and append layer onto img
-            PIGI_TIMER(
-                "invert::batch::wlayers::wcorrection",
-                map([gridspec=gridspec, w0=static_cast<S>(w0)] __device__ (
-                    auto idx, auto& imgd, auto wlayer
-                ) {
-                    auto [l, m] = gridspec.linearToSky<S>(idx);
-                    wlayer *= cispi(2 * w0 * ndash(l, m));
-                    imgd += wlayer;
-                }, Iota(), imgd, wlayer)
-            );
-        }
-    }
+                    // Apply wcorrection and append layer onto img
+                    PIGI_TIMER(
+                        "invert::batch::wlayers::wcorrection",
+                        map([gridspec=gridspec, w0=static_cast<S>(w0)] __device__ (
+                            auto idx, auto& imgd, auto wlayer
+                        ) {
+                            auto [l, m] = gridspec.linearToSky<S>(idx);
+                            wlayer *= cispi(2 * w0 * ndash(l, m));
+                            atomicAdd(&imgd, wlayer);
+                        }, Iota(), imgd, wlayer)
+                    );
+                }  // loop: wlayers
+            }  // loop: batches
 
-    hipfftDestroy(subplan);
-    hipfftDestroy(wplan);
+            hipfftDestroy(wplan);
+        });
+    }  // loop: threads
+
+    // Wait for all threads to complete
+    for (auto& thread : threads) thread.join();
+
+    // The final image still has a taper applied. It's time to remove it.
+    map([] __device__ (auto& px, auto t) {
+        px /= t;
+    }, imgd, DeviceArray<S, 2>(pswf<S>(gridspec)));
 
     // Copy image from device to host
     HostArray<T<S>, 2> img(imgd);
-
-    // The final image still has a taper applied. It's time to remove it.
-    img /= pswf<S>(gridspec);
 
     return resize(img, gridconf.padded(), gridconf.grid());
 }
