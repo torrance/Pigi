@@ -138,7 +138,7 @@ private:
 class Briggs : public Weighter {
 public:
     Briggs(DataTable& tbl, GridSpec gridspec, double robust)
-        : robust(robust), gridspec(gridspec), griddedWeights{gridspec.Nx, gridspec.Ny} {
+        : gridspec(gridspec), griddedWeights{gridspec.Nx, gridspec.Ny} {
 
         // Sum weights for each grid cell
         for (size_t irow {}; irow < tbl.nrows(); ++irow) {
@@ -198,7 +198,6 @@ public:
 
 
 private:
-    double robust {};
     GridSpec gridspec;
     HostArray<LinearData<float>, 2> griddedWeights;
 };
