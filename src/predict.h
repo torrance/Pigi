@@ -246,7 +246,7 @@ void _degridder(
         size_t ichan = idx % nchans + chanstart;
 
         // Get metadata for this datum
-        S lambda;
+        S lambda {};
         std::array<double, 3> uvw;
         if (idx < nvis) {
             lambda = lambdas[ichan];
