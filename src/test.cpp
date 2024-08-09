@@ -297,6 +297,9 @@ TEST_CASE("Measurement Set & Partition", "[mset]") {
                 double u = m.u / lambdas[ichan];
                 double v = m.v / lambdas[ichan];
 
+                // We force w > 0 during paritition, thanks to V(u,v,w) = V(-u,-v-w)^H
+                if (m.w / lambdas[ichan] < 0) { u *= -1; v *= -1; }
+
                 auto [upx, vpx] = gridspec.UVtoGrid<double>(u, v);
                 rowok = rowok && std::abs(upx - u0px) < radius;
                 rowok = rowok && std::abs(vpx - v0px) < radius;
@@ -306,6 +309,9 @@ TEST_CASE("Measurement Set & Partition", "[mset]") {
                 for (size_t ichan {workunit.chanstart}; ichan < workunit.chanend; ++ichan) {
                     double u = m.u / lambdas[ichan];
                     double v = m.v / lambdas[ichan];
+
+                    // We force w > 0 during paritition, thanks to V(u,v,w) = V(-u,-v-w)^H
+                    if (m.w / lambdas[ichan] < 0) { u *= -1; v *= -1; }
 
                     auto [upx, vpx] = gridspec.UVtoGrid<double>(u, v);
                     REQUIRE(std::abs(upx - u0px) < radius);

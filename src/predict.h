@@ -303,10 +303,15 @@ void _degridder(
             uvw = uvws[irow];
         }
 
+        // We force all data to have positive w values to reduce the number of w layers,
+        // since V(u, v, w) = V(-u, -v, -w)^H
+        // The data has already been partitioned making this assumption.
+        int signw = std::get<2>(uvw) < 0 ? -1 : 1;
+
         // Precompute uvw offsets and convert to wavenumbers
-        S u = -2 * ::pi_v<S> * (std::get<0>(uvw) / lambda - u0);
-        S v = -2 * ::pi_v<S> * (std::get<1>(uvw) / lambda - v0);
-        S w = -2 * ::pi_v<S> * (std::get<2>(uvw) / lambda - w0);
+        S u = -2 * ::pi_v<S> * (signw * std::get<0>(uvw) / lambda - u0);
+        S v = -2 * ::pi_v<S> * (signw * std::get<1>(uvw) / lambda - v0);
+        S w = -2 * ::pi_v<S> * (signw * std::get<2>(uvw) / lambda - w0);
 
         ComplexLinearData<S> datum;
 
@@ -361,6 +366,9 @@ void _degridder(
                 cmac(datum.yy, cell.yy, phase);
             }
         }
+
+        // If w was negative, we need to take the adjoint before storing the datum value
+        if (signw == -1) datum = datum.adjoint();
 
         if (idx < nvis) {
             switch (degridop) {
