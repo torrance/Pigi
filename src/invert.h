@@ -97,7 +97,7 @@ HostArray<T<S>, 2> invert(
                 long long nworkunits = wkend - wkstart;
                 long long nrows = rowend - rowstart;
 
-                Logger::info(
+                Logger::debug(
                     "Invert: batching rows {}-{}/{} ({} workunits)",
                     rowstart, rowend, workunits.size(), nworkunits
                 );
