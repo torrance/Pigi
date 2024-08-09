@@ -89,6 +89,12 @@ std::vector<WorkUnit> partition(DataTable& tbl, GridConfig gridconf) {
         }
     };
 
+    auto setpositivew = [] (std::array<double, 3> uvw) -> std::array<double, 3> {
+        auto& [u, v, w] = uvw;
+        if (w >= 0) return uvw;
+        return {-u, -v, -w};
+    };
+
     // Initialize workunits which we will return on completion
     std::vector<WorkUnit> workunits;
 
@@ -156,10 +162,10 @@ std::vector<WorkUnit> partition(DataTable& tbl, GridConfig gridconf) {
         // For each candidate, check that the first and last channel fit
         // fmt::println("Testing candidates on new row...");
         for (auto& candidate : candidates) {
-            auto [u1, v1, w1] = tbl.uvw(irow, candidate.chanstart);
+            auto [u1, v1, w1] = setpositivew(tbl.uvw(irow, candidate.chanstart));
             auto [u1px, v1px] = padded.UVtoGrid(u1, v1);
 
-            auto [u2, v2, w2] = tbl.uvw(irow, candidate.chanend);
+            auto [u2, v2, w2] = setpositivew(tbl.uvw(irow, candidate.chanend));
             auto [u2px, v2px] = padded.UVtoGrid(u2, v2);
 
             if (!candidate.add(u1px, v1px, w1) || !candidate.add(u2px, v2px, w2)) {
@@ -205,7 +211,7 @@ std::vector<WorkUnit> partition(DataTable& tbl, GridConfig gridconf) {
             candidates.clear();
 
             for (size_t ichan {}; ichan < tbl.nchans(); ++ichan) {
-                auto [u, v, w] = tbl.uvw(irow, ichan);
+                auto [u, v, w] = setpositivew(tbl.uvw(irow, ichan));
                 auto [upx, vpx] = padded.UVtoGrid(u, v);
 
                 if (candidates.empty() || !candidates.back().add(upx, vpx, w, ichan)) {
