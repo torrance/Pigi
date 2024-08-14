@@ -97,6 +97,7 @@ void predict(
     std::vector<std::thread> threads;
     for (size_t threadid {}; threadid < 2; ++threadid) {
         threads.emplace_back([&] {
+            GPU::getInstance().resetDevice(); // needs to be reset for each new thread
             auto timer = Timer::get("predict::batch");
 
             // Set up some state used for each batch iteration
