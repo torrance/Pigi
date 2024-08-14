@@ -5,7 +5,7 @@
 #include "config.h"
 #include "gridspec.h"
 #include "logger.h"
-#include "mset.h"
+#include "mpi.h"
 #include "routines.h"
 
 int main(int argc, char** argv) {
