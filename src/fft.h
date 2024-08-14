@@ -72,14 +72,14 @@ hipfftHandle fftPlan(const GridSpec gridspec, int nbatch=1) {
 }
 
 template<>
-hipfftHandle fftPlan<thrust::complex<float>>(const GridSpec gridspec, int) {
+hipfftHandle fftPlan<thrust::complex<float>>(const GridSpec gridspec, int nbatch) {
     hipfftHandle plan {};
     int rank[] {(int) gridspec.Ny, (int) gridspec.Nx}; // COL MAJOR
     HIPFFTCHECK( hipfftPlanMany(
         &plan, 2, rank,
-        rank, 1, 1,
-        rank, 1, 1,
-        HIPFFT_C2C, 1
+        rank, 1, gridspec.size(),
+        rank, 1, gridspec.size(),
+        HIPFFT_C2C, nbatch
     ) );
     HIPFFTCHECK( hipfftSetStream(plan, hipStreamPerThread) );
 
@@ -87,14 +87,14 @@ hipfftHandle fftPlan<thrust::complex<float>>(const GridSpec gridspec, int) {
 }
 
 template<>
-hipfftHandle fftPlan<thrust::complex<double>>(const GridSpec gridspec, int) {
+hipfftHandle fftPlan<thrust::complex<double>>(const GridSpec gridspec, int nbatch) {
     hipfftHandle plan {};
     int rank[] {(int) gridspec.Ny, (int) gridspec.Nx}; // COL MAJOR
     HIPFFTCHECK( hipfftPlanMany(
         &plan, 2, rank,
-        rank, 1, 1,
-        rank, 1, 1,
-        HIPFFT_Z2Z, 1
+        rank, 1, gridspec.size(),
+        rank, 1, gridspec.size(),
+        HIPFFT_Z2Z, nbatch
     ) );
     HIPFFTCHECK( hipfftSetStream(plan, hipStreamPerThread) );
 
@@ -161,7 +161,8 @@ hipfftHandle fftPlan<StokesI<double>>(const GridSpec gridspec, int nbatch) {
     return plan;
 }
 
-void fftExec(hipfftHandle plan, DeviceSpan<thrust::complex<float>, 2> grid, int direction) {
+template <int N>
+void fftExec(hipfftHandle plan, DeviceSpan<thrust::complex<float>, N> grid, int direction) {
     fftshift(grid, FFTShift::pre);
     hipfftExecC2C(
         plan,
@@ -172,7 +173,8 @@ void fftExec(hipfftHandle plan, DeviceSpan<thrust::complex<float>, 2> grid, int 
     fftshift(grid, FFTShift::post);
 }
 
-void fftExec(hipfftHandle plan, DeviceSpan<thrust::complex<double>, 2> grid, int direction) {
+template <int N>
+void fftExec(hipfftHandle plan, DeviceSpan<thrust::complex<double>, N> grid, int direction) {
     fftshift(grid, FFTShift::pre);
     hipfftExecZ2Z(
         plan,
