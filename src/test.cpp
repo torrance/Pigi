@@ -18,7 +18,6 @@
 #include "invert.h"
 #include "logger.h"
 #include "memory.h"
-#include "phaserotate.h"
 #include "psf.h"
 #include "predict.h"
 #include "taper.h"

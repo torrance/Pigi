@@ -20,8 +20,6 @@
 #include "invert.h"
 #include "logger.h"
 #include "mpi.h"
-#include "mset.h"
-#include "phaserotate.h"
 #include "predict.h"
 #include "psf.h"
 #include "taper.h"
