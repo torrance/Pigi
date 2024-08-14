@@ -8,9 +8,9 @@
 #define TOML11_COLORIZE_ERROR_MESSAGE = 1
 #include <toml11/toml.hpp>
 
+#include "datatable.h"
 #include "gridspec.h"
 #include "logger.h"
-#include "mset.h"
 
 namespace toml {
     template <>
@@ -77,13 +77,13 @@ namespace toml {
     };
 
     template <>
-    struct from<MeasurementSet::DataColumn> {
-        static MeasurementSet::DataColumn from_toml(const value& v) {
+    struct from<DataTable::DataColumn> {
+        static DataTable::DataColumn from_toml(const value& v) {
             std::string label {get<string>(v)};
-            if (label == "auto") return MeasurementSet::DataColumn::automatic;
-            if (label == "data") return MeasurementSet::DataColumn::data;
-            if (label == "corrected") return MeasurementSet::DataColumn::corrected;
-            if (label == "model") return MeasurementSet::DataColumn::model;
+            if (label == "auto") return DataTable::DataColumn::automatic;
+            if (label == "data") return DataTable::DataColumn::data;
+            if (label == "corrected") return DataTable::DataColumn::corrected;
+            if (label == "model") return DataTable::DataColumn::model;
 
             throw type_error(detail::format_underline(
                 "unknown datacolumn selected, expected: (auto|data|corrected|model)",
@@ -93,19 +93,19 @@ namespace toml {
     };
 
     template <>
-    struct into<MeasurementSet::DataColumn> {
-        static toml::value into_toml(const MeasurementSet::DataColumn datacol) {
+    struct into<DataTable::DataColumn> {
+        static toml::value into_toml(const DataTable::DataColumn datacol) {
             switch (datacol) {
-            case MeasurementSet::DataColumn::automatic:
+            case DataTable::DataColumn::automatic:
                 return "auto";
-            case MeasurementSet::DataColumn::data:
+            case DataTable::DataColumn::data:
                 return "data";
-            case MeasurementSet::DataColumn::corrected:
+            case DataTable::DataColumn::corrected:
                 return "corrected";
-            case MeasurementSet::DataColumn::model:
+            case DataTable::DataColumn::model:
                 return "model";
             default:
-                throw std::runtime_error("Invalid MeasurementSet::DataColumn value");
+                throw std::runtime_error("Invalid DataTable::DataColumn value");
             }
         }
     };
@@ -174,9 +174,9 @@ struct Config {
     Logger::Level loglevel {Logger::Level::info};
 
     // Measurement set selection
-    MeasurementSet::DataColumn datacolumn {MeasurementSet::DataColumn::automatic};
+    DataTable::DataColumn datacolumn {DataTable::DataColumn::automatic};
     int chanlow {0};
-    int chanhigh {-1};
+    int chanhigh {0};
     int channelsOut {1};
     double maxDuration {0};
     std::vector<std::string> msets {};
@@ -212,7 +212,7 @@ struct Config {
         if (chanlow < 0) {
             throw std::runtime_error("mset.chanlow must be >= 0");
         }
-        if (chanhigh <= chanlow && chanhigh != -1) {
+        if (chanhigh != 0 && chanhigh <= chanlow) {
             throw std::runtime_error("mset.chanhigh must be > mset.chanlow");
         }
         if (channelsOut < 1) {
@@ -436,7 +436,7 @@ struct Config {
             }},
             {"mset", {
                 {"chanhigh", {this->chanhigh, {
-                    " Select channels <= chanhigh. -1 indicates maximum channel. [int]",
+                    " Select channels < chanhigh. 0 indicates maximum channel. [int]",
                 }}},
                 {"chanlow", {this->chanlow, {
                     " Select channels >= chanlow. [int]",
