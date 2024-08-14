@@ -18,13 +18,13 @@
 #include <thrust/extrema.h>
 #include <thrust/iterator/zip_iterator.h>
 
+#include "datatable.h"
 #include "fft.h"
 #include "gridspec.h"
 #include "gslfit.h"
 #include "hip.h"
 #include "logger.h"
 #include "memory.h"
-#include "mset.h"
 #include "outputtypes.h"
 #include "timer.h"
 
@@ -74,7 +74,7 @@ using ComponentMap = std::unordered_map<LMpx, T, XYHash>;
 
 template <typename S, int N>
 auto _major(
-    std::vector<MeasurementSet::FreqRange>& freqs,
+    std::vector<DataTable::FreqRange>& freqs,
     std::vector<std::vector<HostArray<StokesI<S>, 2>>>& residualss,
     const std::vector<GridSpec>& imgGridspecs,
     std::vector<std::vector<HostArray<thrust::complex<S>, 2>>>& psfss,
@@ -208,7 +208,7 @@ auto _major(
     // Creating fitting object
     const int nparams = std::min(spectralparams, N); // cap nparams at N channels
     GSLFit fitter([] (const gsl_vector* params, void* data, gsl_vector* residual) -> int {
-        using Data = std::tuple<std::vector<MeasurementSet::FreqRange>, ChannelValues>;
+        using Data = std::tuple<std::vector<DataTable::FreqRange>, ChannelValues>;
         auto& [freqs, vals] = *static_cast<Data*>(data);
 
         for (size_t n {}; n < N; ++n) {
@@ -391,7 +391,7 @@ auto _major(
 
 template <typename S>
 auto major(
-    std::vector<MeasurementSet::FreqRange>& freqs,
+    std::vector<DataTable::FreqRange>& freqs,
     std::vector<std::vector<HostArray<StokesI<S>, 2>>>& residualss,
     const std::vector<GridSpec>& imgGridspecs,
     std::vector<std::vector<HostArray<thrust::complex<S>, 2>>>& psfss,
