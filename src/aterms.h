@@ -106,7 +106,7 @@ private:
 };
 
 Aterms mkAterms(
-    const casacore::MeasurementSet& mset,
+    const std::vector<casacore::MeasurementSet>& msets,
     const GridSpec& gridspec,
     double maxDuration,
     const RaDec& gridorigin,
@@ -116,32 +116,44 @@ Aterms mkAterms(
 
     std::vector<std::tuple<Interval, typename Aterms::aterm_t>> aterms;
 
-    std::string telescope = casacore::MSObservationColumns(
-        mset.observation()
-    ).telescopeName().get(0);
+    // For now, require all msets be the same measurement set
+    std::string telescope;
+    for (size_t i {}; auto& mset : msets) {
+        std::string tname = casacore::MSObservationColumns(
+            mset.observation()
+        ).telescopeName().get(0);
+
+        if (i == 0) telescope = tname;
+        if (telescope != tname) throw std::runtime_error(fmt::format(
+            "Require all msets to be same telescope. Got {}; expected {}", tname, telescope
+        ));
+    }
 
     // TODO: Remove these explicit branches on telescope type
     if (telescope == "MWA") {
         // Get MWA delays
         using mwadelay_t = std::tuple<double, double, std::array<uint32_t, 16>>;
         std::vector<mwadelay_t> delays;
-        {
+        for (auto& mset : msets) {
             auto mwaTilePointingTbl = mset.keywordSet().asTable("MWA_TILE_POINTING");
+            if (mwaTilePointingTbl.nrow() != 1) std::runtime_error(fmt::format(
+                "Found {} MWA delay rows in {}; expected 1",
+                mwaTilePointingTbl.nrow(), mwaTilePointingTbl.tableName()
+            ));
+
             auto intervalsCol = casacore::ArrayColumn<double>(mwaTilePointingTbl, "INTERVAL");
             auto delaysCol = casacore::ArrayColumn<int>(mwaTilePointingTbl, "DELAYS");
 
-            for (size_t i {}; i < mwaTilePointingTbl.nrow(); ++i) {
-                auto intervalRow = intervalsCol.get(i).tovector();
-                auto delaysRow = delaysCol.get(i);
+            auto intervalRow = intervalsCol.get(0).tovector();
+            auto delaysRow = delaysCol.get(0);
 
-                // Copy casacore array to fixed array
-                std::array<uint32_t, 16> delays_uint32;
-                std::copy(delaysRow.begin(), delaysRow.end(), delays_uint32.begin());
+            // Copy casacore array to fixed array
+            std::array<uint32_t, 16> delays_uint32;
+            std::copy(delaysRow.begin(), delaysRow.end(), delays_uint32.begin());
 
-                delays.push_back(std::make_tuple(
-                    intervalRow[0] / 86400., intervalRow[1] / 86400., delays_uint32
-                ));
-            }
+            delays.push_back(std::make_tuple(
+                intervalRow[0] / 86400., intervalRow[1] / 86400., delays_uint32
+            ));
         }
 
         for (auto& [start, end, delays] : delays) {
