@@ -5,6 +5,7 @@
 #include <hip/hip_runtime.h>
 
 #include "aterms.h"
+#include "channel.h"
 #include "datatable.h"
 #include "fft.h"
 #include "hip.h"
@@ -318,7 +319,7 @@ void _gridder(
                 for (size_t j = threadIdx.x; j < N; j += blockDim.x) {
                     // Copy global values to shared memory cache
                     data_cache[j] = data[irow * rowstride + ichan + j];
-                    invlambdas_cache[j] =  1. / lambdas[ichan + j];
+                    invlambdas_cache[j] = 1 / static_cast<S>(lambdas[ichan + j]);
 
                     auto& datum = data_cache[j];
 
