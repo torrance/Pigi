@@ -13,9 +13,9 @@
 #include "config.h"
 #include "coordinates.h"
 #include "clean.h"
+#include "datatable.h"
 #include "gridspec.h"
 #include "memory.h"
-#include "mset.h"
 #include "outputtypes.h"
 
 BOOST_IS_BITWISE_SERIALIZABLE(GridConfig);
@@ -23,7 +23,7 @@ BOOST_IS_BITWISE_SERIALIZABLE(GridSpec);
 BOOST_IS_BITWISE_SERIALIZABLE(RaDec);
 BOOST_IS_BITWISE_SERIALIZABLE(Config::Field);
 BOOST_IS_BITWISE_SERIALIZABLE(clean::LMpx);
-BOOST_IS_BITWISE_SERIALIZABLE(MeasurementSet::FreqRange);
+BOOST_IS_BITWISE_SERIALIZABLE(DataTable::FreqRange);
 
 namespace boost {
     namespace serialization {
