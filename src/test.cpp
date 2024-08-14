@@ -214,19 +214,19 @@ TEST_CASE("Utility functions", "[utility]") {
 TEST_CASE("Phase rotation", "[phaserotation]") {
     if (!TESTDATA) { SKIP("TESTDATA path not provided"); }
 
-    DataTable tbl(TESTDATA, 0, 0, 12);
+    DataTable tbl(TESTDATA, {.chanlow=0, .chanhigh=12});
     DataTable expected = tbl;
 
     RaDec original = tbl.phasecenter();
 
-    phaserotate(tbl, {0, 0});
+    tbl.phasecenter({0, 0});
 
     // Ensure something has changed
     REQUIRE(tbl.metadata(12345).u != expected.metadata(12345).u);
     REQUIRE(tbl.metadata(12345).v != expected.metadata(12345).v);
     REQUIRE(tbl.metadata(12345).w != expected.metadata(12345).w);
 
-    phaserotate(tbl, original);
+    tbl.phasecenter(original);
 
     double maxudiff = 0, maxvdiff = 0, maxwdiff = 0, maxdatadiff = 0;
     for (size_t irow {}; irow < tbl.nrows(); ++irow) {
@@ -266,7 +266,7 @@ TEST_CASE("Measurement Set & Partition", "[mset]") {
         .paddingfactor=1.0, .kernelsize=96, .kernelpadding=18,
     };
 
-    DataTable tbl(TESTDATA, 0, 0, 0);
+    DataTable tbl(TESTDATA, {});
     auto workunits = partition(tbl, gridconf);
 
     size_t n {};
@@ -358,7 +358,7 @@ TEST_CASE("Widefield inversion", "[widefield]") {
     const int oversample {16};
     REQUIRE( gridconf.imgNx % oversample == 0 );
 
-    DataTable tbl(TESTDATA, 0, 0, 11);
+    DataTable tbl(TESTDATA, {.chanlow=0, .chanhigh=11});
 
     // Weight the data
     Natural weighter(tbl, gridconf.padded());
@@ -366,7 +366,7 @@ TEST_CASE("Widefield inversion", "[widefield]") {
 
     // Create aterms
     auto aterms = mkAterms(
-        casacore::MeasurementSet(TESTDATA), gridconf.subgrid(),
+        {casacore::MeasurementSet(TESTDATA)}, gridconf.subgrid(),
         99999999, tbl.phasecenter(), tbl.midfreq()
     );
 
@@ -382,7 +382,7 @@ TEST_CASE("Widefield inversion", "[widefield]") {
     );
 
     aterms = mkAterms(
-        casacore::MeasurementSet(TESTDATA), gridspec,
+        {casacore::MeasurementSet(TESTDATA)}, gridspec,
         99999999, tbl.phasecenter(), tbl.midfreq()
     );
 
@@ -405,7 +405,7 @@ TEST_CASE("Widefield inversion", "[widefield]") {
 
     P maxdiff {-1};
     for (size_t i {}; i < diff.size(); ++i) {
-        maxdiff = std::max(maxdiff, ::abs(diff[i]));
+        maxdiff = std::max(maxdiff, ::abs(diff[i].I.real()));
     }
     fmt::println("Max diff: {}", maxdiff);
 
@@ -452,7 +452,7 @@ TEMPLATE_TEST_CASE_SIG(
         beam = BEAM(5038236804. / 86400.);
     }
 
-    DataTable tbl(TESTDATA, 0, 24, 28);
+    DataTable tbl(TESTDATA, {.chanlow=24, .chanhigh=68});
 
     // Weight naturally
     const Natural weighter(tbl, gridconf.padded());
@@ -541,7 +541,7 @@ TEMPLATE_TEST_CASE_SIG(
     }
 
     // Create zeroed DataTable
-    DataTable tbl(TESTDATA, 0, 24, 28);
+    DataTable tbl(TESTDATA, {.chanlow=24, .chanhigh=26});
     for (auto& datum : tbl.data()) datum = {0, 0, 0, 0};
     for (auto& weight : tbl.weights()) weight = {1, 1, 1, 1};
 
@@ -656,7 +656,7 @@ TEST_CASE("Clean", "[clean]") {
 
     HostArray<StokesI<double>, 2> expectedSum {gridspec.Nx, gridspec.Ny};
 
-    std::vector<MeasurementSet::FreqRange> freqs;
+    std::vector<DataTable::FreqRange> freqs;
     std::vector<std::vector<HostArray<StokesI<double>, 2>>> residualss(1);
     std::vector<std::vector<HostArray<thrust::complex<double>, 2>>> psfss(1);
 
