@@ -6,6 +6,7 @@
 
 #include "datatable.h"
 #include "logger.h"
+#include "timer.h"
 
 struct WorkUnit {
     double time;
@@ -31,7 +32,11 @@ struct WorkUnit {
     }
 };
 
-std::vector<WorkUnit> partition(DataTable& tbl, GridConfig gridconf) {
+std::vector<WorkUnit> partition(DataTable& tbl, GridConfig gridconf, double maxduration = 0) {
+    auto timer = Timer::get("partition");
+
+    if (maxduration <= 0) maxduration = std::numeric_limits<double>::infinity();
+
     // WorkUnit candidate
     // We use candidates as an adhoc structure to store WorkUnits-to-be, before we
     // know their exact position or data range.
@@ -147,12 +152,20 @@ std::vector<WorkUnit> partition(DataTable& tbl, GridConfig gridconf) {
     // a subgrid. Note: it assumes a square subgrid.
     const double maxspanpx = subgrid.Nx - 2 * gridconf.kernelpadding;
 
+    // Initial time is the lowest bound on the time
+    double initialtime = std::min_element(
+        tbl.metadata().begin(), tbl.metadata().end(), [&] (auto& lhs, auto& rhs) {
+            return lhs.time < rhs.time;
+        }
+    )->time;
+
     // Set up candidate workunits. This is mutable state used during the table
     // scan loop below, and will be periodically flushed and reinitialized
     // as WorkUnits are created.
     std::vector<WorkUnitCandidate> candidates;
 
     // Set up other mutable state used during the loop
+    long long currenttimestep {};
     DataTable::Baseline currentbaseline = tbl.metadata(0).baseline;
     bool createnew {true};
 
@@ -175,8 +188,15 @@ std::vector<WorkUnit> partition(DataTable& tbl, GridConfig gridconf) {
         }
 
         // Split the channel width into chunks that fit comfortably
-        // within a subgrid (and then a little bit extra)
-        if (createnew || tbl.metadata(irow).baseline != currentbaseline) {
+        // within a subgrid (and then a little bit extra). Always start new workunits
+        // if either the baselines change or we cross into a new timestep.
+        if (
+            createnew ||
+            static_cast<long long>(
+                (tbl.metadata(irow).time - initialtime) / maxduration
+            ) != currenttimestep ||
+            tbl.metadata(irow).baseline != currentbaseline)
+         {
             // Save any existing candidates as workunits
             for (auto& c : candidates) {
                 long long upx = std::llround(c.ulowpx + c.uhighpx) / 2;
@@ -207,6 +227,9 @@ std::vector<WorkUnit> partition(DataTable& tbl, GridConfig gridconf) {
 
             // Reset loop state
             createnew = false;
+            currenttimestep = static_cast<long long>(
+                (tbl.metadata(irow).time - initialtime) / maxduration
+            );
             currentbaseline = tbl.metadata(irow).baseline;
             candidates.clear();
 
