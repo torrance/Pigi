@@ -97,18 +97,22 @@ int main(int argc, char** argv) {
         }
 
         if (config.msets.size()) {
-            // Test opening of msets and replace
-            // any default values: e.g. chanhigh == -1 and phasecenter
-            MeasurementSet mset(
-                config.msets, config.datacolumn, config.chanlow, config.chanhigh
-            );
-            auto [_, chanhigh] = mset.channelrange();
-            config.chanhigh = chanhigh;
+            std::vector<casacore::MeasurementSet> msets;
+            for (auto& fname : config.msets) msets.push_back({fname});
 
-            // Phase center defaults to first measurement set's phase center, if unset.
-            if (!config.phasecenter) {
-                config.phasecenter = mset.phaseCenter();
-            }
+            // Load just the table metadata and perform validation across all
+            // measurement sets
+            DataTable tbl(msets, {
+                .chanlow=config.chanlow, .chanhigh=config.chanhigh,
+                .datacolumn=config.datacolumn, .phasecenter=config.phasecenter,
+                .skipdata=true
+            });
+
+            // Set values to replace any default values (e.g. 0 for chanhigh, empty phase)
+            config.datacolumn = tbl.datacolumn();
+            config.chanlow = tbl.chanlow();
+            config.chanhigh = tbl.chanhigh();
+            config.phasecenter = tbl.phasecenter();
         } else {
             printheader(stderr);
             fmt::println(stderr, "No msets provided; doing nothing");
