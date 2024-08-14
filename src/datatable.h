@@ -3,22 +3,34 @@
 #include <algorithm>
 #include <array>
 #include <limits>
+#include <optional>
 #include <utility>
 #include <vector>
 
-#include <casacore/casa/Utilities/Compare.h>
-#include <casacore/casa/Utilities/CountedPtr.h>
 #include <casacore/ms/MeasurementSets.h>
 #include <casacore/tables/Tables.h>
 #include <casacore/tables/Tables/TableIter.h>
 #include <fmt/format.h>
 #include <thrust/complex.h>
 
+#include "constants.h"
+#include "coordinates.h"
 #include "logger.h"
 #include "outputtypes.h"
+#include "timer.h"
 
 class DataTable {
 public:
+    enum class DataColumn {automatic, data, corrected, model};
+
+    struct Config {
+        long long chanlow {};
+        long long chanhigh {};
+        DataColumn datacolumn {DataColumn::automatic};
+        std::optional<RaDec> phasecenter {std::nullopt};
+        bool skipdata {false};
+    };
+
     struct Baseline {
         int a {};
         int b {};
@@ -39,52 +51,139 @@ public:
     DataTable() = default;
 
     DataTable(
-        const std::string& path,
-        double maxduration,
-        long long chanlow,
-        long long chanhigh
+        const std::string& fname, const Config& config
+    ) : DataTable({casacore::MeasurementSet(fname)}, config) {}
+
+    DataTable(
+        std::vector<casacore::MeasurementSet> msets, const Config& config
     ) {
-        casacore::MeasurementSet mset(path);
+        auto timer = Timer::get("dataload");
 
-        // TODO: Allow selection of field ID.
-        {
-            auto field = mset.field();
-            auto phasecenter = casacore::ArrayColumn<double>(
-                field, "PHASE_DIR"
-            ).get(0).tovector();
-            m_phasecenter = {phasecenter[0], phasecenter[1]};
-        }
+        if (msets.empty()) return;
 
-        // Remove autocorrelations
-        mset = mset(mset.col("ANTENNA1") != mset.col("ANTENNA2"));
+        m_datacolumn = config.datacolumn;
 
-        // Remove flagged rows
-        mset = mset(!mset.col("FLAG_ROW"));
+        for (size_t i {}; auto& mset : msets) {
+            std::string fname = mset.tableName();
 
-        // Retrieve frequency values
-        {
+            // Remove autocorrelations
+            mset = mset(mset.col("ANTENNA1") != mset.col("ANTENNA2"));
+
+            // Remove flagged rows
+            mset = mset(!mset.col("FLAG_ROW"));
+
+            // Compute total rows across all msets
+            m_nrows += mset.nrow();
+
+            // Ensure just one spectral window
             auto spw = mset.spectralWindow();
-            casacore::ArrayColumn<double> chanCol(spw, "CHAN_FREQ");
-            auto allfreqs = chanCol.get(0).tovector();
+            if (spw.nrow() != 1) throw std::runtime_error(fmt::format(
+                "Found {} spectral windows in {}; expected 1", spw.nrow(), fname
+            ));
 
-            // Ensure chanlow >= 0; and set chanhigh to default to all channels if <= 0
-            chanlow = std::max(0ll, chanlow);
-            if (chanhigh <= 0) chanhigh = allfreqs.size();
+            auto freqs = casacore::MSSpWindowColumns(spw)
+                .chanFreq().get(0).tovector();
 
-            for (long long chan {chanlow}; chan < chanhigh; ++chan) {
-                m_freqs.push_back(allfreqs[chan]);
+            // Initialize freqs if this is the first mset
+            if (i == 0) m_freqs = freqs;
+
+            // Ensure each freqs is identical across all msets
+            if (m_freqs != freqs) throw std::runtime_error(
+                "Each measurement set must have the same spectral window"
+            );
+
+            // Ensure channels are in range and set chanhigh to default value if == 0
+            m_chanlow = config.chanlow;
+            m_chanhigh = std::min<long long>(freqs.size(), config.chanhigh);
+            if (m_chanhigh == 0) m_chanhigh = freqs.size();
+            if (m_chanlow < 0) throw std::runtime_error(fmt::format(
+                "Channel low must be > 0; got {}", m_chanlow
+            ));
+            if (!(m_chanlow < m_chanhigh)) throw std::runtime_error(fmt::format(
+                "Channel low must be less than channel high (got low {}, high {})",
+                m_chanlow, m_chanhigh
+            ));
+
+            // Ensure just one field
+            auto field = mset.field();
+            if (field.nrow() != 1) throw std::runtime_error(fmt::format(
+                "Found {} fields in {}; expected 1", field.nrow(), fname
+            ));
+
+            // Set phase center if unset
+            if (!config.phasecenter) {
+                auto phasecenter = casacore::MSFieldColumns(field)
+                    .phaseDir().get(0).tovector();
+
+                m_phasecenter = {phasecenter.at(0), phasecenter.at(1)};
             }
 
-            for (double freq : m_freqs) m_lambdas.push_back(Constants::c / freq);
+            // Ensure data column exists; and all msets have the same datacolumn available
+            // Also set datacolumn if DataColumn::automatic is set
+            auto hascol = [] (const auto& mset, const auto& colname) -> bool {
+                for (const auto& othercolname : mset.tableDesc().columnNames()) {
+                    if (casacore::String(colname) == othercolname) return true;
+                }
+                return false;
+            };
+
+            switch (m_datacolumn) {
+            case DataColumn::automatic:
+                if (hascol(mset, "CORRECTED_DATA")) {
+                    Logger::info("Automatically selecting CORRECTED_DATA column");
+                    m_datacolumn = DataColumn::corrected;
+                } else if (hascol(mset, "DATA")) {
+                    m_datacolumn = DataColumn::data;
+                    Logger::info("No CORRECTED_DATA column found; automatically using DATA instead");
+                } else {
+                    throw std::runtime_error(fmt::format(
+                        "datacolumn=auto but neither DATA nor CORRECTED_DATA exist in {}",
+                        mset.tableName()
+                    ));
+                }
+                break;
+            case DataColumn::data:
+                if (!hascol(mset, "DATA")) throw std::runtime_error(fmt::format(
+                    "DATA column not found in {}", mset.tableName()
+                ));
+                break;
+            case DataColumn::corrected:
+                if (!hascol(mset, "CORRECTED_DATA")) throw std::runtime_error(fmt::format(
+                    "CORRECTED_DATA column not found in {}", mset.tableName()
+                ));
+                break;
+            case DataColumn::model:
+                if (!hascol(mset, "MODEL_DATA")) throw std::runtime_error(fmt::format(
+                    "MODEL_DATA column not found in {}", mset.tableName()
+                ));
+                break;
+            default:
+                throw std::runtime_error("Invalid MeasurementSet::DataColumn value");
+            }
         }
 
+        // Set phasecenter if it has been explicitly provided
+        if (config.phasecenter) m_phasecenter = *(config.phasecenter);
+
         // Set dimensions of table
-        m_nrows = mset.nrow();
-        m_nchans = chanhigh - chanlow;
+        m_nchans = m_chanhigh - m_chanlow;
+
+        // Truncate freqs just to channel range, and construct lambdas
+        m_freqs.erase(m_freqs.begin(), m_freqs.begin() + m_chanlow);
+        m_freqs.resize(m_nchans);
+
+        // Create m_lambdas
+        for (double freq : m_freqs) m_lambdas.push_back(Constants::c / freq);
+
+        // If skipdata is true, we only get metadata on the msets and perform validation
+        if (config.skipdata) {
+            m_nrows = 0;
+            return;
+        }
 
         Logger::info(
-            "Reading table with {} rows and {} channels (after filtering)...",
-            m_nrows, m_nchans
+            "Reading table with {} rows and {} channels [{}-{})...",
+            m_nrows, m_nchans, m_chanlow, m_chanhigh
         );
 
         // Allocate data arrays
@@ -92,140 +191,152 @@ public:
         m_weights.resize(m_nrows * m_nchans);
         m_data.resize(m_nrows * m_nchans);
 
-        // Determine initial time for use in TableIterator
-        double initialtime = [&] {
-            auto times = casacore::ScalarColumn<double>(mset, "TIME_CENTROID").getColumn();
-            return *std::min_element(times.begin(), times.end());
-        }();
+        // We iterate through the measurement by baseline
+        casacore::Block<casacore::String> colnames(2);
+        colnames[0] = "ANTENNA1";
+        colnames[1] = "ANTENNA2";
 
-        if (maxduration <= 0) maxduration = std::numeric_limits<double>::max();
+        for (size_t irow {}; auto& mset : msets) {
+            for (
+                casacore::TableIterator iter(mset, colnames);
+                !iter.pastEnd();
+                iter.next()
+            ) {
+                auto subtbl = iter.table();
+                size_t nsubrows = subtbl.nrow();
 
-        // We iterate through the measurement set in [time block] x [baselines]
-        // Each time block is <= maxduration. This order is essential for
-        // efficient partitioning.
-        casacore::Block<casacore::String> colnames(3);
-        colnames[0] = "TIME_CENTROID";
-        colnames[1] = "ANTENNA1";
-        colnames[2] = "ANTENNA2";
+                // Skip processing of an empty table
+                if (nsubrows == 0) continue;
 
-        casacore::Block<std::shared_ptr<casacore::BaseCompare>> cmpobjs(3);
-        auto interval = std::make_shared<casacore::CompareIntervalReal<double>>(
-            initialtime, maxduration
-        );
-        cmpobjs[0] = interval;
-        cmpobjs[1] = std::shared_ptr<casacore::BaseCompare>();
-        cmpobjs[2] = std::shared_ptr<casacore::BaseCompare>();
+                int ant1 = casacore::ScalarColumn<int>(subtbl, "ANTENNA1").get(0);
+                int ant2 = casacore::ScalarColumn<int>(subtbl, "ANTENNA2").get(0);
 
-        casacore::Block<casacore::Int> orders(3);
-        orders[0] = 0;
-        orders[1] = 0;
-        orders[2] = 0;
+                // Create metadata
+                {
+                    auto timeCol = casacore::ScalarColumn<double>(
+                        subtbl, "TIME_CENTROID"
+                    ).getColumn();
 
-        size_t irow {};
-        for (
-            casacore::TableIterator iter(mset, colnames, cmpobjs, orders);
-            !iter.pastEnd();
-            iter.next()
-        ) {
-            auto subtbl = iter.table();
-            size_t nsubrows = subtbl.nrow();
+                    auto uvwCol = casacore::ArrayColumn<double>(subtbl, "UVW").getColumn();
 
-            // Skip processing of an empty table
-            if (nsubrows == 0) continue;
+                    auto timeIter = timeCol.begin();
+                    auto uvwIter = uvwCol.begin();
+                    for (size_t i {}; i < nsubrows; ++i) {
+                        double u = *uvwIter; ++uvwIter;
+                        double v = *uvwIter; ++uvwIter;
+                        double w = *uvwIter; ++uvwIter;
 
-            int ant1 = casacore::ScalarColumn<int>(subtbl, "ANTENNA1").get(0);
-            int ant2 = casacore::ScalarColumn<int>(subtbl, "ANTENNA2").get(0);
+                        m_metadata[irow + i] = RowMetadata{
+                            .time = *timeIter / 86400.,  // Convert from mjd [seconds] to [days]
+                            .baseline = Baseline{ant1, ant2},
+                            .u = u, .v = v, .w = w
+                        };
 
-            // Create metadata
-            {
-                auto timeCol = casacore::ScalarColumn<double>(
-                    subtbl, "TIME_CENTROID"
-                ).getColumn();
-
-                auto uvwCol = casacore::ArrayColumn<double>(subtbl, "UVW").getColumn();
-
-                auto timeIter = timeCol.begin();
-                auto uvwIter = uvwCol.begin();
-                for (size_t i {}; i < nsubrows; ++i) {
-                    double u = *uvwIter; ++uvwIter;
-                    double v = *uvwIter; ++uvwIter;
-                    double w = *uvwIter; ++uvwIter;
-
-                    m_metadata[irow + i] = RowMetadata{
-                        .time = *timeIter / 86400.,  // Convert from mjd [seconds] to [days]
-                        .baseline = Baseline{ant1, ant2},
-                        .u = u, .v = v, .w = w
-                    };
-
-                    ++timeIter;
-                }
-            }
-
-            // Create slicers used to filter channels
-            casacore::Slicer rowSlice {
-                casacore::IPosition {0},
-                casacore::IPosition {static_cast<long>(nsubrows)},
-                casacore::Slicer::endIsLength
-            };
-
-            casacore::Slicer arraySlice {
-                casacore::IPosition {0, chanlow},
-                casacore::IPosition {3, static_cast<long>(m_nchans)},
-                casacore::Slicer::endIsLength
-            };
-
-            // Copy weight spectrum in full
-            {
-                auto weightSpectrumCol = casacore::ArrayColumn<float>(
-                    subtbl, "WEIGHT_SPECTRUM"
-                ).getColumnRange(rowSlice, arraySlice);
-
-                std::copy(
-                    weightSpectrumCol.begin(), weightSpectrumCol.end(),
-                    reinterpret_cast<float*>(m_weights.data() + irow * m_nchans)
-                );
-            }
-
-            // Copy across the data
-            {
-                auto dataCol = casacore::ArrayColumn<std::complex<float>>(
-                    subtbl, "CORRECTED_DATA"
-                ).getColumnRange(rowSlice, arraySlice);
-
-                std::copy(
-                    dataCol.begin(), dataCol.end(),
-                    reinterpret_cast<std::complex<float>*>(m_data.data() + irow * m_nchans)
-                );
-            }
-
-            // Then fold flag and NaNs from the data column into weights
-            {
-                auto flagCol = casacore::ArrayColumn<bool>(
-                    subtbl, "FLAG"
-                ).getColumnRange(rowSlice, arraySlice);
-                auto flagIter = flagCol.begin();
-
-                for (size_t i {}; i < nsubrows; ++i) {
-                    for (size_t j {}; j < m_nchans; ++j) {
-                        auto& datum = m_data[(irow + i) * m_nchans + j];
-                        auto& weight = m_weights[(irow + i) * m_nchans + j];
-
-                        // Treat NaNs as flags
-                        if (!datum.isfinite() || !weight.isfinite()) {
-                            datum = {0, 0, 0, 0};
-                            weight = {0, 0, 0, 0};
-                        }
-
-                        // Fold flag values into the weight column
-                        weight.xx *= !(*flagIter); ++flagIter;
-                        weight.xy *= !(*flagIter); ++flagIter;
-                        weight.yx *= !(*flagIter); ++flagIter;
-                        weight.yy *= !(*flagIter); ++flagIter;
+                        ++timeIter;
                     }
                 }
-            }
 
-            irow += nsubrows;
+                // Create slicers used to filter channels
+                casacore::Slicer rowSlice {
+                    casacore::IPosition {0},
+                    casacore::IPosition {static_cast<long>(nsubrows)},
+                    casacore::Slicer::endIsLength
+                };
+
+                casacore::Slicer arraySlice {
+                    casacore::IPosition {0, m_chanlow},
+                    casacore::IPosition {4, static_cast<long>(m_nchans)},
+                    casacore::Slicer::endIsLength
+                };
+
+                // Copy weight spectrum in full
+                {
+                    auto weightSpectrumCol = casacore::ArrayColumn<float>(
+                        subtbl, "WEIGHT_SPECTRUM"
+                    ).getColumnRange(rowSlice, arraySlice);
+
+                    std::copy(
+                        weightSpectrumCol.begin(), weightSpectrumCol.end(),
+                        reinterpret_cast<float*>(m_weights.data() + irow * m_nchans)
+                    );
+                }
+
+                // Copy across the data
+                {
+                    casacore::Array<std::complex<float>> dataCol;
+
+                    switch (m_datacolumn) {
+                    case DataColumn::data:
+                        dataCol = casacore::ArrayColumn<std::complex<float>>(
+                            subtbl, "DATA"
+                        ).getColumnRange(rowSlice, arraySlice);
+                        break;
+                    case DataColumn::corrected:
+                        dataCol = casacore::ArrayColumn<std::complex<float>>(
+                            subtbl, "CORRECTED_DATA"
+                        ).getColumnRange(rowSlice, arraySlice);
+                        break;
+                    case DataColumn::model:
+                        dataCol = casacore::ArrayColumn<std::complex<float>>(
+                            subtbl, "MODEL_DATA"
+                        ).getColumnRange(rowSlice, arraySlice);
+                        break;
+                    case DataColumn::automatic:
+                    default:
+                        throw std::runtime_error("m_datacolumn should not still be set to auto");
+                    }
+
+                    std::copy(
+                        dataCol.begin(), dataCol.end(),
+                        reinterpret_cast<std::complex<float>*>(m_data.data() + irow * m_nchans)
+                    );
+                }
+
+                // Then fold flag and NaNs from the data column into weights
+                {
+                    auto flagCol = casacore::ArrayColumn<bool>(
+                        subtbl, "FLAG"
+                    ).getColumnRange(rowSlice, arraySlice);
+                    auto flagIter = flagCol.begin();
+
+                    for (size_t i {}; i < nsubrows; ++i) {
+                        for (size_t j {}; j < m_nchans; ++j) {
+                            auto& datum = m_data[(irow + i) * m_nchans + j];
+                            auto& weight = m_weights[(irow + i) * m_nchans + j];
+
+                            // Treat NaNs as flags
+                            if (!datum.isfinite() || !weight.isfinite()) {
+                                datum = {0, 0, 0, 0};
+                                weight = {0, 0, 0, 0};
+                            }
+
+                            // Fold flag values into the weight column
+                            weight.xx *= !(*flagIter); ++flagIter;
+                            weight.xy *= !(*flagIter); ++flagIter;
+                            weight.yx *= !(*flagIter); ++flagIter;
+                            weight.yy *= !(*flagIter); ++flagIter;
+                        }
+                    }
+                }
+
+                // Ensure all phase centers are set to m_phasecenter
+                {
+                    auto timer = Timer::get("dataload::phaserotate");
+
+                    RaDec subphasecenter = [&] () -> RaDec {
+                        auto phasecenter = casacore::MSFieldColumns(
+                            casacore::MeasurementSet(subtbl).field()
+                        ).phaseDir().get(0).tovector();
+                        return {phasecenter.at(0), phasecenter.at(1)};
+                    }();
+
+                    for (size_t i {}; i < nsubrows; ++i) {
+                        phaserotaterow(subphasecenter, m_phasecenter, irow + i);
+                    }
+                }
+
+                irow += nsubrows;
+            }
         }
     }
 
@@ -233,8 +344,19 @@ public:
     size_t nrows() const { return m_nrows; }
     size_t nchans() const { return m_nchans; }
 
-    const RaDec phasecenter() const { return m_phasecenter; }
-    void phasecenter(RaDec radec) { m_phasecenter = radec; }
+    long long chanlow() const { return m_chanlow; }
+    long long chanhigh() const { return m_chanhigh; }
+
+    RaDec phasecenter() const { return m_phasecenter; }
+
+    void phasecenter(RaDec phasecenter) {
+        for (size_t irow {}; irow < m_nrows; ++irow) {
+            phaserotaterow(m_phasecenter, phasecenter, irow);
+        }
+        m_phasecenter = phasecenter;
+    }
+
+    DataColumn datacolumn() const { return m_datacolumn; }
 
     double midfreq() const {
         return std::accumulate(m_freqs.begin(), m_freqs.end(), 0.) / m_freqs.size();
@@ -249,12 +371,19 @@ public:
         return (low->time + high->time) / 2;
     }
 
+    const std::vector<double>& freqs() const { return m_freqs; }
+
     HostSpan<double, 1> freqs(std::array<size_t, 2> chanslice) {
         auto& [chanstart, chanend] = chanslice;
         return {
             std::array<long long, 1>{static_cast<long long>(chanend - chanstart)},
             m_freqs.data() + chanstart
         };
+    }
+
+    using FreqRange = std::array<double, 2>;
+    FreqRange freqrange() const {
+        return {m_freqs.front(), m_freqs.back()};
     }
 
     const std::vector<double>& lambdas() const { return m_lambdas; }
@@ -340,6 +469,9 @@ public:
 
 private:
     // TODO: Investigate storing baselines as std::unorded_map?
+    DataColumn m_datacolumn {DataColumn::automatic};
+    long long m_chanlow {};
+    long long m_chanhigh {};
     size_t m_nrows {};
     size_t m_nchans {};
     RaDec m_phasecenter;
@@ -348,4 +480,46 @@ private:
     std::vector<RowMetadata> m_metadata;
     std::vector<LinearData<float>> m_weights;
     std::vector<ComplexLinearData<float>> m_data;
+
+    void phaserotaterow(RaDec from, RaDec to, size_t irow) {
+        if (to == from) return;
+
+        const double cos_deltara = std::cos(to.ra - from.ra);
+        const double sin_deltara = std::sin(to.ra - from.ra);
+        const double sin_decfrom = std::sin(from.dec);
+        const double cos_decfrom = std::cos(from.dec);
+        const double sin_decto = std::sin(to.dec);
+        const double cos_decto = std::cos(to.dec);
+
+        RowMetadata& m = m_metadata[irow];
+
+        double u = m.u;
+        double v = m.v;
+        double w = m.w;
+
+        const double uprime = (
+            + u * cos_deltara
+            - v * sin_decfrom * sin_deltara
+            - w * cos_decfrom * sin_deltara
+        );
+        const double vprime = (
+            + u * sin_decto * sin_deltara
+            + v * (sin_decfrom * sin_decto * cos_deltara + cos_decfrom * cos_decto)
+            - w * (sin_decfrom * cos_decto - cos_decfrom * sin_decto * cos_deltara)
+        );
+        const double wprime = (
+            + u * cos_decto * sin_deltara
+            - v * (cos_decfrom * sin_decto - sin_decfrom * cos_decto * cos_deltara)
+            + w * (sin_decfrom * sin_decto + cos_decfrom * cos_decto * cos_deltara)
+        );
+
+        m.u = uprime;
+        m.v = vprime;
+        m.w = wprime;
+
+        // Add in geometric delay to data
+        for (size_t ichan {}; const double lambda : m_lambdas) {
+            this->data(irow, ichan++) *= cispi(-2 * (wprime - w) / lambda);
+        }
+    }
 };
