@@ -40,7 +40,7 @@ void cleanQueen(const Config& config, boost::mpi::intercommunicator hive) {
     const std::ranges::iota_view<int, int> srcs{0, hivesize};
     const std::ranges::iota_view<size_t, size_t> fieldids{0, gridconfs.size()};
 
-    std::vector<MeasurementSet::FreqRange> freqs(hivesize);
+    std::vector<DataTable::FreqRange> freqs(hivesize);
     for (const int src : srcs) {
         hive.recv(src, boost::mpi::any_tag, freqs[src]);
     }
@@ -245,34 +245,23 @@ void cleanWorker(
 
     const auto gridconfs = config.gridconfs();
 
-    // Be careful in these channel boundary calculations to remember that the
-    // upper channel is inclusive in the range
-    const int chanwidth = (config.chanhigh - config.chanlow + 1) / config.channelsOut;
+    // Calculate the channel bounds for each rank
+    const int chanwidth = cld(config.chanhigh - config.chanlow, config.channelsOut);
     const int chanlow = config.chanlow + chanwidth * rank;
-    const int chanhigh = std::min(chanlow + chanwidth - 1, config.chanhigh);
+    const int chanhigh = std::min(chanlow + chanwidth, config.chanhigh);
 
-    // TODO: Concatenate measurement sets
-    // For now, just take the first mset
-    MeasurementSet mset(
-        config.msets, config.datacolumn, chanlow, chanhigh,
-        std::numeric_limits<double>::min(), std::numeric_limits<double>::max()
-    );
+    // Open msets and load data into memory
+    std::vector<casacore::MeasurementSet> msets;
+    for (auto& fname : config.msets) msets.push_back({fname});
+    DataTable tbl(msets, {
+        .chanlow=chanlow, .chanhigh=chanhigh,
+        .datacolumn=config.datacolumn, .phasecenter=config.phasecenter,
+    });
 
-    queen.send(0, 0, mset.freqrange());
-
-    Logger::info("Reading data and writing to mmap-backed memory...");
-    auto uvdata = mset.data<P>();
-
-    Logger::info(
-        "Phase rotating visibilities to RA {:.2f} Dec {:.2f}...",
-        rad2deg(config.phasecenter.value().ra), rad2deg(config.phasecenter.value().dec)
-    );
-    for (auto& uvdatum : uvdata) {
-        phaserotate(uvdatum, config.phasecenter.value());
-    }
+    queen.send(0, 0, tbl.freqrange());
 
     Logger::info("Calculating visibility weights...");
-    std::shared_ptr<Weighter<P>> weighter {};
+    std::shared_ptr<Weighter> weighter {};
     {
         // Use the padded grid of the largest field for weighting
         auto grid = std::max_element(
@@ -282,16 +271,16 @@ void cleanWorker(
         )->padded();
 
         if (config.weight == "uniform") {
-            weighter = std::make_shared<Uniform<P>>(uvdata, grid);
+            weighter = std::make_shared<Uniform>(tbl, grid);
         } else if (config.weight == "natural") {
-            weighter = std::make_shared<Natural<P>>(uvdata, grid);
+            weighter = std::make_shared<Natural>(tbl, grid);
         } else if (config.weight == "briggs") {
-            weighter = std::make_shared<Briggs<P>>(uvdata, grid, config.robust);
+            weighter = std::make_shared<Briggs>(tbl, grid, config.robust);
         } else {
             std::runtime_error(fmt::format("Unknown weight: {}", config.weight));
         }
     }
-    applyWeights(*weighter, uvdata);
+    applyweights(*weighter, tbl);
 
     std::mutex writelock;
     std::barrier barrier(gridconfs.size(), [] {});
@@ -317,39 +306,18 @@ void cleanWorker(
                 // Segfaults occur without out this lock - due to Casacore issues
                 // TODO: Remove this lock and add at a lower level
                 std::lock_guard l(writelock);
-                return mkAterms<P>(
-                    mset, gridconf.subgrid(), config.maxDuration, config.phasecenter.value()
+                return mkAterms(
+                    msets,
+                    gridconf.subgrid(), config.maxDuration,
+                    config.phasecenter.value(), tbl.midfreq()
                 );
             }();
 
             // Partition data
-            auto workunits = [&] {
-                Logger::info("Partitioning data...");
-                auto workunits = partition(uvdata, gridconf, aterms);
-
-                // Print some stats about our partitioning
-                std::vector<size_t> sizes;
-                for (const auto& workunit : workunits) sizes.push_back(workunit.data.size());
-
-                std::sort(sizes.begin(), sizes.end());
-                auto median = sizes[sizes.size() / 2];
-                P sum = std::accumulate(sizes.begin(), sizes.end(), 0);
-                auto mean = sum / sizes.size();
-                Logger::info(
-                    "Partitioning complete: {} workunits, "
-                    "size min {} < (mean {:.1f} median {}) < max {}",
-                    sizes.size(), sizes.front(),  mean, median, sizes.back()
-                );
-
-                return workunits;
-            }();
-
-            // Ensure partitioning is complete on all fields (which reads uvdata on the
-            // host) before allowing any worker to start prefetching data off to the GPU
-            barrier.arrive_and_wait();
+            auto workunits = partition(tbl, gridconf);
 
             Logger::info("Constructing average beam...");
-            auto beamPower = mkAvgAtermPower<StokesI, P>(workunits, gridconf);
+            auto beamPower = aterms.template average<StokesI, P>(tbl, workunits, gridconf);
 
             queen.send(0, fieldid, beamPower);
             if (hivesize > 1) save(
@@ -359,7 +327,7 @@ void cleanWorker(
 
             // Create psf
             Logger::info("Constructing PSF...");
-            auto psf = invert<thrust::complex, P>(workunits, gridconf, true);
+            auto psf = invert<thrust::complex, P>(tbl, workunits, gridconf, aterms, true);
             queen.send(0, fieldid, psf);
             if (hivesize > 1) save(
                 fmt::format("psf-field{:02d}-{:02d}.fits", fieldid + 1, rank + 1), psf,
@@ -372,7 +340,7 @@ void cleanWorker(
 
             // Initial inversion
             Logger::info("Constructing dirty image...");
-            auto residual = invert<StokesI, P>(workunits, gridconf);
+            auto residual = invert<StokesI, P>(tbl, workunits, gridconf, aterms);
             queen.send(0, fieldid, residual);
 
             if (hivesize > 1) save(fmt::format(
@@ -425,9 +393,12 @@ void cleanWorker(
                     }
 
                     Logger::info(
-                        "Removing clean components from uvdata... (major cycle {})", i
+                        "Removing clean components from data... (major cycle {})", i
                     );
-                    predict<StokesI<P>, P>(workunits, minorComponents, gridconf, DegridOp::Subtract);
+                    predict<StokesI, P>(
+                        tbl, workunits, minorComponents, gridconf,
+                        aterms, DegridOp::Subtract
+                    );
                 }
 
                 // Wait for all threads to finish writing to the visibilties
@@ -436,7 +407,7 @@ void cleanWorker(
 
                 // Invert
                 Logger::info("Constructing residual image... (major cycle {})", i);
-                residual = invert<StokesI, P>(workunits, gridconf);
+                residual = invert<StokesI, P>(tbl, workunits, gridconf, aterms);
                 queen.send(0, fieldid, residual);
 
                 // Listen for major loop termination signal from queen
