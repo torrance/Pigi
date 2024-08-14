@@ -73,11 +73,11 @@ TEST_CASE("MSet reading and paritioning", "[io]") {
     };
 
     auto tbl = simple_benchmark("MSet read", 1, [&] {
-        return DataTable(TESTDATA, 30, 0, 192);
+        return DataTable(TESTDATA, {.chanlow=0, .chanhigh=192});
     });
 
-    auto workunits = simple_benchmark("Partition", 3, [&] {
-        return partition(tbl, gridconf);
+    auto workunits = simple_benchmark("Partition", 5, [&] {
+        return partition(tbl, gridconf, 30);
     });
 }
 
@@ -94,7 +94,7 @@ TEMPLATE_TEST_CASE("Invert", "[invert]", float, double) {
     ;
     Aterms aterms(beam);
 
-    DataTable tbl(TESTDATA, 0, 0, 384);
+    DataTable tbl(TESTDATA, {.chanlow=0, .chanhigh=384});
     auto workunits = partition(tbl, gridconf);
 
     // Prefill any caches, e.g. taper
@@ -120,7 +120,7 @@ TEMPLATE_TEST_CASE("Predict", "[predict]", float, double) {
     );
     Aterms aterms(beam);
 
-    DataTable tbl(TESTDATA, 0, 0, 384);
+    DataTable tbl(TESTDATA, {.chanlow=0, .chanhigh=384});
     auto workunits = partition(tbl, gridconf);
 
     // Create skymap
