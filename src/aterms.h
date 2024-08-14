@@ -5,11 +5,14 @@
 #include <stdexcept>
 #include <vector>
 
+#include <boost/functional/hash.hpp>
+
 #include "beam.h"
 #include "logger.h"
 #include "memory.h"
 #include "outputtypes.h"
 #include "util.h"
+#include "workunit.h"
 
 class Aterms {
 public:
@@ -36,6 +39,66 @@ public:
             if (interval.contains(mjd)) return aterm;
         }
         throw std::runtime_error(fmt::format("No Aterm found for time = {}", mjd));
+    }
+
+    template <template<typename> typename T, typename P>
+    HostArray<T<P>, 2> average(
+        DataTable& tbl, std::vector<WorkUnit>& workunits, GridConfig gridconf
+    ) {
+        // All intermediate weights and beams are calculated at full double precision
+        // to avoid FP errors with large weight sums.
+
+        auto subgridspec = gridconf.subgrid();
+        auto gridspec = gridconf.grid();
+        auto paddedspec = gridconf.padded();
+
+        // Accumulate data weights per Aterm
+        using Key = std::pair<aterm_t, aterm_t>;
+        struct KeyHasher {
+            std::size_t operator()(const Key& key) const {
+                size_t seed {};
+                boost::hash_combine(seed, std::get<0>(key));
+                boost::hash_combine(seed, std::get<1>(key));
+                return seed;
+            }
+        };
+        std::unordered_map<Key, T<double>, KeyHasher> atermweights;
+
+        for (auto& w : workunits) {
+            auto [ant1, ant2] = w.baseline;
+            aterm_t aleft = this->get(w.time, ant1);
+            aterm_t aright = this->get(w.time, ant2);
+
+            // Add wieght contribution for this pair of beams
+            T<double>& weight = atermweights[{aleft, aright}];
+            for (size_t irow {w.rowstart}; irow < w.rowend; ++irow) {
+                for (size_t ichan {w.chanstart}; ichan < w.chanend; ++ichan) {
+                    weight += static_cast<T<double>>(tbl.weights(irow, ichan));
+                }
+            }
+        }
+
+        // Calculate weight to normalize average beam
+        T<double> totalWeight {};
+        for (auto [atermpair, weight] : atermweights) totalWeight += weight;
+
+        // Now for each baseline pair, compute the power and append to total beam power
+        HostArray<T<double>, 2> beamPower64 {subgridspec.shape()};
+        for (auto [atermpair, weight] : atermweights) {
+            auto [aleft, aright] = atermpair;
+
+            for (size_t i {}, I = subgridspec.size(); i < I; ++i) {
+                beamPower64[i] += T<double>::beamPower(
+                    (*aleft)[i], (*aright)[i]
+                ) *= (weight /= totalWeight);
+            }
+        }
+
+        // Now rescale and resize
+        auto beamPower = static_cast<HostArray<T<P>, 2>>(beamPower64);
+        beamPower = rescale(beamPower, subgridspec, paddedspec);
+        beamPower = resize(beamPower, paddedspec, gridspec);
+        return beamPower;
     }
 
 private:
@@ -108,31 +171,4 @@ Aterms mkAterms(
     }
 
     return Aterms{aterms};
-}
-
-template <template<typename> typename T, typename P>
-HostArray<T<P>, 2> mkAvgAtermPower(const auto& workunits, const GridConfig& gridconf) {
-    // Add together low-resolution beams at full double precision
-    HostArray<T<double>, 2> beamPower64 {gridconf.subgrid().shape()};
-    T<double> totalWeight {};
-
-    for (auto& workunit : workunits) {
-        T<double> weight = workunit.template totalWeight<P>();
-        totalWeight += weight;
-
-        for (size_t i {}, I = gridconf.subgrid().size(); i < I; ++i) {
-            beamPower64[i] += static_cast<T<double>>(StokesI<P>::beamPower(
-                (*workunit.Aleft)[i], (*workunit.Aright)[i]
-            )) *= weight;
-        }
-    }
-
-    // Normalise sum by its total weight
-    for (auto& val : beamPower64) val /= totalWeight;
-
-    // Now rescale and resize
-    auto beamPower = static_cast<HostArray<T<P>, 2>>(beamPower64);
-    beamPower = rescale(beamPower, gridconf.subgrid(), gridconf.padded());
-    beamPower = resize(beamPower, gridconf.padded(), gridconf.grid());
-    return beamPower;
 }
