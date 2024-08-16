@@ -31,21 +31,49 @@ void predict(
     const auto gridspec = gridconf.padded();
     const auto subgridspec = gridconf.subgrid();
 
+    // Copy img (with padding) to device and apply inverse taper
+    DeviceArray<T<S>, 2> imgd {resize(img, gridconf.grid(), gridspec)};
+    {
+        DeviceArray<S, 2> taperd {pswf<S>(gridspec)};
+        map([] __device__ (auto& img, const auto t) {
+            if (t == 0) img = T<S>{};
+            else img /= t;
+        }, imgd, taperd);
+    }
+
+    // Create wlayer used for splitting
+    DeviceArray<T<S>, 2> wlayer(gridspec.shape());
+    auto wplan = fftPlan<T<S>>(gridspec);
+
+    // Copy subtaper to device
+    DeviceArray<S, 2> subtaper_d {pswf<S>(subgridspec)};
+
+    // Lambdas does not change row to row; send to device now
+    const DeviceArray<double, 1> lambdas_d(tbl.lambdas());
+
     // Start by precomputing batch boundaries and loading up the channel
     // used by the threads to determine their scope of work.
-    Channel<std::array<size_t, 4>> batches;
+    std::vector<std::array<size_t, 4>> batches;
     {
-        size_t maxmem = 6llu * 1024 * 1024 * 1024;  // hardcode to 6 GB
+        size_t maxmem = [] () -> size_t {
+            size_t free, total;
+            HIPCHECK( hipMemGetInfo(&free, &total));
+            return (free * 0.8) / 2;
+        }();
+        Logger::debug(
+            "Setting maxmem per thread to {} GB",
+            maxmem / 1024. / 1024. / 1024.
+        );
 
         // Precompute memory
         // TODO: add mem usage of Aterms
-        size_t basemem = gridspec.size() * sizeof(T<S>); // wlayer
         size_t workunitmem = (
             sizeof(WorkUnit) +
             gridconf.subgrid().size() * sizeof(T<S>)
         );
         size_t rowmem = (
             sizeof(DataTable::RowMetadata) +
+            sizeof(std::array<double, 3>) +
             tbl.nchans() * sizeof(ComplexLinearData<float>)
         );
 
@@ -63,35 +91,26 @@ void predict(
             size_t nworkunits = wkend - wkstart;
 
             // Calculate size of current bounds
-            size_t mem = basemem + nworkunits * workunitmem + nrows * rowmem;
+            // The factor of 2 accounts for the extra subgrids that might be held in memory
+            // by the main thread for adding.
+            size_t mem = 2 * nworkunits * workunitmem + nrows * rowmem;
 
             if (
                 mem > maxmem ||                       // maximum batch size
                 nworkunits > workunits.size() / 2 ||  // require >= 2 batches minimum
                 wkend == workunits.size()             // final iteration
             ) {
-                batches.push({wkstart, wkend, rowstart, rowend});
+                batches.push_back({wkstart, wkend, rowstart, rowend});
                 wkstart = wkend;
             }
         }
-        batches.close();
     }
 
-    // Copy img (with padding) to device and apply inverse taper
-    DeviceArray<T<S>, 2> imgd {resize(img, gridconf.grid(), gridspec)};
-    {
-        DeviceArray<S, 2> taperd {pswf<S>(gridspec)};
-        map([] __device__ (auto& img, const auto t) {
-            if (t == 0) img = T<S>{};
-            else img /= t;
-        }, imgd, taperd);
-    }
-
-    // Copy subtaper to device
-    DeviceArray<S, 2> subtaper_d {pswf<S>(subgridspec)};
-
-    // Lambdas does not change row to row; send to device now
-    const DeviceArray<double, 1> lambdas_d(tbl.lambdas());
+    // Create channel used sending split stacks to workers
+    // std::array<rowstart, rowend, workunits_h, workunits_d, subgrids_d>
+    Channel<std::tuple<
+        size_t, size_t, HostSpan<WorkUnit, 1>, DeviceArray<WorkUnit, 1>, DeviceArray<T<S>, 3>
+    >> stacks(1);
 
     // Create the threads
     std::vector<std::thread> threads;
@@ -100,22 +119,16 @@ void predict(
             GPU::getInstance().resetDevice(); // needs to be reset for each new thread
             auto timer = Timer::get("predict::batch");
 
-            // Set up some state used for each batch iteration
-            auto wplan = fftPlan<T<S>>(gridspec);
-            DeviceArray<T<S>, 2> wlayer {gridspec.shape(), false};
-
             // Now loop over the batches until they are exhausted
-            while (auto batch = batches.pop()) {
-                auto [wkstart, wkend, rowstart, rowend] = *batch;
-                long long nworkunits = wkend - wkstart;
+            while (auto stack = stacks.pop()) {
+                auto& [rowstart, rowend, workunits_h, workunits_d, subgrids_d] = *stack;
+                long long nworkunits = workunits_h.size();
                 long long nrows = rowend - rowstart;
 
                 Logger::debug(
                     "Invert: batching rows {}-{}/{} ({} workunits)",
                     rowstart, rowend, workunits.size(), nworkunits
                 );
-
-                HostSpan<WorkUnit, 1> workunits_h({nworkunits}, workunits.data() + wkstart);
 
                 // Create aterms arrays
                 HostArray<DeviceSpan<ComplexLinearData<double>, 2>, 1> alefts_h(nworkunits);
@@ -147,64 +160,10 @@ void predict(
                 }
 
                 // Copy across data
-                DeviceArray<WorkUnit, 1> workunits_d(workunits_h);
                 DeviceArray<ComplexLinearData<float>, 2> data_d(data_h);
                 DeviceArray<std::array<double, 3>, 1> uvws_d(uvws_h);
                 DeviceArray<DeviceSpan<ComplexLinearData<double>, 2>, 1> alefts_d(alefts_h);
                 DeviceArray<DeviceSpan<ComplexLinearData<double>, 2>, 1> arights_d(arights_h);
-
-                // Allocate subgrid stack
-                DeviceArray<T<S>, 3> subgrids_d({subgridspec.Nx, subgridspec.Ny, nworkunits});
-
-                // Group subgrids into w layers
-                std::unordered_map<double, std::vector<size_t>> widxs;
-                for (size_t i {wkstart}; i < wkend; ++i) {
-                    auto workunit = workunits[i];
-                    widxs[workunit.w].push_back(i - wkstart);
-                }
-
-                // ...and process each wlayer serially
-                for (auto& [w0, idxs] : widxs) {
-                    auto timer = Timer::get("predict::batch::wlayers");
-                    wlayer.zero();
-
-                    // Apply w-decorrection to img and copy to wlayer
-                    PIGI_TIMER(
-                        "predict::batch::wlayers::wdecorrection",
-                        map([w0=w0, gridspec=gridspec] __device__ (auto idx, auto img, auto& wlayer) {
-                            auto [l, m] = gridspec.linearToSky<S>(idx);
-                            img *= cispi(-2 * w0 * ndash(l, m));
-                            wlayer = img;
-                        }, Iota(), imgd, wlayer)
-                    );
-
-                    // Transform from sky => visibility domain
-                    PIGI_TIMER(
-                        "predict::batch::wlayers::fft",
-                        fftExec(wplan, wlayer, HIPFFT_FORWARD)
-                    );
-
-                    // Reset deltal, deltam shift to visibilities
-                    PIGI_TIMER(
-                        "predict::batch::wlayers::deltalm",
-                        map([
-                            =,
-                            deltal=static_cast<S>(gridspec.deltal),
-                            deltam=static_cast<S>(gridspec.deltam)
-                        ] __device__ (auto idx, auto& wlayer) {
-                            auto [u, v] = gridspec.linearToUV<S>(idx);
-                            wlayer *= cispi(-2 * (u * deltal + v * deltam));
-                        }, Iota(), wlayer)
-                    );
-
-                    // Populate subgrid stack with subgrids from this wlayer
-                    extractSubgrid<T<S>>(
-                        subgrids_d, wlayer, DeviceArray<size_t, 1>(idxs),
-                        workunits_d, gridspec, subgridspec
-                    );
-                }  // loop: wlayers
-
-                // Now the subgrid stack is loaded up, we can proceed with degridding
 
                 // Apply deltal, deltam shift to visibilities
                 PIGI_TIMER(
@@ -238,10 +197,78 @@ void predict(
                 // Copy data back to host
                 copy(data_h, data_d);
             }  // loop: batches
-
-            hipfftDestroy(wplan);
         });
     } // loop: threads
+
+    // In the main thread we split off visibilities, construct the subgrid stacks,
+    // and send to the worker threads for degridding
+    for (auto [wkstart, wkend, rowstart, rowend] : batches) {
+        long long nworkunits = wkend - wkstart;
+
+        // Allocate workunits
+        HostSpan<WorkUnit, 1> workunits_h({nworkunits}, workunits.data() + wkstart);
+        DeviceArray<WorkUnit, 1> workunits_d(workunits_h);
+
+        // Allocate subgrid stack
+        DeviceArray<T<S>, 3> subgrids_d({subgridspec.Nx, subgridspec.Ny, nworkunits});
+
+        // Group subgrids into w layers
+        std::unordered_map<double, std::vector<size_t>> widxs;
+        for (size_t i {wkstart}; i < wkend; ++i) {
+            auto workunit = workunits[i];
+            widxs[workunit.w].push_back(i - wkstart);
+        }
+
+        // ...and process each wlayer serially
+        for (auto& [w0, idxs] : widxs) {
+            auto timer = Timer::get("predict::wlayers");
+            wlayer.zero();
+
+            // Apply w-decorrection to img and copy to wlayer
+            PIGI_TIMER(
+                "predict::wlayers::wdecorrection",
+                map([w0=w0, gridspec=gridspec] __device__ (auto idx, auto img, auto& wlayer) {
+                    auto [l, m] = gridspec.linearToSky<S>(idx);
+                    img *= cispi(-2 * w0 * ndash(l, m));
+                    wlayer = img;
+                }, Iota(), imgd, wlayer)
+            );
+
+            // Transform from sky => visibility domain
+            PIGI_TIMER(
+                "predict::wlayers::fft",
+                fftExec(wplan, wlayer, HIPFFT_FORWARD)
+            );
+
+            // Reset deltal, deltam shift to visibilities
+            PIGI_TIMER(
+                "predict::wlayers::deltalm",
+                map([
+                    =,
+                    deltal=static_cast<S>(gridspec.deltal),
+                    deltam=static_cast<S>(gridspec.deltam)
+                ] __device__ (auto idx, auto& wlayer) {
+                    auto [u, v] = gridspec.linearToUV<S>(idx);
+                    wlayer *= cispi(-2 * (u * deltal + v * deltam));
+                }, Iota(), wlayer)
+            );
+
+            // Populate subgrid stack with subgrids from this wlayer
+            extractSubgrid<T<S>>(
+                subgrids_d, wlayer, DeviceArray<size_t, 1>(idxs),
+                workunits_d, gridspec, subgridspec
+            );
+        }  // loop: wlayers
+
+        stacks.push(
+            {rowstart, rowend, workunits_h, std::move(workunits_d), std::move(subgrids_d)}
+        );
+    }  // loop: batches
+
+    // Signal to workers that there are no more stacks to wait for
+    stacks.close();
+
+    hipfftDestroy(wplan);
 
     // Wait for all threads to complete
     for (auto& thread : threads) thread.join();
@@ -465,7 +492,7 @@ auto extractSubgrid(
     const GridSpec gridspec,
     const GridSpec subgridspec
 ) {
-    auto timer = Timer::get("predict::batch::wlayers::splitter");
+    auto timer = Timer::get("predict::wlayers::splitter");
 
     auto fn = _extractSubgrid<T>;
     auto [nblocksx, nthreadsx] = getKernelConfig(
