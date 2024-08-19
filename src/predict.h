@@ -8,15 +8,15 @@
 #include "aterms.h"
 #include "channel.h"
 #include "datatable.h"
+#include "degridder.h"
 #include "fft.h"
 #include "hip.h"
 #include "memory.h"
+#include "splitter.h"
 #include "taper.h"
 #include "timer.h"
 #include "util.h"
 #include "workunit.h"
-
-enum class DegridOp {Subtract, Add};
 
 template <template<typename> typename T, typename S>
 void predict(
@@ -183,7 +183,7 @@ void predict(
                     );
 
                     // Populate subgrid stack with subgrids from this wlayer
-                    extractSubgrid<T<S>>(
+                    splitter<T<S>>(
                         subgrids_d, wlayer, DeviceArray<size_t, 1>(idxs),
                         workunits_d, gridspec, subgridspec
                     );
@@ -265,238 +265,4 @@ void predict(
     // Wait for all threads to complete
     for (auto& thread : threads) thread.join();
     hipfftDestroy(wplan);
-}
-
-template <typename T, typename S>
-__global__
-void _degridder(
-    DeviceSpan<ComplexLinearData<float>, 2> data,
-    const DeviceSpan<T, 3> subgrids,
-    const DeviceSpan<WorkUnit, 1> workunits,
-    const DeviceSpan<std::array<double, 3>, 1> uvws,
-    const DeviceSpan<double, 1> lambdas,
-    const DeviceSpan<S, 2> subtaper,
-    const DeviceSpan<DeviceSpan<ComplexLinearData<double>, 2>, 1> alefts,
-    const DeviceSpan<DeviceSpan<ComplexLinearData<double>, 2>, 1> arights,
-    const GridSpec subgridspec,
-    size_t rowoffset,
-    const DegridOp degridop
-) {
-    // Set up the shared mem cache
-    const size_t cachesize {256};
-    __shared__ char _cache[
-        cachesize * (sizeof(ComplexLinearData<S>) + sizeof(std::array<S, 3>))
-    ];
-    auto subgrid_cache = reinterpret_cast<ComplexLinearData<S>*>(_cache);
-    auto lmn_cache = reinterpret_cast<std::array<S, 3>*>(subgrid_cache + cachesize);
-
-    // Get workunit information
-    size_t rowstart, rowend, chanstart, chanend;
-    S u0, v0, w0;
-    {
-        const auto& workunit = workunits[blockIdx.y];
-        rowstart = workunit.rowstart - rowoffset;
-        rowend = workunit.rowend - rowoffset;
-        chanstart = workunit.chanstart;
-        chanend = workunit.chanend;
-        u0 = workunit.u;
-        v0 = workunit.v;
-        w0 = workunit.w;
-    }
-
-    const size_t nchans = chanend - chanstart;
-    const size_t nvis = (rowend - rowstart) * nchans;
-    const size_t rowstride = lambdas.size();
-
-    for (
-        size_t idx = blockIdx.x * blockDim.x + threadIdx.x;
-        idx < blockDim.x * cld<size_t>(nvis, blockDim.x);
-        idx += blockDim.x * gridDim.x
-    ) {
-        size_t irow = idx / nchans + rowstart;
-        size_t ichan = idx % nchans + chanstart;
-
-        // Get metadata for this datum
-        S lambda {};
-        std::array<double, 3> uvw;
-        if (idx < nvis) {
-            lambda = lambdas[ichan];
-            uvw = uvws[irow];
-        }
-
-        // We force all data to have positive w values to reduce the number of w layers,
-        // since V(u, v, w) = V(-u, -v, -w)^H
-        // The data has already been partitioned making this assumption.
-        int signw = std::get<2>(uvw) < 0 ? -1 : 1;
-
-        // Precompute uvw offsets and convert to wavenumbers
-        S u = -2 * ::pi_v<S> * (signw * std::get<0>(uvw) / lambda - u0);
-        S v = -2 * ::pi_v<S> * (signw * std::get<1>(uvw) / lambda - v0);
-        S w = -2 * ::pi_v<S> * (signw * std::get<2>(uvw) / lambda - w0);
-
-        ComplexLinearData<S> datum;
-
-        for (size_t ipx {}; ipx < subgridspec.size(); ipx += cachesize) {
-            const size_t N = min(cachesize, subgridspec.size() - ipx);
-
-            // Populate cache
-            __syncthreads();
-            for (size_t j = threadIdx.x; j < N; j += blockDim.x) {
-                // Load subgrid value; convert to instrumental values
-                auto cell = static_cast<ComplexLinearData<S>>(
-                    subgrids[subgridspec.size() * blockIdx.y + ipx + j]
-                );
-
-                // Grab A terms
-                auto al = static_cast<ComplexLinearData<S>>(alefts[blockIdx.y][ipx + j]);
-                auto ar = static_cast<ComplexLinearData<S>>(arights[blockIdx.y][ipx + j]).adjoint();
-
-                // Apply Aterms, normalization, and taper
-                cell = matmul(matmul(al, cell), ar);
-                cell *= subtaper[ipx + j] / subgridspec.size();
-
-                subgrid_cache[j] = cell;
-
-                // Precompute l, m, n and cache values
-                auto [l, m] = subgridspec.linearToSky<S>(ipx + j);
-                auto n = ndash(l, m);
-
-                lmn_cache[j] = {l, m, n};
-            }
-            __syncthreads();
-
-            // Zombie threads need to keep filling the cache
-            // but can skip doing any actual work
-            if (idx >= nvis) continue;
-
-            // Cycle through cache
-            for (size_t j {}; j < N; ++j) {
-                auto [l, m, n] = lmn_cache[j];
-                auto phase = cis(u * l + v * m + w * n);
-
-                // Load subgrid cell from the cache
-                // This shared mem load is broadcast across the warp and so we
-                // don't need to worry about bank conflicts
-                auto cell = subgrid_cache[j];
-
-                // Equivalent of: data += cell * phase
-                // Written out explicitly to use fma operations
-                cmac(datum.xx, cell.xx, phase);
-                cmac(datum.yx, cell.yx, phase);
-                cmac(datum.xy, cell.xy, phase);
-                cmac(datum.yy, cell.yy, phase);
-            }
-        }
-
-        // If w was negative, we need to take the adjoint before storing the datum value
-        if (signw == -1) datum = datum.adjoint();
-
-        if (idx < nvis) {
-            switch (degridop) {
-            case DegridOp::Add:
-                data[irow * rowstride + ichan]
-                    += static_cast<ComplexLinearData<float>>(datum);
-                break;
-            case DegridOp::Subtract:
-                data[irow * rowstride + ichan]
-                    -= static_cast<ComplexLinearData<float>>(datum);
-                break;
-            }
-        }
-    }
-}
-
-template <typename T, typename S>
-void degridder(
-    DeviceSpan<ComplexLinearData<float>, 2> data,
-    const DeviceSpan<T, 3> subgrids,
-    const DeviceSpan<WorkUnit, 1> workunits,
-    const DeviceSpan<std::array<double, 3>, 1> uvws,
-    const DeviceSpan<double, 1> lambdas,
-    const DeviceSpan<S, 2> subtaper,
-    const DeviceSpan<DeviceSpan<ComplexLinearData<double>, 2>, 1> alefts,
-    const DeviceSpan<DeviceSpan<ComplexLinearData<double>, 2>, 1> arights,
-    const GridSpec subgridspec,
-    size_t rowoffset,
-    const DegridOp degridop
-) {
-    auto timer = Timer::get("predict::batch::degridder");
-
-    auto fn = _degridder<T, S>;
-
-    // x-dimension distributes uvdata
-    int nthreadsx {256};
-    int nblocksx {1};
-
-    // y-dimension breaks the subgrid down into 8 blocks
-    int nthreadsy {1};
-    int nblocksy = workunits.size();
-
-    hipLaunchKernelGGL(
-        fn, dim3(nblocksx, nblocksy), dim3(nthreadsx, nthreadsy), 0, hipStreamPerThread,
-        data, subgrids, workunits, uvws, lambdas, subtaper, alefts, arights, subgridspec,
-        rowoffset, degridop
-    );
-}
-
-template <typename T>
-__global__
-void _extractSubgrid(
-    DeviceSpan<T, 3> subgrids,
-    const DeviceSpan<T, 2> grid,
-    const DeviceSpan<size_t, 1> widxs,
-    const DeviceSpan<WorkUnit, 1> workunits,
-    const GridSpec gridspec,
-    const GridSpec subgridspec
-) {
-    size_t widx = widxs[blockIdx.y];
-    auto workunit = workunits[widx];
-    const long long u0px = workunit.upx;
-    const long long v0px = workunit.vpx;
-
-    for (
-        size_t idx = blockIdx.x * blockDim.x + threadIdx.x;
-        idx < subgridspec.size();
-        idx += blockDim.x * gridDim.x
-    ) {
-        auto [upx, vpx] = subgridspec.linearToGrid(idx);
-
-        // Transform to pixel position wrt to master grid
-        upx += u0px - subgridspec.Nx / 2;
-        vpx += v0px - subgridspec.Ny / 2;
-
-        if (
-            0 <= upx && upx < static_cast<long long>(gridspec.Nx) &&
-            0 <= vpx && vpx < static_cast<long long>(gridspec.Ny)
-        ) {
-            // This assignment performs an implicit conversion
-            subgrids[subgridspec.size() * widx + idx]
-                = grid[gridspec.gridToLinear(upx, vpx)];
-        }
-    }
-}
-
-template <typename T>
-auto extractSubgrid(
-    DeviceSpan<T, 3> subgrids,
-    const DeviceSpan<T, 2> grid,
-    const DeviceSpan<size_t, 1> widxs,
-    const DeviceSpan<WorkUnit, 1> workunits,
-    const GridSpec gridspec,
-    const GridSpec subgridspec
-) {
-    auto timer = Timer::get("predict::wlayers::splitter");
-
-    auto fn = _extractSubgrid<T>;
-    auto [nblocksx, nthreadsx] = getKernelConfig(
-        fn, subgridspec.size()
-    );
-
-    int nthreadsy {1};
-    int nblocksy = widxs.size();
-
-    hipLaunchKernelGGL(
-        fn, dim3(nblocksx, nblocksy), dim3(nthreadsx, nthreadsy), 0, hipStreamPerThread,
-        subgrids, grid, widxs, workunits, gridspec, subgridspec
-    );
 }
