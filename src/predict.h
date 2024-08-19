@@ -221,11 +221,17 @@ void predict(
                     uvws_h[i++] = {m.u, m.v, m.w};
                 }
 
+                /// Timer is heap allocated here so we can deallocate manually
+                Timer::StopWatch* timer = new Timer::StopWatch;
+                *timer = Timer::get("predict::batch::memHtoD");
+
                 // Copy across data
                 DeviceArray<ComplexLinearData<float>, 2> data_d(data_h);
                 DeviceArray<std::array<double, 3>, 1> uvws_d(uvws_h);
                 DeviceArray<DeviceSpan<ComplexLinearData<double>, 2>, 1> alefts_d(alefts_h);
                 DeviceArray<DeviceSpan<ComplexLinearData<double>, 2>, 1> arights_d(arights_h);
+
+                delete timer;
 
                 // Apply deltal, deltam shift to visibilities
                 PIGI_TIMER(
@@ -257,7 +263,10 @@ void predict(
                 );
 
                 // Copy data back to host
-                copy(data_h, data_d);
+                PIGI_TIMER(
+                    "predict::batch::memDtoH",
+                    copy(data_h, data_d)
+                );
             }  // loop: batches
         });
     } // loop: threads

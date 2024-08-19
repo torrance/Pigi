@@ -19,29 +19,39 @@ public:
 
     class StopWatch {
     public:
+        StopWatch() = default;
         StopWatch(Counter* counter) : counter(counter) {
-
             HIPCHECK( hipStreamSynchronize(hipStreamPerThread) );
             start = std::chrono::steady_clock::now();
         }
 
         ~StopWatch() {
+            if (counter == nullptr) return;
+
             HIPCHECK( hipStreamSynchronize(hipStreamPerThread) );
             *counter += std::chrono::duration_cast<std::chrono::nanoseconds>(
                 std::chrono::steady_clock::now() - start
             ).count();
         }
 
-        // Delete all other copy/move constructors
+        // Delete all copy constructors
         StopWatch(const StopWatch&) = delete;
-        StopWatch(StopWatch&&) = delete;
         StopWatch& operator=(const StopWatch&) = delete;
-        StopWatch& operator=(StopWatch&&) = delete;
+
+        StopWatch(StopWatch&& other) {
+            (*this) = std::move(other);
+        }
+
+        StopWatch& operator=(StopWatch&& other) {
+            using std::swap;
+            std::swap(counter, other.counter);
+            std::swap(start, other.start);
+            return *this;
+        }
 
     private:
-
-        Counter* counter;
-        std::chrono::time_point<std::chrono::steady_clock> start;
+        Counter* counter {nullptr};
+        std::chrono::time_point<std::chrono::steady_clock> start {};
     };
 
     // Timer is a singleton
