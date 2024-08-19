@@ -34,10 +34,11 @@ const std::vector<casacore::MeasurementSet> TESTDATA = [] {
     fmt::println("{}", paths);
 
     std::vector<casacore::MeasurementSet> msets;
-    for (size_t i0 {}, i1 {}; i1 <= paths.size(); ++i1) {
-        if (i1 == paths.size() || paths[i1] == ' ') {
-            msets.push_back({paths.substr(i0, i1)});
-            i0 = ++i1;
+    for (size_t i {}, len {}; i + len <= paths.size(); ++len) {
+        if (i + len == paths.size() || paths[i + len] == ' ') {
+            msets.push_back({paths.substr(i, len)});
+            i = i + len + 1;
+            len = 0;
         }
     }
 
