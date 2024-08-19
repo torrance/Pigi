@@ -37,6 +37,9 @@ std::vector<WorkUnit> partition(DataTable& tbl, GridConfig gridconf, double maxd
 
     if (maxduration <= 0) maxduration = std::numeric_limits<double>::infinity();
 
+    // Convert maxduration [seconds] -> [days]
+    maxduration /= 86400.;
+
     // WorkUnit candidate
     // We use candidates as an adhoc structure to store WorkUnits-to-be, before we
     // know their exact position or data range.
@@ -249,7 +252,7 @@ std::vector<WorkUnit> partition(DataTable& tbl, GridConfig gridconf, double maxd
                     w = (std::floor(w / wstep) + 0.5) * wstep;
 
                     candidates.push_back(WorkUnitCandidate(
-                        upx, vpx, w, 0.7 * maxspanpx, wstep / 2, irow, ichan
+                        upx, vpx, w, 0.8 * maxspanpx, wstep / 2, irow, ichan
                     ));
                 }
             }
