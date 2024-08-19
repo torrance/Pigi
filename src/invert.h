@@ -163,6 +163,10 @@ HostArray<T<S>, 2> invert(
                     uvws_h[i++] = {m.u, m.v, m.w};
                 }
 
+                // Timer is heap allocated here so we can deallocate manually
+                Timer::StopWatch* timer = new Timer::StopWatch;
+                *timer = Timer::get("invert::batch::memHtoD");
+
                 // Copy across data
                 DeviceArray<WorkUnit, 1> workunits_d(workunits_h);
                 DeviceArray<ComplexLinearData<float>, 2> data_d(data_h);
@@ -173,6 +177,8 @@ HostArray<T<S>, 2> invert(
 
                 // Allocate subgrid stack
                 DeviceArray<T<S>, 3> subgrids_d({subgridspec.Nx, subgridspec.Ny, nworkunits});
+
+                delete timer;
 
                 // Grid
                 gridder<T<S>, S>(
@@ -212,6 +218,7 @@ HostArray<T<S>, 2> invert(
 
                 // ...and process each wlayer serially
                 for (std::lock_guard l(wlock); auto& [w0, idxs] : widxs) {
+                    auto timer = Timer::get("invert::wlayers");
                     wlayer.zero();
 
                     // Add each subgrid from this w-layer
