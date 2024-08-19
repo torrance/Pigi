@@ -31,7 +31,6 @@
 const std::vector<casacore::MeasurementSet> TESTDATA = [] {
     // TESTDATA may include multiple, space-separated paths
     std::string paths = getenv("TESTDATA");
-    fmt::println("{}", paths);
 
     std::vector<casacore::MeasurementSet> msets;
     for (size_t i {}, len {}; i + len <= paths.size(); ++len) {
