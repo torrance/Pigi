@@ -1,4 +1,5 @@
 #include <algorithm>
+#include <mutex>
 #include <unordered_map>
 #include <vector>
 
@@ -41,17 +42,9 @@ HostArray<T<S>, 2> invert(
     // Lambdas does not change row to row; send to device now
     const DeviceArray<double, 1> lambdas_d(tbl.lambdas());
 
-    // Create channels used for sending work to threads, and for recieving
-    // completed subgrid stacks into the parent thread
-
+    // Create channel used for sending work to threads
     // std::array<wkstart, wkend, rowstart, rowend>
     Channel<std::array<size_t, 4>> batches;
-
-    // std::array<wkstart, wkend, workunits_d, subgrids_d>
-    // Note this has a buffer size of 1, ensuring only (nthreads + 1) subgrid stacks exist.
-    Channel<
-        std::tuple<size_t, size_t, DeviceArray<WorkUnit, 1>, DeviceArray<T<S>, 3>>
-    > stacks(1);
 
     // Compute batch boundaries and load up the batches channel
     // used by the threads to determine their scope of work.
@@ -62,7 +55,11 @@ HostArray<T<S>, 2> invert(
             return (free * 0.8) / 2;
         }();
         Logger::debug(
-            "Setting maxmem per thread to {} GB",
+            "Setting maxmem per thread to {:.3f} GB",
+            maxmem / 1024. / 1024. / 1024.
+        );
+        if (maxmem < 1024llu * 1024 * 1024) Logger::warning(
+            "Memory per thead is less than 1 GB (free {:.3f} GB)",
             maxmem / 1024. / 1024. / 1024.
         );
 
@@ -96,7 +93,7 @@ HostArray<T<S>, 2> invert(
             // Calculate size of current bounds
             // The factor of 2 accounts for the extra subgrids that might be held in memory
             // by the main thread for adding.
-            size_t mem = 2 * nworkunits * workunitmem + nrows * rowmem;
+            size_t mem = nworkunits * workunitmem + nrows * rowmem;
 
             if (
                 mem > maxmem ||                       // maximum batch size
@@ -110,6 +107,11 @@ HostArray<T<S>, 2> invert(
         batches.close();
     }
 
+    // Since wlayer is large, we share it amongst threads
+    // and use a lock_guard to guarantee exclusive acces during wlayer processing.
+    std::mutex wlock;
+
+    // Create worker threads
     std::vector<std::thread> threads;
     for (size_t threadid {}; threadid < 2; ++threadid) {
         threads.emplace_back([&] {
@@ -199,79 +201,65 @@ HostArray<T<S>, 2> invert(
                     }, Iota(), subgrids_d)
                 );
 
-                // Send the processed subgrids off to the main thread to add into
-                // wlayer and imgd
-                stacks.push(
-                    {wkstart, wkend, std::move(workunits_d), std::move(subgrids_d)}
-                );
+                // Group subgrids into w layers
+                std::unordered_map<double, std::vector<size_t>> widxs;
+                for (size_t i {wkstart}; i < wkend; ++i) {
+                    auto workunit = workunits[i];
+                    widxs[workunit.w].push_back(i - wkstart);
+                }
+
+                // ...and process each wlayer serially
+                for (std::lock_guard l(wlock); auto& [w0, idxs] : widxs) {
+                    wlayer.zero();
+
+                    // Add each subgrid from this w-layer
+                    addsubgrid(
+                        wlayer, DeviceArray<size_t, 1>(idxs),
+                        workunits_d, subgrids_d, gridspec, subgridspec
+                    );
+
+                    // Apply deltal, deltam shift
+                    PIGI_TIMER(
+                        "invert::wlayers::deltalm",
+                        map([
+                            =,
+                            deltal=static_cast<S>(gridspec.deltal),
+                            deltam=static_cast<S>(gridspec.deltam)
+                        ] __device__ (auto idx, auto& wlayer) {
+                            auto [u, v] = gridspec.linearToUV<S>(idx);
+                            wlayer *= cispi(2 * (u * deltal + v * deltam));
+                        }, Iota(), wlayer)
+                    );
+
+                    // FFT the full wlayer
+                    PIGI_TIMER(
+                        "invert::wlayers::fft",
+                        HIPFFTCHECK( hipfftSetStream(wplan, hipStreamPerThread) );
+                        fftExec(wplan, wlayer, HIPFFT_BACKWARD);
+                    );
+
+                    // Apply wcorrection and append layer onto img
+                    PIGI_TIMER(
+                        "invert::wlayers::wcorrection",
+                        map([gridspec=gridspec, w0=static_cast<S>(w0)] __device__ (
+                            auto idx, auto& imgd, auto wlayer
+                        ) {
+                            auto [l, m] = gridspec.linearToSky<S>(idx);
+                            wlayer *= cispi(2 * w0 * ndash(l, m));
+                            imgd += wlayer;
+                        }, Iota(), imgd, wlayer)
+                    );
+
+                    // Ensure all work is complete before releasing the wlock
+                    HIPCHECK( hipStreamSynchronize(hipStreamPerThread) );
+                }  // loop: wlayers
             }  // loop: batches
         });  // thread lambda functions
     }  // loop: threads
 
-    // In the main thread, process subgrid stacks and append to img
-    for (size_t nworkunitsdone {}; nworkunitsdone < workunits.size();) {
-        auto stack = stacks.pop();
-        auto& [wkstart, wkend, workunits_d, subgrids_d] = *stack;
-        nworkunitsdone += workunits_d.size();  // termination condiation for this loop
-
-        // Start the timer _after_ we've recieved the stack, otherwise we're just
-        // measuring the wait time on the channel
-        auto timer = Timer::get("invert::wlayers");
-
-        // Group subgrids into w layers
-        std::unordered_map<double, std::vector<size_t>> widxs;
-        for (size_t i {wkstart}; i < wkend; ++i) {
-            auto workunit = workunits[i];
-            widxs[workunit.w].push_back(i - wkstart);
-        }
-
-        // ...and process each wlayer serially
-        for (auto& [w0, idxs] : widxs) {
-            wlayer.zero();
-
-            // Add each subgrid from this w-layer
-            addsubgrid(
-                wlayer, DeviceArray<size_t, 1>(idxs),
-                workunits_d, subgrids_d, gridspec, subgridspec
-            );
-
-            // Apply deltal, deltam shift
-            PIGI_TIMER(
-                "invert::wlayers::deltalm",
-                map([
-                    =,
-                    deltal=static_cast<S>(gridspec.deltal),
-                    deltam=static_cast<S>(gridspec.deltam)
-                ] __device__ (auto idx, auto& wlayer) {
-                    auto [u, v] = gridspec.linearToUV<S>(idx);
-                    wlayer *= cispi(2 * (u * deltal + v * deltam));
-                }, Iota(), wlayer)
-            );
-
-            // FFT the full wlayer
-            PIGI_TIMER(
-                "invert::wlayers::fft",
-                fftExec(wplan, wlayer, HIPFFT_BACKWARD)
-            );
-
-            // Apply wcorrection and append layer onto img
-            PIGI_TIMER(
-                "invert::wlayers::wcorrection",
-                map([gridspec=gridspec, w0=static_cast<S>(w0)] __device__ (
-                    auto idx, auto& imgd, auto wlayer
-                ) {
-                    auto [l, m] = gridspec.linearToSky<S>(idx);
-                    wlayer *= cispi(2 * w0 * ndash(l, m));
-                    imgd += wlayer;
-                }, Iota(), imgd, wlayer)
-            );
-        }  // loop: wlayers
-    }
-
-    hipfftDestroy(wplan);
-
     // Wait for all threads to complete
     for (auto& thread : threads) thread.join();
+    hipfftDestroy(wplan);
 
     // The final image still has a taper applied. It's time to remove it.
     map([] __device__ (auto& px, auto t) {
