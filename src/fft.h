@@ -168,8 +168,7 @@ size_t fftEstimate(const GridSpec gridspec, int nbatch=1) {
     static_assert(static_cast<int>(sizeof(T)) == -1, "No fftEstimate specialisation provided");
     [[maybe_unused]] GridSpec g = gridspec;
     [[maybe_unused]] int n = nbatch;
-    hipfftHandle plan;
-    return plan;
+    return {};
 }
 
 template<>
