@@ -188,8 +188,8 @@ public:
 
         // Allocate data arrays
         m_metadata.resize(m_nrows);
-        m_weights.resize(m_nrows * m_nchans);
-        m_data.resize(m_nrows * m_nchans);
+        m_weights = HostArray<LinearData<float>, 2>(m_nchans, m_nrows);
+        m_data = HostArray<ComplexLinearData<float>, 2>(m_nchans, m_nrows);
 
         // We iterate through the measurement by baseline
         casacore::Block<casacore::String> colnames(2);
@@ -478,8 +478,8 @@ private:
     std::vector<double> m_freqs;
     std::vector<double> m_lambdas;
     std::vector<RowMetadata> m_metadata;
-    std::vector<LinearData<float>> m_weights;
-    std::vector<ComplexLinearData<float>> m_data;
+    HostArray<LinearData<float>, 2> m_weights;
+    HostArray<ComplexLinearData<float>, 2> m_data;
 
     void phaserotaterow(RaDec from, RaDec to, size_t irow) {
         if (to == from) return;
