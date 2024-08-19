@@ -161,6 +161,45 @@ hipfftHandle fftPlan<StokesI<double>>(const GridSpec gridspec, int nbatch) {
     return plan;
 }
 
+template <typename T>
+size_t fftEstimate(const GridSpec gridspec, int nbatch=1) {
+    // This is a dummy template that allows the following specialisations.
+    // It should never be instantiated, only the specialisations are allowed.
+    static_assert(static_cast<int>(sizeof(T)) == -1, "No fftEstimate specialisation provided");
+    [[maybe_unused]] GridSpec g = gridspec;
+    [[maybe_unused]] int n = nbatch;
+    hipfftHandle plan;
+    return plan;
+}
+
+template<>
+size_t fftEstimate<StokesI<float>>(const GridSpec gridspec, int nbatch) {
+    size_t worksize {};
+    int rank[] {(int) gridspec.Ny, (int) gridspec.Nx}; // COL MAJOR
+    HIPFFTCHECK( hipfftEstimateMany(
+        2, rank,
+        rank, 1, gridspec.size(),
+        rank, 1, gridspec.size(),
+        HIPFFT_C2C, nbatch, &worksize
+    ) );
+
+    return worksize;
+}
+
+template<>
+size_t fftEstimate<StokesI<double>>(const GridSpec gridspec, int nbatch) {
+    size_t worksize {};
+    int rank[] {(int) gridspec.Ny, (int) gridspec.Nx}; // COL MAJOR
+    HIPFFTCHECK( hipfftEstimateMany(
+        2, rank,
+        rank, 1, gridspec.size(),
+        rank, 1, gridspec.size(),
+        HIPFFT_Z2Z, nbatch, &worksize
+    ) );
+
+    return worksize;
+}
+
 template <int N>
 void fftExec(hipfftHandle plan, DeviceSpan<thrust::complex<float>, N> grid, int direction) {
     fftshift(grid, FFTShift::pre);

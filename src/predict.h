@@ -82,6 +82,11 @@ void predict(
             tbl.nchans() * sizeof(ComplexLinearData<float>)
         );
 
+        // Estimate memory used in subgrid FFT. In the worst case, mem usage grows
+        // linearly with the batch size (observed with AMD). Otherwise, it's approximately
+        // fixed, and is neglible anyway (observed with CUDA).
+        size_t fftmem = fftEstimate<T<S>>(subgridspec, workunits.size()) / workunits.size();
+
         // Loop state
         for (size_t wkstart {}, wkend {1}; wkend <= workunits.size(); ++wkend) {
             // Align wkend with a new row
@@ -98,7 +103,7 @@ void predict(
             // Calculate size of current bounds
             // The factor of 2 accounts for the extra subgrids that might be held in memory
             // by the main thread for adding.
-            size_t mem = nworkunits * workunitmem + nrows * rowmem;
+            size_t mem = nworkunits * (workunitmem + fftmem) + nrows * rowmem;
 
             if (
                 mem > maxmem ||                       // maximum batch size
