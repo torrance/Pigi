@@ -187,7 +187,7 @@ void gridder(
 
     // x-dimension corresponds to cells in the subgrid
     uint32_t nthreadsx {128}; // hardcoded to match the cache size
-    uint32_t nblocksx = cld<size_t>(subgridspec.size(), 4 * nthreadsx);
+    uint32_t nblocksx = cld<size_t>(subgridspec.size(), nthreadsx);
 
     // y-dimension corresponds to workunit index
     uint32_t nthreadsy {1};
