@@ -37,6 +37,8 @@ void _degridder(
     auto subgrid_cache = reinterpret_cast<ComplexLinearData<S>*>(_cache);
     auto lmn_cache = reinterpret_cast<std::array<S, 3>*>(subgrid_cache + cachesize);
 
+    const size_t subgridsize = subgridspec.size();
+
     // y block index denotes workunit
     for (size_t wid {blockIdx.y}; wid < workunits.size(); wid += gridDim.y) {
         // Get workunit information
@@ -85,15 +87,15 @@ void _degridder(
 
             ComplexLinearData<S> datum;
 
-            for (size_t ipx {}; ipx < subgridspec.size(); ipx += cachesize) {
-                const size_t N = min(cachesize, subgridspec.size() - ipx);
+            for (size_t ipx {}; ipx < subgridsize; ipx += cachesize) {
+                const size_t N = min(cachesize, subgridsize - ipx);
 
                 // Populate cache
                 __syncthreads();
                 for (size_t j = threadIdx.x; j < N; j += blockDim.x) {
                     // Load subgrid value; convert to instrumental values
                     auto cell = static_cast<ComplexLinearData<S>>(
-                        subgrids[subgridspec.size() * wid + ipx + j]
+                        subgrids[subgridsize * wid + ipx + j]
                     );
 
                     // Grab A terms
@@ -102,7 +104,7 @@ void _degridder(
 
                     // Apply Aterms, normalization, and taper
                     cell = matmul(matmul(al, cell), ar);
-                    cell *= subtaper[ipx + j] / subgridspec.size();
+                    cell *= subtaper[ipx + j] / subgridsize;
 
                     subgrid_cache[j] = cell;
 
