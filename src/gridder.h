@@ -28,6 +28,10 @@ void _gridder(
     const size_t rowoffset,
     const bool makePSF
 ) {
+    // To increase the computational intensity of the kerne (just slightly),
+    // we compute $nchunk pixels at once.
+    const int nchunk {4};
+
     // Set up the shared mem cache
     const size_t cachesize {128};
     __shared__ char _cache[
@@ -35,6 +39,8 @@ void _gridder(
     ];
     auto data_cache = reinterpret_cast<ComplexLinearData<float>*>(_cache);
     auto invlambdas_cache = reinterpret_cast<S*>(data_cache + cachesize);
+
+    const size_t subgridsize = subgridspec.size();
 
     // y block index denotes workunit
     for (size_t wid {blockIdx.y}; wid < workunits.size(); wid += gridDim.y) {
@@ -55,29 +61,40 @@ void _gridder(
         const size_t rowstride = lambdas.size();
 
         for (
-            size_t idx = blockIdx.x * blockDim.x + threadIdx.x;
-            idx < blockDim.x * cld<size_t>(subgridspec.size(), blockDim.x);
-            idx += blockDim.x * gridDim.x
+            size_t idx = blockIdx.x * blockDim.x * nchunk + threadIdx.x * nchunk;
+            idx < blockDim.x * cld<size_t>(subgridsize, blockDim.x);
+            idx += blockDim.x * gridDim.x * nchunk
         ) {
-            auto [l, m] = subgridspec.linearToSky<S>(idx);
-            S n {ndash(l, m)};
+            std::array<std::array<S, 3>, nchunk> lmns;
+            for (int i {}; i < nchunk; ++i) {
+                auto [l, m] = subgridspec.linearToSky<S>(idx + i);
+                S n {ndash(l, m)};
+                lmns[i] = {l, m, n};
+            }
 
-            ComplexLinearData<S> cell {};
+            std::array<ComplexLinearData<S>, nchunk> cells {};
 
             for (size_t irow {rowstart}; irow < rowend; ++irow) {
                 auto uvw = uvws[irow];
                 S u = std::get<0>(uvw), v = std::get<1>(uvw), w = std::get<2>(uvw);
 
-                // Precompute phase in _meters_
-                // We can convert to the dimensionless value later by a single
-                // multiplication by the inverse lambda per channel
-                S theta {2 * ::pi_v<S> * (u * l + v * m + w * n)};  // [meters]
-                S thetaoffset {2 * ::pi_v<S> * (u0 * l + v0 * m + w0 * n)};  // [dimensionless]
+                // Precompute theta in _meters_ By doing this here, we can compute the true
+                // theta by a multiplication (by inverse lambda) in the host path.
+                // thetaoffset, on the other hand, can be fully computed at this point.
+                std::array<S, nchunk> thetas;
+                std::array<S, nchunk> thetaoffsets;
+                for (int i {}; i < nchunk; ++i) {
+                    auto [l, m, n] = lmns[i];
+                    thetas[i] = {2 * ::pi_v<S> * (u * l + v * m + w * n)};  // [meters]
+                    thetaoffsets[i] = {2 * ::pi_v<S> * (u0 * l + v0 * m + w0 * n)};  // [dimensionless]
+                }
 
                 // We force all data to have positive w values to reduce the number of w layers,
                 // since V(u, v, w) = V(-u, -v, -w)^H
                 // The data has already been partitioned making this assumption.
-                if (w < 0) theta *= -1;
+                if (w < 0) for (int i {}; i < nchunk; ++i) {
+                    thetas[i] *= -1;
+                }
 
                 for (size_t ichan {chanstart}; ichan < chanend; ichan += cachesize) {
                     const size_t N = min(cachesize, chanend - ichan);
@@ -112,58 +129,60 @@ void _gridder(
                     }
                     __syncthreads();
 
-                    // Zombie threads need to keep filling the cache
-                    // but can skip doing any actual work
-                    if (idx >= subgridspec.size()) continue;
-
                     // Read through cache
                     for (size_t j {}; j < N; ++j) {
                         // Retrieve value of uvdatum from the cache
                         // This shared mem load is broadcast across the warp and so we
                         // don't need to worry about bank conflicts
-                        auto datum = static_cast<ComplexLinearData<S>>(data_cache[j]);
+                        const auto datum = static_cast<ComplexLinearData<S>>(data_cache[j]);
+                        const auto invlamda = invlambdas_cache[j];
 
-                        auto phase = cis(theta * invlambdas_cache[j] - thetaoffset);
+                        for (int i {}; i < nchunk; ++i) {
+                            const auto phase = cis(thetas[i] * invlamda - thetaoffsets[i]);
 
-                        // Equivalent of: cell += uvdata.data * phase
-                        // Written out explicitly to use fma operations
-                        cmac(cell.xx, datum.xx, phase);
-                        cmac(cell.yx, datum.yx, phase);
-                        cmac(cell.xy, datum.xy, phase);
-                        cmac(cell.yy, datum.yy, phase);
+                            // Equivalent of: cell += uvdata.data * phase
+                            // Written out explicitly to use fma operations
+                            cmac(cells[i].xx, datum.xx, phase);
+                            cmac(cells[i].yx, datum.yx, phase);
+                            cmac(cells[i].xy, datum.xy, phase);
+                            cmac(cells[i].yy, datum.yy, phase);
+                        }
                     }
                 }
             }
 
-            // Zombie threads can exit early
-            if (idx >= subgridspec.size()) return;
+            for (int i {}; i < nchunk && idx + i < subgridsize; ++i) {
+                T output;
+                if (makePSF) {
+                    // No beam correction for PSF
+                    output = static_cast<T>(cells[i]);
+                } else {
+                    // Grab A terms and apply beam corrections and normalization
+                    const auto Al = static_cast<ComplexLinearData<S>>(
+                        alefts[wid][idx + i]
+                    ).inv();
+                    const auto Ar = static_cast<ComplexLinearData<S>>(
+                        arights[wid][idx + i]
+                    ).inv().adjoint();
 
-            T output;
-            if (makePSF) {
-                // No beam correction for PSF
-                output = static_cast<T>(cell);
-            } else {
-                // Grab A terms and apply beam corrections and normalization
-                const auto Al = static_cast<ComplexLinearData<S>>(alefts[wid][idx]).inv();
-                const auto Ar = static_cast<ComplexLinearData<S>>(arights[wid][idx]).inv().adjoint();
+                    // Apply beam to cell: inv(Aleft) * cell * inv(Aright)^H
+                    // Then conversion from LinearData to output T
+                    output = static_cast<T>(
+                        matmul(matmul(Al, cells[i]), Ar)
+                    );
 
-                // Apply beam to cell: inv(Aleft) * cell * inv(Aright)^H
-                // Then conversion from LinearData to output T
-                output = static_cast<T>(
-                    matmul(matmul(Al, cell), Ar)
-                );
+                    // Calculate norm
+                    T norm = matmul(Al, Ar).norm();
 
-                // Calculate norm
-                T norm = matmul(Al, Ar).norm();
+                    // Finally, apply norm
+                    output /= norm;
+                }
 
-                // Finally, apply norm
-                output /= norm;
-            }
+                // Perform final FFT fft normalization and apply taper
+                output *= subtaper[idx + i] / subgridsize;
 
-            // Perform final FFT fft normalization and apply taper
-            output *= subtaper[idx] / subgridspec.size();
-
-            subgrids[wid * subgridspec.size() + idx] = output;
+                subgrids[wid * subgridsize + idx + i] = output;
+            }  // loop: chunks
         }  // loop: subgrid pixels
     }  // loop: workunits
 }
@@ -187,7 +206,7 @@ void gridder(
 
     // x-dimension corresponds to cells in the subgrid
     uint32_t nthreadsx {128}; // hardcoded to match the cache size
-    uint32_t nblocksx = cld<size_t>(subgridspec.size(), nthreadsx);
+    uint32_t nblocksx = cld<size_t>(subgridspec.size(), 4 * nthreadsx);
 
     // y-dimension corresponds to workunit index
     uint32_t nthreadsy {1};
