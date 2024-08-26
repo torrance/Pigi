@@ -35,6 +35,7 @@ void predict(
     // Copy img (with padding) to device and apply inverse taper
     DeviceArray<T<S>, 2> imgd {resize(img, gridconf.grid(), gridspec)};
     {
+        auto timer = Timer::get("predict::taper");
         DeviceArray<S, 2> taperd {pswf<S>(gridspec)};
         map([] __device__ (auto& img, const auto t) {
             if (t == 0) img = T<S>{};
@@ -107,7 +108,6 @@ void predict(
 
             if (
                 mem > maxmem ||                       // maximum batch size
-                nworkunits > workunits.size() / 2 ||  // require >= 2 batches minimum
                 wkend == workunits.size()             // final iteration
             ) {
                 batches.push({wkstart, wkend, rowstart, rowend});
