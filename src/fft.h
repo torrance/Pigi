@@ -172,6 +172,34 @@ size_t fftEstimate(const GridSpec gridspec, int nbatch=1) {
 }
 
 template<>
+size_t fftEstimate<thrust::complex<float>>(const GridSpec gridspec, int nbatch) {
+    size_t worksize {};
+    int rank[] {(int) gridspec.Ny, (int) gridspec.Nx}; // COL MAJOR
+    HIPFFTCHECK( hipfftEstimateMany(
+        2, rank,
+        rank, 1, gridspec.size(),
+        rank, 1, gridspec.size(),
+        HIPFFT_C2C, nbatch, &worksize
+    ) );
+
+    return worksize;
+}
+
+template<>
+size_t fftEstimate<thrust::complex<double>>(const GridSpec gridspec, int nbatch) {
+    size_t worksize {};
+    int rank[] {(int) gridspec.Ny, (int) gridspec.Nx}; // COL MAJOR
+    HIPFFTCHECK( hipfftEstimateMany(
+        2, rank,
+        rank, 1, gridspec.size(),
+        rank, 1, gridspec.size(),
+        HIPFFT_Z2Z, nbatch, &worksize
+    ) );
+
+    return worksize;
+}
+
+template<>
 size_t fftEstimate<StokesI<float>>(const GridSpec gridspec, int nbatch) {
     size_t worksize {};
     int rank[] {(int) gridspec.Ny, (int) gridspec.Nx}; // COL MAJOR
