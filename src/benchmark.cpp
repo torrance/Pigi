@@ -116,8 +116,9 @@ TEMPLATE_TEST_CASE("Invert", "[invert]", float, double) {
     DataTable tbl(TESTDATA, {.chanlow=0, .chanhigh=384});
     auto workunits = partition(tbl, gridconf);
 
-    // Prefill any caches, e.g. taper
-    invert<StokesI, TestType>(tbl, workunits, gridconf, aterms);
+    // Ensure taper is cached
+    pswf<float>(gridconf.padded());
+    pswf<float>(gridconf.subgrid());
 
     simple_benchmark("Invert", 5, [&] {
         return invert<StokesI, TestType>(
@@ -145,10 +146,9 @@ TEMPLATE_TEST_CASE("Predict", "[predict]", float, double) {
     // Create skymap
     HostArray<StokesI<TestType>, 2> skymap {gridconf.grid().shape()};
 
-    // Prefill any caches, e.g. taper
-    predict<StokesI, TestType>(
-        tbl, workunits, skymap, gridconf, aterms, DegridOp::Add
-    );
+    // Ensure taper is cached
+    pswf<float>(gridconf.padded());
+    pswf<float>(gridconf.subgrid());
 
     simple_benchmark("Predict", 5, [&] {
         predict<StokesI, TestType>(
@@ -200,6 +200,10 @@ TEMPLATE_TEST_CASE("(De)gridder kernels", "[kernels]", float) {
 
         HIPCHECK( hipDeviceSynchronize() );
 
+        // Ensure taper is cached
+        pswf<float>(gridconf.padded());
+        pswf<float>(gridconf.subgrid());
+
         simple_benchmark(fmt::format(
             "Gridder kernel={}px nworkunits={}", kpx, workunits.size()
         ), 1, [&] {
@@ -239,6 +243,10 @@ TEST_CASE("Image size", "[imagesize]") {
         auto workunits = partition(tbl, gridconf);
         fmt::println("Nworkunits: {}", workunits.size());
 
+        // Ensure taper is cached
+        pswf<float>(gridconf.padded());
+        pswf<float>(gridconf.subgrid());
+
         simple_benchmark(fmt::format("Invert {} px", i * 1000), 5, [&] {
             return invert<StokesI, float>(
                 tbl, workunits, gridconf, aterms
@@ -272,6 +280,10 @@ TEST_CASE("Kernel size", "[kernelsize]") {
 
         auto workunits = partition(tbl, gridconf);
         fmt::println("Nworkunits: {}", workunits.size());
+
+        // Ensure taper is cached
+        pswf<float>(gridconf.padded());
+        pswf<float>(gridconf.subgrid());
 
         simple_benchmark(fmt::format("Invert kernelsize: {} nvis: {}", kernelsize, tbl.size()), 10, [&] {
             return invert<StokesI, float>(
