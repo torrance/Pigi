@@ -28,7 +28,7 @@ void _gridder(
     const size_t rowoffset,
     const bool makePSF
 ) {
-    // To increase the computational intensity of the kerne (just slightly),
+    // To increase the computational intensity of the kernel (just slightly),
     // we compute $nchunk pixels at once.
     const int nchunk {4};
 
