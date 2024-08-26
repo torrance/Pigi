@@ -28,7 +28,9 @@
 #include "workunit.h"
 #include "weighter.h"
 
-const std::vector<casacore::MeasurementSet> TESTDATA = [] {
+auto TESTDATA = [] () -> const std::vector<casacore::MeasurementSet> {
+    if (getenv("TESTDATA") == nullptr) return {};
+
     // TESTDATA may include multiple, space-separated paths
     std::string paths = getenv("TESTDATA");
 
