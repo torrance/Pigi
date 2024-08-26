@@ -15,7 +15,7 @@
 enum class DegridOp {Subtract, Add};
 
 template <typename T, typename S>
-__global__
+__global__ __launch_bounds__(256)
 void _degridder(
     DeviceSpan<ComplexLinearData<float>, 2> data,
     const DeviceSpan<T, 3> subgrids,
@@ -45,7 +45,7 @@ void _degridder(
         size_t rowstart, rowend, chanstart, chanend;
         S u0, v0, w0;
         {
-            const auto& workunit = workunits[wid];
+            const auto workunit = workunits[wid];
             rowstart = workunit.rowstart - rowoffset;
             rowend = workunit.rowend - rowoffset;
             chanstart = workunit.chanstart;

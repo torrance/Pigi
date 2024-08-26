@@ -13,7 +13,7 @@
 #include "workunit.h"
 
 template <typename T, typename S>
-__global__
+__global__ __launch_bounds__(128)
 void _gridder(
     DeviceSpan<T, 3> subgrids,
     const DeviceSpan<WorkUnit, 1> workunits,
@@ -48,7 +48,7 @@ void _gridder(
         size_t rowstart, rowend, chanstart, chanend;
         S u0, v0, w0;
         {
-            const auto& workunit = workunits[wid];
+            const auto workunit = workunits[wid];
             rowstart = workunit.rowstart - rowoffset;
             rowend = workunit.rowend - rowoffset;
             chanstart = workunit.chanstart;
