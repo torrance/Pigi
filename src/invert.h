@@ -104,7 +104,6 @@ HostArray<T<S>, 2> invert(
 
             if (
                 mem > maxmem ||                       // maximum batch size
-                nworkunits > workunits.size() / 2 ||  // require >= 2 batches minimum
                 wkend == workunits.size()             // final iteration
             ) {
                 batches.push({wkstart, wkend, rowstart, rowend});
@@ -276,9 +275,14 @@ HostArray<T<S>, 2> invert(
     hipfftDestroy(wplan);
 
     // The final image still has a taper applied. It's time to remove it.
-    map([] __device__ (auto& px, auto t) {
-        px /= t;
-    }, imgd, DeviceArray<S, 2>(pswf<S>(gridspec)));
+    {
+        auto timer = Timer::get("invert::taper");
+        map([] __device__ (auto& px, auto t) {
+            px /= t;
+        }, imgd, DeviceArray<S, 2>(pswf<S>(gridspec)));
+    }
+
+    auto posttimer = Timer::get("invert::post");
 
     // Copy image from device to host
     HostArray<T<S>, 2> img(imgd);
