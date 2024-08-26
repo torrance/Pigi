@@ -255,7 +255,7 @@ TEST_CASE("Image size", "[imagesize]") {
 
         HostArray<StokesI<float>, 2> skymap(gridconf.grid().shape());
 
-        simple_benchmark(fmt::format("Predict {} px", i * 1000), 10, [&] {
+        simple_benchmark(fmt::format("Predict {} px", i * 1000), 5, [&] {
             predict<StokesI, float>(
                 tbl, workunits, skymap, gridconf, aterms, DegridOp::Add
             );
@@ -285,7 +285,7 @@ TEST_CASE("Kernel size", "[kernelsize]") {
         pswf<float>(gridconf.padded());
         pswf<float>(gridconf.subgrid());
 
-        simple_benchmark(fmt::format("Invert kernelsize: {} nvis: {}", kernelsize, tbl.size()), 10, [&] {
+        simple_benchmark(fmt::format("Invert kernelsize: {} nvis: {}", kernelsize, tbl.size()), 5, [&] {
             return invert<StokesI, float>(
                 tbl, workunits, gridconf, aterms
             );
@@ -293,7 +293,7 @@ TEST_CASE("Kernel size", "[kernelsize]") {
 
         HostArray<StokesI<float>, 2> skymap(gridconf.grid().shape());
 
-        simple_benchmark(fmt::format("Predict kernelsize: {} nvis: {}", kernelsize, tbl.size()), 10, [&] {
+        simple_benchmark(fmt::format("Predict kernelsize: {} nvis: {}", kernelsize, tbl.size()), 5, [&] {
             predict<StokesI, float>(
                 tbl, workunits, skymap, gridconf, aterms, DegridOp::Add
             );
