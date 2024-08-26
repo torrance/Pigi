@@ -62,7 +62,7 @@ void _gridder(
 
         for (
             size_t idx = blockIdx.x * blockDim.x * nchunk + threadIdx.x * nchunk;
-            idx < blockDim.x * cld<size_t>(subgridsize, blockDim.x);
+            idx < blockDim.x * nchunk * cld<size_t>(subgridsize, blockDim.x * nchunk);
             idx += blockDim.x * gridDim.x * nchunk
         ) {
             std::array<std::array<S, 3>, nchunk> lmns;
