@@ -2,6 +2,7 @@
 
 #include <hip/hip_runtime.h>
 #include <hipfft/hipfft.h>
+#include <hipfft/hipfftXt.h>
 
 #include "gridspec.h"
 #include "hip.h"
@@ -74,14 +75,18 @@ hipfftHandle fftPlan(const GridSpec gridspec, int nbatch=1) {
 template<>
 hipfftHandle fftPlan<thrust::complex<float>>(const GridSpec gridspec, int nbatch) {
     hipfftHandle plan {};
-    int rank[] {(int) gridspec.Ny, (int) gridspec.Nx}; // COL MAJOR
-    HIPFFTCHECK( hipfftPlanMany(
-        &plan, 2, rank,
-        rank, 1, gridspec.size(),
-        rank, 1, gridspec.size(),
-        HIPFFT_C2C, nbatch
-    ) );
+    HIPFFTCHECK( hipfftCreate(&plan) );
+    HIPFFTCHECK( hipfftSetAutoAllocation(plan, true) );
     HIPFFTCHECK( hipfftSetStream(plan, hipStreamPerThread) );
+
+    size_t worksize;
+    long long rank[] {gridspec.Ny, gridspec.Nx}; // COL MAJOR
+    HIPFFTCHECK( hipfftXtMakePlanMany(
+        plan, 2, rank,
+        rank, 1, gridspec.size(), HIP_C_32F,
+        rank, 1, gridspec.size(), HIP_C_32F,
+        nbatch, &worksize, HIP_C_32F
+    ) );
 
     return plan;
 }
@@ -89,14 +94,18 @@ hipfftHandle fftPlan<thrust::complex<float>>(const GridSpec gridspec, int nbatch
 template<>
 hipfftHandle fftPlan<thrust::complex<double>>(const GridSpec gridspec, int nbatch) {
     hipfftHandle plan {};
-    int rank[] {(int) gridspec.Ny, (int) gridspec.Nx}; // COL MAJOR
-    HIPFFTCHECK( hipfftPlanMany(
-        &plan, 2, rank,
-        rank, 1, gridspec.size(),
-        rank, 1, gridspec.size(),
-        HIPFFT_Z2Z, nbatch
-    ) );
+    HIPFFTCHECK( hipfftCreate(&plan) );
+    HIPFFTCHECK( hipfftSetAutoAllocation(plan, true) );
     HIPFFTCHECK( hipfftSetStream(plan, hipStreamPerThread) );
+
+    size_t worksize;
+    long long rank[] {gridspec.Ny, gridspec.Nx}; // COL MAJOR
+    HIPFFTCHECK( hipfftXtMakePlanMany(
+        plan, 2, rank,
+        rank, 1, gridspec.size(), HIP_C_64F,
+        rank, 1, gridspec.size(), HIP_C_64F,
+        nbatch, &worksize, HIP_C_64F
+    ) );
 
     return plan;
 }
@@ -104,14 +113,18 @@ hipfftHandle fftPlan<thrust::complex<double>>(const GridSpec gridspec, int nbatc
 template <>
 hipfftHandle fftPlan<ComplexLinearData<float>>(const GridSpec gridspec, int) {
     hipfftHandle plan {};
-    int rank[] {(int) gridspec.Ny, (int) gridspec.Nx}; // COL MAJOR
-    HIPFFTCHECK( hipfftPlanMany(
-        &plan, 2, rank,
-        rank, 4, 1,
-        rank, 4, 1,
-        HIPFFT_C2C, 4
-    ) );
+    HIPFFTCHECK( hipfftCreate(&plan) );
+    HIPFFTCHECK( hipfftSetAutoAllocation(plan, true) );
     HIPFFTCHECK( hipfftSetStream(plan, hipStreamPerThread) );
+
+    size_t worksize;
+    long long rank[] {gridspec.Ny, gridspec.Nx}; // COL MAJOR
+    HIPFFTCHECK( hipfftXtMakePlanMany(
+        plan, 2, rank,
+        rank, 4, 1, HIP_C_32F,
+        rank, 4, 1, HIP_C_32F,
+        4, &worksize, HIP_C_32F
+    ) );
 
     return plan;
 }
@@ -119,14 +132,18 @@ hipfftHandle fftPlan<ComplexLinearData<float>>(const GridSpec gridspec, int) {
 template<>
 hipfftHandle fftPlan<ComplexLinearData<double>>(const GridSpec gridspec, int) {
     hipfftHandle plan {};
-    int rank[] {(int) gridspec.Ny, (int) gridspec.Nx}; // COL MAJOR
-    HIPFFTCHECK( hipfftPlanMany(
-        &plan, 2, rank,
-        rank, 4, 1,
-        rank, 4, 1,
-        HIPFFT_Z2Z, 4
-    ) );
+    HIPFFTCHECK( hipfftCreate(&plan) );
+    HIPFFTCHECK( hipfftSetAutoAllocation(plan, true) );
     HIPFFTCHECK( hipfftSetStream(plan, hipStreamPerThread) );
+
+    size_t worksize;
+    long long rank[] {gridspec.Ny, gridspec.Nx}; // COL MAJOR
+    HIPFFTCHECK( hipfftXtMakePlanMany(
+        plan, 2, rank,
+        rank, 4, 1, HIP_C_64F,
+        rank, 4, 1, HIP_C_64F,
+        4, &worksize, HIP_C_64F
+    ) );
 
     return plan;
 }
@@ -134,14 +151,18 @@ hipfftHandle fftPlan<ComplexLinearData<double>>(const GridSpec gridspec, int) {
 template<>
 hipfftHandle fftPlan<StokesI<float>>(const GridSpec gridspec, int nbatch) {
     hipfftHandle plan {};
-    int rank[] {(int) gridspec.Ny, (int) gridspec.Nx}; // COL MAJOR
-    HIPFFTCHECK( hipfftPlanMany(
-        &plan, 2, rank,
-        rank, 1, gridspec.size(),
-        rank, 1, gridspec.size(),
-        HIPFFT_C2C, nbatch
-    ) );
+    HIPFFTCHECK( hipfftCreate(&plan) );
+    HIPFFTCHECK( hipfftSetAutoAllocation(plan, true) );
     HIPFFTCHECK( hipfftSetStream(plan, hipStreamPerThread) );
+
+    size_t worksize;
+    long long rank[] {gridspec.Ny, gridspec.Nx}; // COL MAJOR
+    HIPFFTCHECK( hipfftXtMakePlanMany(
+        plan, 2, rank,
+        rank, 1, gridspec.size(), HIP_C_32F,
+        rank, 1, gridspec.size(), HIP_C_32F,
+        nbatch, &worksize, HIP_C_32F
+    ) );
 
     return plan;
 }
@@ -149,14 +170,18 @@ hipfftHandle fftPlan<StokesI<float>>(const GridSpec gridspec, int nbatch) {
 template<>
 hipfftHandle fftPlan<StokesI<double>>(const GridSpec gridspec, int nbatch) {
     hipfftHandle plan {};
-    int rank[] {(int) gridspec.Ny, (int) gridspec.Nx}; // COL MAJOR
-    HIPFFTCHECK( hipfftPlanMany(
-        &plan, 2, rank,
-        rank, 1, gridspec.size(),
-        rank, 1, gridspec.size(),
-        HIPFFT_Z2Z, nbatch
-    ) );
+    HIPFFTCHECK( hipfftCreate(&plan) );
+    HIPFFTCHECK( hipfftSetAutoAllocation(plan, true) );
     HIPFFTCHECK( hipfftSetStream(plan, hipStreamPerThread) );
+
+    size_t worksize;
+    long long rank[] {gridspec.Ny, gridspec.Nx}; // COL MAJOR
+    HIPFFTCHECK( hipfftXtMakePlanMany(
+        plan, 2, rank,
+        rank, 1, gridspec.size(), HIP_C_64F,
+        rank, 1, gridspec.size(), HIP_C_64F,
+        nbatch, &worksize, HIP_C_64F
+    ) );
 
     return plan;
 }
