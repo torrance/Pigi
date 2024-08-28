@@ -163,7 +163,7 @@ TEMPLATE_TEST_CASE("(De)gridder kernels", "[kernels]", float) {
 
     DataTable tbl(TESTDATA, {});
 
-    for (const int kpx : {32, 48, 64, 96, 128}) {
+    for (const int kpx : {32, 48, 64, 96, 128, 160, 192, 256}) {
         GridConfig gridconf {
             .imgNx = 8000, .imgNy = 8000, .imgScalelm = std::sin(deg2rad(15. / 3600)),
             .kernelsize = kpx, .kernelpadding = 12
@@ -172,8 +172,8 @@ TEMPLATE_TEST_CASE("(De)gridder kernels", "[kernels]", float) {
         auto workunits = partition(tbl, gridconf);
 
         // Create uvws
-        HostArray<std::array<double, 3>, 1> uvws_h(workunits.size());
-        for (size_t i {}; auto w : workunits) uvws_h[i++] = {w.u, w.v, w.w};
+        HostArray<std::array<double, 3>, 1> uvws_h(tbl.nrows());
+        for (size_t i {}; auto m : tbl.metadata()) uvws_h[i++] = {m.u, m.v, m.w};
 
         // Create aterms
         auto beam_h = Beam::Uniform<double>().gridResponse(
@@ -200,13 +200,9 @@ TEMPLATE_TEST_CASE("(De)gridder kernels", "[kernels]", float) {
 
         HIPCHECK( hipDeviceSynchronize() );
 
-        // Ensure taper is cached
-        pswf<float>(gridconf.padded());
-        pswf<float>(gridconf.subgrid());
-
         simple_benchmark(fmt::format(
             "Gridder kernel={}px nworkunits={}", kpx, workunits.size()
-        ), 1, [&] {
+        ), 3, [&] {
             gridder<StokesI<TestType>, TestType>(
                 subgrids_d, workunits_d, uvws_d, data_d, weights_d, gridconf.subgrid(),
                 lambdas_d, taper_d, alefts_d, arights_d, 0, false
@@ -216,7 +212,7 @@ TEMPLATE_TEST_CASE("(De)gridder kernels", "[kernels]", float) {
 
         simple_benchmark(fmt::format(
             "Degridder kernel={}px nworkunits={}", kpx, workunits.size()
-        ), 1, [&] {
+        ), 3, [&] {
             degridder<StokesI<TestType>, TestType>(
                 data_d, subgrids_d, workunits_d, uvws_d, lambdas_d, taper_d,
                 alefts_d, arights_d, gridconf.subgrid(), 0, DegridOp::Add
