@@ -272,7 +272,10 @@ HostArray<T<S>, 2> invert(
 
     // Wait for all threads to complete
     for (auto& thread : threads) thread.join();
+
+    // Clean up
     hipfftDestroy(wplan);
+    wlayer = DeviceArray<T<S>, 2>();
 
     // The final image still has a taper applied. It's time to remove it.
     {
@@ -284,8 +287,11 @@ HostArray<T<S>, 2> invert(
 
     auto posttimer = Timer::get("invert::post");
 
-    // Copy image from device to host
-    HostArray<T<S>, 2> img(imgd);
+    // Remove extra padding
+    if (gridconf.padded() != gridconf.grid()) {
+        imgd = resize(imgd, gridconf.padded(), gridconf.grid());
+    }
 
-    return resize(img, gridconf.padded(), gridconf.grid());
+    // Copy image from device to host
+    return HostArray<T<S>, 2>(imgd);
 }

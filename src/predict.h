@@ -33,7 +33,9 @@ void predict(
     const auto subgridspec = gridconf.subgrid();
 
     // Copy img (with padding) to device and apply inverse taper
-    DeviceArray<T<S>, 2> imgd {resize(img, gridconf.grid(), gridspec)};
+    DeviceArray<T<S>, 2> imgd(img);
+    if (gridconf.grid() != gridspec) imgd = resize(imgd, gridconf.grid(), gridspec);
+
     {
         auto timer = Timer::get("predict::taper");
         DeviceArray<S, 2> taperd {pswf<S>(gridspec)};

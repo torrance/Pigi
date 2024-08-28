@@ -153,9 +153,9 @@ constexpr inline T deg2rad(const T& x) { return x * ::pi_v<T> / 180; }
 template <typename T> requires(std::is_floating_point<T>::value)
 constexpr inline T rad2deg(const T& x) { return x * 180 / ::pi_v<T>; }
 
-template <typename T>
-auto resize(HostSpan<T, 2> src, GridSpec srcGridspec, GridSpec dstGridspec) {
-    HostArray<T, 2> dst {{dstGridspec.Nx, dstGridspec.Ny}, false};
+template <typename T, typename Pointer>
+auto resize(Span<T, 2, Pointer> src, GridSpec srcGridspec, GridSpec dstGridspec) {
+    Array<T, 2, Pointer> dst {{dstGridspec.Nx, dstGridspec.Ny}, false};
 
     long long edgeX {(dstGridspec.Nx - srcGridspec.Nx) / 2};
     long long edgeY {(dstGridspec.Ny - srcGridspec.Ny) / 2};
@@ -178,8 +178,8 @@ auto resize(HostSpan<T, 2> src, GridSpec srcGridspec, GridSpec dstGridspec) {
         long long nxDst = std::max(0ll, edgeX);
         long long nxSrc = std::max(0ll, -edgeX);
 
-        void* ptrDst =  dst.data() + dstGridspec.gridToLinear(nxDst, nyDst);
-        void* ptrSrc = src.data() + srcGridspec.gridToLinear(nxSrc, nySrc);
+        Pointer ptrDst =  dst.pointer() + dstGridspec.gridToLinear(nxDst, nyDst);
+        Pointer ptrSrc = src.pointer() + srcGridspec.gridToLinear(nxSrc, nySrc);
         memcpy(ptrDst, ptrSrc, count);
     }
 
