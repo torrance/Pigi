@@ -117,6 +117,7 @@ struct GridSpec {
     }
 
     template <typename S>
+    __host__ __device__
     inline auto gridToUV(auto upx, auto vpx) const {
         return std::make_tuple(
             static_cast<S>((upx - Nx / 2) * scaleu),

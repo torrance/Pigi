@@ -31,9 +31,13 @@ HostArray<T<S>, 2> invert(
     GridSpec gridspec = gridconf.padded();
     GridSpec subgridspec = gridconf.subgrid();
 
-    // Allocate img, wlayer which will be summed by each thread
-    DeviceArray<T<S>, 2> imgd(gridspec.Nx, gridspec.Ny);
+    // Allocate wlayer which is shared by all threads to append visibilities as
+    // they are gridded. wlayer is shared since it may be very large.
     DeviceArray<T<S>, 2> wlayer(gridspec.Nx, gridspec.Ny);
+    double wold {0};  // track the associated w value of w-layer
+
+    // Use a lock_guard to guarantee exclusive access during wlayer processing.
+    std::mutex wlock;
 
     // Create FFT plan for wlayer
     auto wplan = fftPlan<T<S>>(gridspec);
@@ -112,10 +116,6 @@ HostArray<T<S>, 2> invert(
         }
         batches.close();
     }
-
-    // Since wlayer is large, we share it amongst threads
-    // and use a lock_guard to guarantee exclusive acces during wlayer processing.
-    std::mutex wlock;
 
     // Create worker threads
     std::vector<std::thread> threads;
@@ -223,7 +223,28 @@ HostArray<T<S>, 2> invert(
                 // ...and process each wlayer serially
                 for (std::lock_guard l(wlock); auto& [w0, idxs] : widxs) {
                     auto timer = Timer::get("invert::wlayers");
-                    wlayer.zero();
+
+                    HIPFFTCHECK( hipfftSetStream(wplan, hipStreamPerThread) );
+
+                    // Move wlayer from w=wold to w=w0
+                    PIGI_TIMER(
+                        "invert::wlayers::wcorrection",
+                        map([gridspec, w0=static_cast<S>(w0), wold=static_cast<S>(wold)] __device__ (
+                            auto idx, auto& wlayer
+                        ) {
+                            auto [l, m] = gridspec.linearToSky<S>(idx);
+                            wlayer *= cispi(-2 * (w0 - wold) * ndash(l, m));
+                        }, Iota(), wlayer)
+                    );
+
+                    // Set wold to new w value
+                    wold = w0;
+
+                    // FFT wlayer from sky -> visibility domain
+                    PIGI_TIMER(
+                        "invert::wlayers::fft",
+                        fftExec(wplan, wlayer, HIPFFT_FORWARD);
+                    );
 
                     // Add each subgrid from this w-layer
                     adder(
@@ -231,36 +252,10 @@ HostArray<T<S>, 2> invert(
                         workunits_d, subgrids_d, gridspec, subgridspec
                     );
 
-                    // Apply deltal, deltam shift
-                    PIGI_TIMER(
-                        "invert::wlayers::deltalm",
-                        map([
-                            =,
-                            deltal=static_cast<S>(gridspec.deltal),
-                            deltam=static_cast<S>(gridspec.deltam)
-                        ] __device__ (auto idx, auto& wlayer) {
-                            auto [u, v] = gridspec.linearToUV<S>(idx);
-                            wlayer *= cispi(2 * (u * deltal + v * deltam));
-                        }, Iota(), wlayer)
-                    );
-
-                    // FFT the full wlayer
+                    // FFT wlayer from visibility -> sky domain
                     PIGI_TIMER(
                         "invert::wlayers::fft",
-                        HIPFFTCHECK( hipfftSetStream(wplan, hipStreamPerThread) );
                         fftExec(wplan, wlayer, HIPFFT_BACKWARD);
-                    );
-
-                    // Apply wcorrection and append layer onto img
-                    PIGI_TIMER(
-                        "invert::wlayers::wcorrection",
-                        map([gridspec=gridspec, w0=static_cast<S>(w0)] __device__ (
-                            auto idx, auto& imgd, auto wlayer
-                        ) {
-                            auto [l, m] = gridspec.linearToSky<S>(idx);
-                            wlayer *= cispi(2 * w0 * ndash(l, m));
-                            imgd += wlayer;
-                        }, Iota(), imgd, wlayer)
                     );
 
                     // Ensure all work is complete before releasing the wlock
@@ -275,23 +270,26 @@ HostArray<T<S>, 2> invert(
 
     // Clean up
     hipfftDestroy(wplan);
-    wlayer = DeviceArray<T<S>, 2>();
 
-    // The final image still has a taper applied. It's time to remove it.
+    // The final image is still at w=wold, and has a taper applied.
+    // It's time to undo both.
     {
         auto timer = Timer::get("invert::taper");
-        map([] __device__ (auto& px, auto t) {
-            px /= t;
-        }, imgd, DeviceArray<S, 2>(pswf<S>(gridspec)));
+        map([gridspec=gridspec, wold=static_cast<S>(wold)] __device__ (
+            size_t idx, auto& px, auto t
+        ) {
+            auto [l, m] = gridspec.linearToSky<S>(idx);
+            px *= cispi(2 * wold * ndash(l, m)) / t;
+        }, Iota(), wlayer, DeviceArray<S, 2>(pswf<S>(gridspec)));
     }
 
     auto posttimer = Timer::get("invert::post");
 
     // Remove extra padding
     if (gridconf.padded() != gridconf.grid()) {
-        imgd = resize(imgd, gridconf.padded(), gridconf.grid());
+        wlayer = resize(wlayer, gridconf.padded(), gridconf.grid());
     }
 
     // Copy image from device to host
-    return HostArray<T<S>, 2>(imgd);
+    return HostArray<T<S>, 2>(wlayer);
 }

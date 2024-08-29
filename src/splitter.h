@@ -8,11 +8,11 @@
 #include "timer.h"
 #include "workunit.h"
 
-template <typename T>
+template <template<typename> typename T, typename S>
 __global__
 void _splitter(
-    DeviceSpan<T, 3> subgrids,
-    const DeviceSpan<T, 2> grid,
+    DeviceSpan<T<S>, 3> subgrids,
+    const DeviceSpan<T<S>, 2> grid,
     const DeviceSpan<size_t, 1> widxs,
     const DeviceSpan<WorkUnit, 1> workunits,
     const GridSpec gridspec,
@@ -39,16 +39,21 @@ void _splitter(
             0 <= vpx && vpx < static_cast<long long>(gridspec.Ny)
         ) {
             // This assignment performs an implicit conversion
-            subgrids[subgridspec.size() * widx + idx]
-                = grid[gridspec.gridToLinear(upx, vpx)];
+            auto val = grid[gridspec.gridToLinear(upx, vpx)];
+
+            // Remove deltal, deltam shift from visibilities
+            auto [u, v] = gridspec.gridToUV<S>(upx, vpx);
+            val *= cispi(-2 * (u * gridspec.deltal + v * gridspec.deltam));
+
+            subgrids[subgridspec.size() * widx + idx] = val;
         }
     }
 }
 
-template <typename T>
+template <template <typename> typename T, typename S>
 auto splitter(
-    DeviceSpan<T, 3> subgrids,
-    const DeviceSpan<T, 2> grid,
+    DeviceSpan<T<S>, 3> subgrids,
+    const DeviceSpan<T<S>, 2> grid,
     const DeviceSpan<size_t, 1> widxs,
     const DeviceSpan<WorkUnit, 1> workunits,
     const GridSpec gridspec,
@@ -56,7 +61,7 @@ auto splitter(
 ) {
     auto timer = Timer::get("predict::wlayers::splitter");
 
-    auto fn = _splitter<T>;
+    auto fn = _splitter<T, S>;
     auto [nblocksx, nthreadsx] = getKernelConfig(
         fn, subgridspec.size()
     );

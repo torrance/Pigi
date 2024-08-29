@@ -32,21 +32,28 @@ void predict(
     const auto gridspec = gridconf.padded();
     const auto subgridspec = gridconf.subgrid();
 
-    // Copy img (with padding) to device and apply inverse taper
-    DeviceArray<T<S>, 2> imgd(img);
-    if (gridconf.grid() != gridspec) imgd = resize(imgd, gridconf.grid(), gridspec);
+    // Copy img into wlayer on device. wlayer is shared by all threads to populate
+    // subgrid visibilities. wlayer is shared since it may be very large.
+    DeviceArray<T<S>, 2> wlayer(img);
+    double wold {0};  // track the associated w value of w-layer
 
+    // Use a lock_guard to guarantee exclusive access during wlayer processing.
+    std::mutex wlock;
+
+    // Add padding if required
+    if (gridconf.grid() != gridspec) wlayer = resize(wlayer, gridconf.grid(), gridspec);
+
+    // Apply taper
     {
         auto timer = Timer::get("predict::taper");
         DeviceArray<S, 2> taperd {pswf<S>(gridspec)};
-        map([] __device__ (auto& img, const auto t) {
-            if (t == 0) img = T<S>{};
-            else img /= t;
-        }, imgd, taperd);
+        map([] __device__ (auto& wlayer, const auto t) {
+            if (t == 0) wlayer = T<S>{};
+            else wlayer /= t;
+        }, wlayer, taperd);
     }
 
-    // Create wlayer used for splitting
-    DeviceArray<T<S>, 2> wlayer(gridspec.shape());
+    // Create FFT plan for wlayer
     auto wplan = fftPlan<T<S>>(gridspec);
 
     // Copy subtaper to device
@@ -119,10 +126,6 @@ void predict(
     }
     batches.close();
 
-    // Since wlayer is large, we share it amongst threads
-    // and use a lock_guard to guarantee exclusive acces during wlayer processing.
-    std::mutex wlock;
-
     // Create the threads
     std::vector<std::thread> threads;
     for (size_t threadid {}; threadid < 2; ++threadid) {
@@ -157,43 +160,45 @@ void predict(
                 // ...and process each wlayer serially
                 for (std::lock_guard l(wlock); auto& [w0, idxs] : widxs) {
                     auto timer = Timer::get("predict::wlayers");
-                    wlayer.zero();
 
-                    // Apply w-decorrection to img and copy to wlayer
+                    HIPFFTCHECK( hipfftSetStream(wplan, hipStreamPerThread) );
+
+                    // Move wlayer from w=wold -> w=w0
                     PIGI_TIMER(
                         "predict::wlayers::wdecorrection",
-                        map([w0=w0, gridspec=gridspec] __device__ (auto idx, auto img, auto& wlayer) {
+                        map([gridspec, w0=static_cast<S>(w0), wold=static_cast<S>(wold)] __device__ (
+                            auto idx, auto& wlayer
+                        ) {
                             auto [l, m] = gridspec.linearToSky<S>(idx);
-                            img *= cispi(-2 * w0 * ndash(l, m));
-                            wlayer = img;
-                        }, Iota(), imgd, wlayer)
-                    );
-
-                    // Transform from sky => visibility domain
-                    PIGI_TIMER(
-                        "predict::wlayers::fft",
-                        HIPFFTCHECK( hipfftSetStream(wplan, hipStreamPerThread) );
-                        fftExec(wplan, wlayer, HIPFFT_FORWARD);
-                    );
-
-                    // Reset deltal, deltam shift to visibilities
-                    PIGI_TIMER(
-                        "predict::wlayers::deltalm",
-                        map([
-                            =,
-                            deltal=static_cast<S>(gridspec.deltal),
-                            deltam=static_cast<S>(gridspec.deltam)
-                        ] __device__ (auto idx, auto& wlayer) {
-                            auto [u, v] = gridspec.linearToUV<S>(idx);
-                            wlayer *= cispi(-2 * (u * deltal + v * deltam));
+                            wlayer *= cispi(-2 * (w0 - wold) * ndash(l, m));
                         }, Iota(), wlayer)
                     );
 
+                    // Set wold to new w value
+                    wold = w0;
+
+                    // FFT wlayer from sky -> visibility domain
+                    PIGI_TIMER(
+                        "predict::wlayers::fft",
+                        fftExec(wplan, wlayer, HIPFFT_FORWARD);
+                    );
+
                     // Populate subgrid stack with subgrids from this wlayer
-                    splitter<T<S>>(
+                    splitter(
                         subgrids_d, wlayer, DeviceArray<size_t, 1>(idxs),
                         workunits_d, gridspec, subgridspec
                     );
+
+                    // FFT wlayer from visibility -> sky domain
+                    PIGI_TIMER(
+                        "predict::wlayers::fft",
+                        fftExec(wplan, wlayer, HIPFFT_BACKWARD);
+                    );
+
+                    // Normalize the inverse FFT
+                    map([N=gridspec.size()] __device__ (auto& wlayer) {
+                        wlayer /= N;
+                    }, wlayer);
 
                     // Ensure all work is complete before releasing the wlock
                     HIPCHECK( hipStreamSynchronize(hipStreamPerThread) );

@@ -11,11 +11,11 @@
 /**
  * Add a subgrid back onto the larger master grid
  */
-template <typename T>
+template <template<typename> typename T, typename S>
 __global__
 void _adder(
-    DeviceSpan<T, 2> grid, const DeviceSpan<size_t, 1> widxs,
-    const DeviceSpan<WorkUnit, 1> workunits, const DeviceSpan<T, 3> subgrids,
+    DeviceSpan<T<S>, 2> grid, const DeviceSpan<size_t, 1> widxs,
+    const DeviceSpan<WorkUnit, 1> workunits, const DeviceSpan<T<S>, 3> subgrids,
     const GridSpec gridspec, const GridSpec subgridspec
 ) {
     size_t widx = widxs[blockIdx.y];
@@ -40,22 +40,26 @@ void _adder(
             0 <= vpx && vpx < static_cast<long long>(gridspec.Ny)
         ) {
             size_t grididx = gridspec.gridToLinear(upx, vpx);
-            atomicAdd(
-                grid.data() + grididx, subgrids[subgridspec.size() * widx + idx]
-            );
+            auto [u, v] = gridspec.gridToUV<S>(upx, vpx);
+
+            // Apply deltal, deltam shift to visibilities
+            auto px = subgrids[subgridspec.size() * widx + idx];
+            px *= cispi(2 * (u * gridspec.deltal + v * gridspec.deltam));
+
+            atomicAdd(grid.data() + grididx, px);
         }
     }
 }
 
-template <typename T>
+template <template<typename> typename T, typename S>
 void adder(
-    DeviceSpan<T, 2> grid, const DeviceSpan<size_t, 1> widxs,
-    const DeviceSpan<WorkUnit, 1> workunits, const DeviceSpan<T, 3> subgrids,
+    DeviceSpan<T<S>, 2> grid, const DeviceSpan<size_t, 1> widxs,
+    const DeviceSpan<WorkUnit, 1> workunits, const DeviceSpan<T<S>, 3> subgrids,
     const GridSpec gridspec, const GridSpec subgridspec
 ) {
     auto timer = Timer::get("invert::wlayers::adder");
 
-    auto fn = _adder<T>;
+    auto fn = _adder<T, S>;
     auto [nblocksx, nthreadsx] = getKernelConfig(
         fn, subgridspec.size()
     );
