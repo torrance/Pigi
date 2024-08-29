@@ -72,7 +72,7 @@ private:
 };
 
 template <typename T>
-auto getKernelConfig(T fn, int N, size_t sharedMem=0) {
+auto getKernelConfig(T fn, size_t N, size_t sharedMem=0) {
     static int nblocksmax, nthreads;
 
     [[maybe_unused]] static auto _ = [&]() {
