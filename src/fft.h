@@ -12,20 +12,24 @@
 template <typename T, int N>
 __global__
 void _fftshift(
-    DeviceSpan<T, N> grid, GridSpec gridspec, long long lpx0, long long mpx0
+    DeviceSpan<T, N> grid, GridSpec gridspec, long long lpx0, long long mpx0, size_t nbatches
 ) requires (N == 2 || N == 3) {
     for (
-        size_t idx = blockIdx.x * blockDim.x + threadIdx.x;
-        idx < gridspec.size();
-        idx += blockDim.x * gridDim.x
+        size_t batchid {blockIdx.y}; batchid < nbatches; batchid += blockDim.y * gridDim.y
     ) {
-        // Get grid pixel values and offset to origin
-        auto [lpx, mpx] = gridspec.linearToGrid(idx);
-        lpx -= lpx0;
-        mpx -= mpx0;
+        for (
+            size_t idx = blockIdx.x * blockDim.x + threadIdx.x;
+            idx < gridspec.size();
+            idx += blockDim.x * gridDim.x
+        ) {
+            // Get grid pixel values and offset to origin
+            auto [lpx, mpx] = gridspec.linearToGrid(idx);
+            lpx -= lpx0;
+            mpx -= mpx0;
 
-        auto factor {1 - 2 * ((lpx + mpx) & 1)};
-        grid[gridspec.size() * blockIdx.y + idx] *= factor;
+            auto factor {1 - 2 * ((lpx + mpx) & 1)};
+            grid[gridspec.size() * blockIdx.y + idx] *= factor;
+        }
     }
 }
 
@@ -47,33 +51,35 @@ void fftshift(DeviceSpan<T, N> grid, FFTShift stage) requires (N == 2 || N == 3)
         mpx0 = gridspec.Ny / 2;
     }
 
+    // In the batched case, each iteration along the third axis is an independent grid
+    size_t nbatch = N == 2 ? 1 : grid.size(2);
+
     auto fn = _fftshift<T, N>;
 
     auto [nblocksx, nthreadsx] = getKernelConfig(fn, gridspec.size());
 
-    // In the batched case, each iteration along the third axis is an independent grid
-    int nthreadsy {1};
-    int nblocksy = N == 2 ? 1 : grid.size(2);
+    uint32_t nthreadsy {1};
+    uint32_t nblocksy = std::min<size_t>(nbatch, 65535);
 
     hipLaunchKernelGGL(
         fn, dim3(nblocksx, nblocksy), dim3(nthreadsx, nthreadsy), 0, hipStreamPerThread,
-        grid, gridspec, lpx0, mpx0
+        grid, gridspec, lpx0, mpx0, nbatch
     );
 }
 
 template <typename T>
-hipfftHandle fftPlan(const GridSpec gridspec, int nbatch=1) {
+hipfftHandle fftPlan(const GridSpec gridspec, long long nbatch=1) {
     // This is a dummy template that allows the following specialisations.
     // It should never be instantiated, only the specialisations are allowed.
     static_assert(static_cast<int>(sizeof(T)) == -1, "No fftPlan specialisation provided");
     [[maybe_unused]] GridSpec g = gridspec;
-    [[maybe_unused]] int n = nbatch;
+    [[maybe_unused]] long long n = nbatch;
     hipfftHandle plan;
     return plan;
 }
 
 template<>
-hipfftHandle fftPlan<thrust::complex<float>>(const GridSpec gridspec, int nbatch) {
+hipfftHandle fftPlan<thrust::complex<float>>(const GridSpec gridspec, long long nbatch) {
     hipfftHandle plan {};
     HIPFFTCHECK( hipfftCreate(&plan) );
     HIPFFTCHECK( hipfftSetAutoAllocation(plan, true) );
@@ -92,7 +98,7 @@ hipfftHandle fftPlan<thrust::complex<float>>(const GridSpec gridspec, int nbatch
 }
 
 template<>
-hipfftHandle fftPlan<thrust::complex<double>>(const GridSpec gridspec, int nbatch) {
+hipfftHandle fftPlan<thrust::complex<double>>(const GridSpec gridspec, long long nbatch) {
     hipfftHandle plan {};
     HIPFFTCHECK( hipfftCreate(&plan) );
     HIPFFTCHECK( hipfftSetAutoAllocation(plan, true) );
@@ -111,7 +117,7 @@ hipfftHandle fftPlan<thrust::complex<double>>(const GridSpec gridspec, int nbatc
 }
 
 template <>
-hipfftHandle fftPlan<ComplexLinearData<float>>(const GridSpec gridspec, int) {
+hipfftHandle fftPlan<ComplexLinearData<float>>(const GridSpec gridspec, long long) {
     hipfftHandle plan {};
     HIPFFTCHECK( hipfftCreate(&plan) );
     HIPFFTCHECK( hipfftSetAutoAllocation(plan, true) );
@@ -130,7 +136,7 @@ hipfftHandle fftPlan<ComplexLinearData<float>>(const GridSpec gridspec, int) {
 }
 
 template<>
-hipfftHandle fftPlan<ComplexLinearData<double>>(const GridSpec gridspec, int) {
+hipfftHandle fftPlan<ComplexLinearData<double>>(const GridSpec gridspec, long long) {
     hipfftHandle plan {};
     HIPFFTCHECK( hipfftCreate(&plan) );
     HIPFFTCHECK( hipfftSetAutoAllocation(plan, true) );
@@ -149,7 +155,7 @@ hipfftHandle fftPlan<ComplexLinearData<double>>(const GridSpec gridspec, int) {
 }
 
 template<>
-hipfftHandle fftPlan<StokesI<float>>(const GridSpec gridspec, int nbatch) {
+hipfftHandle fftPlan<StokesI<float>>(const GridSpec gridspec, long long nbatch) {
     hipfftHandle plan {};
     HIPFFTCHECK( hipfftCreate(&plan) );
     HIPFFTCHECK( hipfftSetAutoAllocation(plan, true) );
@@ -168,7 +174,7 @@ hipfftHandle fftPlan<StokesI<float>>(const GridSpec gridspec, int nbatch) {
 }
 
 template<>
-hipfftHandle fftPlan<StokesI<double>>(const GridSpec gridspec, int nbatch) {
+hipfftHandle fftPlan<StokesI<double>>(const GridSpec gridspec, long long nbatch) {
     hipfftHandle plan {};
     HIPFFTCHECK( hipfftCreate(&plan) );
     HIPFFTCHECK( hipfftSetAutoAllocation(plan, true) );
@@ -187,7 +193,7 @@ hipfftHandle fftPlan<StokesI<double>>(const GridSpec gridspec, int nbatch) {
 }
 
 template <typename T>
-size_t fftEstimate(const GridSpec gridspec, int nbatch=1) {
+size_t fftEstimate(const GridSpec gridspec, long long nbatch=1) {
     // This is a dummy template that allows the following specialisations.
     // It should never be instantiated, only the specialisations are allowed.
     static_assert(static_cast<int>(sizeof(T)) == -1, "No fftEstimate specialisation provided");
@@ -197,7 +203,7 @@ size_t fftEstimate(const GridSpec gridspec, int nbatch=1) {
 }
 
 template<>
-size_t fftEstimate<thrust::complex<float>>(const GridSpec gridspec, int nbatch) {
+size_t fftEstimate<thrust::complex<float>>(const GridSpec gridspec, long long nbatch) {
     size_t worksize {};
     int rank[] {(int) gridspec.Ny, (int) gridspec.Nx}; // COL MAJOR
     HIPFFTCHECK( hipfftEstimateMany(
@@ -211,7 +217,7 @@ size_t fftEstimate<thrust::complex<float>>(const GridSpec gridspec, int nbatch) 
 }
 
 template<>
-size_t fftEstimate<thrust::complex<double>>(const GridSpec gridspec, int nbatch) {
+size_t fftEstimate<thrust::complex<double>>(const GridSpec gridspec, long long nbatch) {
     size_t worksize {};
     int rank[] {(int) gridspec.Ny, (int) gridspec.Nx}; // COL MAJOR
     HIPFFTCHECK( hipfftEstimateMany(
@@ -225,7 +231,7 @@ size_t fftEstimate<thrust::complex<double>>(const GridSpec gridspec, int nbatch)
 }
 
 template<>
-size_t fftEstimate<StokesI<float>>(const GridSpec gridspec, int nbatch) {
+size_t fftEstimate<StokesI<float>>(const GridSpec gridspec, long long nbatch) {
     size_t worksize {};
     int rank[] {(int) gridspec.Ny, (int) gridspec.Nx}; // COL MAJOR
     HIPFFTCHECK( hipfftEstimateMany(
@@ -239,7 +245,7 @@ size_t fftEstimate<StokesI<float>>(const GridSpec gridspec, int nbatch) {
 }
 
 template<>
-size_t fftEstimate<StokesI<double>>(const GridSpec gridspec, int nbatch) {
+size_t fftEstimate<StokesI<double>>(const GridSpec gridspec, long long nbatch) {
     size_t worksize {};
     int rank[] {(int) gridspec.Ny, (int) gridspec.Nx}; // COL MAJOR
     HIPFFTCHECK( hipfftEstimateMany(

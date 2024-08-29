@@ -18,35 +18,36 @@ void _adder(
     const DeviceSpan<WorkUnit, 1> workunits, const DeviceSpan<T<S>, 3> subgrids,
     const GridSpec gridspec, const GridSpec subgridspec
 ) {
-    size_t widx = widxs[blockIdx.y];
-    auto workunit = workunits[widx];
-    const long long u0px = workunit.upx;
-    const long long v0px = workunit.vpx;
+    for (size_t yidx {blockIdx.y}; yidx < widxs.size(); yidx += blockDim.y * gridDim.y) {
+        size_t widx = widxs[yidx];
+        auto workunit = workunits[widx];
+        const long long u0px = workunit.upx;
+        const long long v0px = workunit.vpx;
 
-    // Iterate over each element of the subgrid
-    for (
-        size_t idx = blockIdx.x * blockDim.x + threadIdx.x;
-        idx < subgridspec.size();
-        idx += blockDim.x * gridDim.x
-    ) {
-        auto [upx, vpx] = subgridspec.linearToGrid(idx);
-
-        // Transform to pixel position wrt to master grid
-        upx += u0px - subgridspec.Nx / 2;
-        vpx += v0px - subgridspec.Ny / 2;
-
-        if (
-            0 <= upx && upx < static_cast<long long>(gridspec.Nx) &&
-            0 <= vpx && vpx < static_cast<long long>(gridspec.Ny)
+        // Iterate over each element of the subgrid
+        for (
+            size_t idx = blockIdx.x * blockDim.x + threadIdx.x;
+            idx < subgridspec.size();
+            idx += blockDim.x * gridDim.x
         ) {
-            size_t grididx = gridspec.gridToLinear(upx, vpx);
-            auto [u, v] = gridspec.gridToUV<S>(upx, vpx);
+            auto [upx, vpx] = subgridspec.linearToGrid(idx);
 
-            // Apply deltal, deltam shift to visibilities
-            auto px = subgrids[subgridspec.size() * widx + idx];
-            px *= cispi(2 * (u * gridspec.deltal + v * gridspec.deltam));
+            // Transform to pixel position wrt to master grid
+            upx += u0px - subgridspec.Nx / 2;
+            vpx += v0px - subgridspec.Ny / 2;
 
-            atomicAdd(grid.data() + grididx, px);
+            if (
+                0 <= upx && upx < gridspec.Nx && 0 <= vpx && vpx < gridspec.Ny
+            ) {
+                size_t grididx = gridspec.gridToLinear(upx, vpx);
+                auto [u, v] = gridspec.gridToUV<S>(upx, vpx);
+
+                // Apply deltal, deltam shift to visibilities
+                auto px = subgrids[subgridspec.size() * widx + idx];
+                px *= cispi(2 * (u * gridspec.deltal + v * gridspec.deltam));
+
+                atomicAdd(grid.data() + grididx, px);
+            }
         }
     }
 }
@@ -64,8 +65,8 @@ void adder(
         fn, subgridspec.size()
     );
 
-    int nthreadsy {1};
-    int nblocksy = widxs.size();
+    uint32_t nthreadsy {1};
+    uint32_t nblocksy = std::min<size_t>(widxs.size(), 65535);
 
     hipLaunchKernelGGL(
         fn, dim3(nblocksx, nblocksy), dim3(nthreadsx, nthreadsy), 0, hipStreamPerThread,
