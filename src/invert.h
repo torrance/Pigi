@@ -246,6 +246,11 @@ HostArray<T<S>, 2> invert(
                         fftExec(wplan, wlayer, HIPFFT_FORWARD);
                     );
 
+                    // Normalize the FFT
+                    map([N=gridspec.size()] __device__ (auto& wlayer) {
+                        wlayer /= N;
+                    }, wlayer);
+
                     // Add each subgrid from this w-layer
                     adder(
                         wlayer, DeviceArray<size_t, 1>(idxs),
