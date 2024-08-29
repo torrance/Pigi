@@ -243,16 +243,14 @@ HostArray<T, 2> rescale(
         hipfftDestroy(plan);
     }
 
-    // Transfer to host and resize/pad with zeros
-    // TODO: Implement resize() on device
-    HostArray<T, 2> img_h {img_d};
-    img_h = resize(img_h, from, to);  // move
+    // Resize and padd with zeros
+    img_d = resize(img_d, from, to);
 
     // Normalise
-    img_h /= T(from.size());
+    map([N=from.size()] __device__ (auto& val) {
+        val /= T(N);
+    }, img_d);
 
-    // Back to host and FFT
-    img_d = DeviceArray<T, 2>{img_h};  // move
     {
         auto plan = fftPlan<T>(to);
         fftExec(plan, img_d, HIPFFT_BACKWARD);
