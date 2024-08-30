@@ -46,18 +46,25 @@ void predict(
     // Apply taper
     {
         auto timer = Timer::get("predict::taper");
-        DeviceArray<S, 2> taperd {pswf<S>(gridspec)};
-        map([] __device__ (auto& wlayer, const auto t) {
+        auto taperxs = DeviceArray<S, 1>(pswf1D<S>(gridspec.Nx));
+        auto taperys = DeviceArray<S, 1>(pswf1D<S>(gridspec.Ny));
+        map([
+            gridspec,
+            taperxs=static_cast<DeviceSpan<S, 1>>(taperxs),
+            taperys=static_cast<DeviceSpan<S, 1>>(taperys)
+        ] __device__ (size_t idx, auto& wlayer) {
+            auto [lpx, mpx] = gridspec.linearToGrid(idx);
+            S t = taperxs[lpx] * taperys[mpx];
             if (t == 0) wlayer = T<S>{};
             else wlayer /= t;
-        }, wlayer, taperd);
+        }, Iota(), wlayer);
     }
 
     // Create FFT plan for wlayer
     auto wplan = fftPlan<T<S>>(gridspec);
 
     // Copy subtaper to device
-    DeviceArray<S, 2> subtaper_d {pswf<S>(subgridspec)};
+    DeviceArray<S, 2> subtaper_d {pswf2D<S>(subgridspec)};
 
     // Lambdas does not change row to row; send to device now
     const DeviceArray<double, 1> lambdas_d(tbl.lambdas());

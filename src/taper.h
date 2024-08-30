@@ -20,18 +20,8 @@ double kbalpha<float>() { return 4.2; }
 template <>
 double kbalpha<double>() { return 10; }
 
-std::mutex taperlock;
-
 template <typename T>
-const auto& kaiserbessel(const GridSpec gridspec, const double alpha = kbalpha<T>()) {
-    std::lock_guard l(taperlock);
-
-    // Memoise output
-    static std::unordered_map<GridSpec, const HostArray<T, 2>> cache;
-    if (auto taper = cache.find(gridspec); taper != cache.end()) {
-        return std::get<1>(*taper);
-    }
-
+HostArray<T, 2> kaiserbessel(const GridSpec gridspec, const double alpha = kbalpha<T>()) {
     // Create one-dimensional tapers first. The 2D taper is a product of these 1D tapers.
     std::vector<double> xDim(gridspec.Nx);
     std::vector<double> yDim(gridspec.Ny);
@@ -55,8 +45,7 @@ const auto& kaiserbessel(const GridSpec gridspec, const double alpha = kbalpha<T
         taper[i] = xDim[xpx] * yDim[ypx];
     }
 
-    cache.insert(std::make_pair(gridspec, std::move(taper)));
-    return cache[gridspec];
+    return taper;
 }
 
 template <typename T>
@@ -72,19 +61,7 @@ template <>
 double psfw_c<double>() { return 20 * ::pi_v<double> / 2; }
 
 template <typename T>
-const auto& pswf(const GridSpec gridspec) {
-    std::lock_guard l(taperlock);
-
-    // Memoise output
-    static std::unordered_map<GridSpec, const HostArray<T, 2>> cache;
-    if (auto taper = cache.find(gridspec); taper != cache.end()) {
-        return std::get<1>(*taper);
-    }
-
-    // Create one-dimensional tapers first. The 2D taper is a product of these 1D tapers.
-    std::vector<double> xDim(gridspec.Nx);
-    std::vector<double> yDim(gridspec.Ny);
-
+std::vector<T> pswf1D(const size_t length) {
     // Hard code the PSFW parameters
     int m = 6;
     int n = 6;
@@ -95,25 +72,31 @@ const auto& pswf(const GridSpec gridspec) {
     std::vector<double> eg(n - m + 2);
     specialfunc::segv(m, n, c, 1, &cv, eg.data());
 
-    double s1f, s1d;
-
-    for (auto oneDim : {&xDim, &yDim}) {
-        for (size_t i {}; i < oneDim->size(); ++i) {
-            double nu = std::abs(-1 + 2 * i / static_cast<double>(oneDim->size()));
-            if (nu >= 1) {
-                (*oneDim)[i] = 0;
-                continue;
-            }
-            specialfunc::aswfa(nu, m, n, c, 1, cv, &s1f, &s1d);
-            (*oneDim)[i] = s1f;
+    std::vector<T> xs(length);
+    for (size_t i {}; i < length; ++i) {
+        double nu = std::abs(-1 + 2 * i / static_cast<double>(length));
+        if (nu >= 1) {
+            xs[i] = 0;
+            continue;
         }
+
+        double s1f, s1d;
+        specialfunc::aswfa(nu, m, n, c, 1, cv, &s1f, &s1d);
+        xs[i] = s1f;
     }
 
     // Normalise
-    for (auto oneDim : {&xDim, &yDim}) {
-        double N = (*oneDim)[oneDim->size() / 2];
-        for (auto& x : *oneDim) x /= N;
-    }
+    double N = xs[length / 2];
+    for (auto& x : xs) x /= N;
+
+    return xs;
+}
+
+template <typename T>
+HostArray<T, 2> pswf2D(const GridSpec gridspec) {
+    // Create one-dimensional tapers first.
+    auto xDim = pswf1D<T>(gridspec.Nx);
+    auto yDim = pswf1D<T>(gridspec.Ny);
 
     // Create the full taper as the product of the 1D tapers.
     HostArray<T, 2> taper {gridspec.Nx, gridspec.Ny};
@@ -122,6 +105,5 @@ const auto& pswf(const GridSpec gridspec) {
         taper[i] = xDim[xpx] * yDim[ypx];
     }
 
-    cache.insert(std::make_pair(gridspec, std::move(taper)));
-    return cache[gridspec];
+    return taper;
 }

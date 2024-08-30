@@ -43,7 +43,7 @@ HostArray<T<S>, 2> invert(
     auto wplan = fftPlan<T<S>>(gridspec);
 
     // Construct the taper and send to the device
-    DeviceArray<S, 2> subtaperd {pswf<S>(subgridspec)};
+    DeviceArray<S, 2> subtaperd {pswf2D<S>(subgridspec)};
 
     // Lambdas does not change row to row; send to device now
     const DeviceArray<double, 1> lambdas_d(tbl.lambdas());
@@ -280,12 +280,20 @@ HostArray<T<S>, 2> invert(
     // It's time to undo both.
     {
         auto timer = Timer::get("invert::taper");
-        map([gridspec=gridspec, wold=static_cast<S>(wold)] __device__ (
-            size_t idx, auto& px, auto t
+        auto taperxs = DeviceArray<S, 1>(pswf1D<S>(gridspec.Nx));
+        auto taperys = DeviceArray<S, 1>(pswf1D<S>(gridspec.Ny));
+        map([
+            gridspec=gridspec,
+            wold=static_cast<S>(wold),
+            taperxs=static_cast<DeviceSpan<S, 1>>(taperxs),
+            taperys=static_cast<DeviceSpan<S, 1>>(taperys)
+        ] __device__ (
+            size_t idx, auto& px
         ) {
+            auto [lpx, mpx] = gridspec.linearToGrid(idx);
             auto [l, m] = gridspec.linearToSky<S>(idx);
-            px *= cispi(2 * wold * ndash(l, m)) / t;
-        }, Iota(), wlayer, DeviceArray<S, 2>(pswf<S>(gridspec)));
+            px *= cispi(2 * wold * ndash(l, m)) / (taperxs[lpx] * taperys[mpx]);
+        }, Iota(), wlayer);
     }
 
     auto posttimer = Timer::get("invert::post");
