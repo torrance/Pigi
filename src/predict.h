@@ -34,7 +34,10 @@ void predict(
 
     // Copy img into wlayer on device. wlayer is shared by all threads to populate
     // subgrid visibilities. wlayer is shared since it may be very large.
-    DeviceArray<T<S>, 2> wlayer(img);
+    auto wlayer = [&] {
+        auto timer = Timer::get("predict::imgHtoD");
+        return DeviceArray<T<S>, 2>(img);
+    }();
     double wold {0};  // track the associated w value of w-layer
 
     // Use a lock_guard to guarantee exclusive access during wlayer processing.
@@ -61,7 +64,10 @@ void predict(
     }
 
     // Create FFT plan for wlayer
-    auto wplan = fftPlan<T<S>>(gridspec);
+    auto wplan = [&] {
+        auto timer = Timer::get("predict::wplan");
+        return fftPlan<T<S>>(gridspec);
+    }();
 
     // Copy subtaper to device
     DeviceArray<S, 2> subtaper_d {pswf2D<S>(subgridspec)};
@@ -73,6 +79,8 @@ void predict(
     // used by the threads to determine their scope of work.
     Channel<std::array<size_t, 4>> batches;
     {
+        auto timer = Timer::get("predict::batching");
+
         size_t maxmem = [] () -> size_t {
             size_t free, total;
             HIPCHECK( hipMemGetInfo(&free, &total));

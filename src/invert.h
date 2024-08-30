@@ -40,7 +40,10 @@ HostArray<T<S>, 2> invert(
     std::mutex wlock;
 
     // Create FFT plan for wlayer
-    auto wplan = fftPlan<T<S>>(gridspec);
+    auto wplan = [&] {
+        auto timer = Timer::get("invert::wplan");
+        return fftPlan<T<S>>(gridspec);
+    }();
 
     // Construct the taper and send to the device
     DeviceArray<S, 2> subtaperd {pswf2D<S>(subgridspec)};
@@ -55,6 +58,8 @@ HostArray<T<S>, 2> invert(
     // Compute batch boundaries and load up the batches channel
     // used by the threads to determine their scope of work.
     {
+        auto timer = Timer::get("invert::batching");
+
         size_t maxmem = [] () -> size_t {
             size_t free, total;
             HIPCHECK( hipMemGetInfo(&free, &total));
