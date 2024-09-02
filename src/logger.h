@@ -19,6 +19,10 @@ public:
         threadname = fmt::format(name, std::forward<Args>(args)...);
     }
 
+    static void setName(const std::string& name) { threadname = name; }
+
+    static std::string getName() { return threadname; }
+
     template <typename... Args>
     static void log(Level level, const fmt::format_string<Args...>& msg, Args&&... args) {
         fmt::color color;

@@ -144,8 +144,9 @@ void predict(
     // Create the threads
     std::vector<std::thread> threads;
     for (size_t threadid {}; threadid < 2; ++threadid) {
-        threads.emplace_back([&] {
+        threads.emplace_back([&, logname=Logger::getName()] {
             GPU::getInstance().resetDevice(); // needs to be reset for each new thread
+            Logger::setName(logname);
             auto timer = Timer::get("predict::batch");
 
             while (auto batch = batches.pop()) {
@@ -155,7 +156,7 @@ void predict(
 
                 Logger::debug(
                     "Invert: batching rows {}-{}/{} ({} workunits)",
-                    rowstart, rowend, workunits.size(), nworkunits
+                    rowstart, rowend, tbl.nrows(), nworkunits
                 );
 
                 // Allocate workunits

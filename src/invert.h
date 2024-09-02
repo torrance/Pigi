@@ -125,8 +125,9 @@ HostArray<T<S>, 2> invert(
     // Create worker threads
     std::vector<std::thread> threads;
     for (size_t threadid {}; threadid < 2; ++threadid) {
-        threads.emplace_back([&] {
+        threads.emplace_back([&, logname=Logger::getName()] {
             GPU::getInstance().resetDevice(); // needs to be reset for each new thread
+            Logger::setName(logname);
             auto timer = Timer::get("invert::batch");
 
             // Now loop over the batches until they are exhausted
@@ -137,7 +138,7 @@ HostArray<T<S>, 2> invert(
 
                 Logger::debug(
                     "Invert: batching rows {}-{}/{} ({} workunits)",
-                    rowstart, rowend, workunits.size(), nworkunits
+                    rowstart, rowend, tbl.nrows(), nworkunits
                 );
 
                 HostSpan<WorkUnit, 1> workunits_h({nworkunits}, workunits.data() + wkstart);
