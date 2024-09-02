@@ -327,7 +327,10 @@ void cleanWorker(
 
             // Create psf
             Logger::info("Constructing PSF...");
-            auto psf = invert<thrust::complex, P>(tbl, workunits, gridconf, aterms, true);
+            auto psf = [&] {
+                std::lock_guard l(writelock);
+                return invert<thrust::complex, P>(tbl, workunits, gridconf, aterms, true);
+            }();
             queen.send(0, fieldid, psf);
             if (hivesize > 1) save(
                 fmt::format("psf-field{:02d}-{:02d}.fits", fieldid + 1, rank + 1), psf,
@@ -340,7 +343,10 @@ void cleanWorker(
 
             // Initial inversion
             Logger::info("Constructing dirty image...");
-            auto residual = invert<StokesI, P>(tbl, workunits, gridconf, aterms);
+            auto residual = [&] {
+                std::lock_guard l(writelock);
+                return invert<StokesI, P>(tbl, workunits, gridconf, aterms);
+            }();
             queen.send(0, fieldid, residual);
 
             if (hivesize > 1) save(fmt::format(
@@ -406,8 +412,11 @@ void cleanWorker(
                 barrier.arrive_and_wait();
 
                 // Invert
-                Logger::info("Constructing residual image... (major cycle {})", i);
-                residual = invert<StokesI, P>(tbl, workunits, gridconf, aterms);
+                residual = [&] {
+                    std::lock_guard l(writelock);
+                    Logger::info("Constructing residual image... (major cycle {})", i);
+                    return invert<StokesI, P>(tbl, workunits, gridconf, aterms);
+                }();
                 queen.send(0, fieldid, residual);
 
                 // Listen for major loop termination signal from queen
@@ -425,10 +434,13 @@ void cleanWorker(
                     "components-field{:02}-{:02d}.fits", fieldid + 1, rank + 1
                 ), components, gridconf.grid(), config.phasecenter.value());
 
-                auto image = convolve(
-                    components,
-                    PSF<P>(psf, gridspecPsf).draw(gridconf.grid())
-                );
+                auto image = [&] {
+                    std::lock_guard l(writelock);
+                    return convolve(
+                        components,
+                        PSF<P>(psf, gridspecPsf).draw(gridconf.grid())
+                    );
+                }();
                 image += residual;
 
                 save(fmt::format(
