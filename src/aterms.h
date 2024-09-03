@@ -86,11 +86,12 @@ public:
         HostArray<T<double>, 2> beamPower64 {subgridspec.shape()};
         for (auto [atermpair, weight] : atermweights) {
             auto [aleft, aright] = atermpair;
+            weight /= totalWeight;
 
             for (size_t i {}, I = subgridspec.size(); i < I; ++i) {
                 beamPower64[i] += T<double>::beamPower(
                     (*aleft)[i], (*aright)[i]
-                ) *= (weight /= totalWeight);
+                ) *= weight;
             }
         }
 
