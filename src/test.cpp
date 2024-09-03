@@ -387,7 +387,7 @@ TEST_CASE("Widefield inversion", "[widefield]") {
     );
 
     HostArray<StokesI<P>, 2> expected {gridspec.shape()};
-    auto jones = static_cast<HostArray<ComplexLinearData<float>, 2>>(
+    auto jones = static_cast<HostArray<ComplexLinearData<P>, 2>>(
         *aterms.get(tbl.midtime(), 0)
     );
     idft<StokesI, P>(expected, tbl, jones, gridspec, true);
