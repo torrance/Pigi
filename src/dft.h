@@ -71,7 +71,7 @@ __global__ void _idft(
             );
 
             if(normalize) {
-                T norm = matmul(j, j).norm();
+                T norm = matmul(j, j.adjoint()).norm();
                 img[idx] /= norm;
             }
         }
