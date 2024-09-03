@@ -314,7 +314,7 @@ void cleanWorker(
             }();
 
             // Partition data
-            auto workunits = partition(tbl, gridconf);
+            auto workunits = partition(tbl, gridconf, config.maxDuration);
 
             Logger::info("Constructing average beam...");
             auto beamPower = aterms.template average<StokesI, P>(tbl, workunits, gridconf);
