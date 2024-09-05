@@ -15,7 +15,7 @@
 enum class DegridOp {Subtract, Add};
 
 template <typename T, typename S>
-__global__ __launch_bounds__(128)
+__global__ __launch_bounds__(64)
 void _degridder(
     DeviceSpan<ComplexLinearData<float>, 2> data,
     const DeviceSpan<T, 3> subgrids,
@@ -34,7 +34,7 @@ void _degridder(
     const int nchunk {4};
 
     // Set up the shared mem cache
-    const size_t cachesize {128};
+    const size_t cachesize {64};
     __shared__ char _cache[
         cachesize * (sizeof(ComplexLinearData<S>) + sizeof(std::array<S, 3>) + sizeof(S))
     ];
@@ -193,7 +193,7 @@ void degridder(
     auto fn = _degridder<T, S>;
 
     // x-dimension distributes uvdata
-    uint32_t nthreadsx {128};
+    uint32_t nthreadsx {64};
     uint32_t nblocksx {1};
 
     // y-dimension breaks the subgrid down into 8 blocks
