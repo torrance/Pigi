@@ -15,7 +15,7 @@
 enum class DegridOp {Subtract, Add};
 
 template <typename T, typename S>
-__global__ __launch_bounds__(64)
+__global__ __launch_bounds__(128)
 void _degridder(
     DeviceSpan<ComplexLinearData<float>, 2> data,
     const DeviceSpan<T, 3> subgrids,
@@ -31,18 +31,20 @@ void _degridder(
 ) {
     // To increase the computational intensity of the kernel (just slightly),
     // we compute $nchunk visibilities at once.
-    const int nchunk {4};
+    const int nchunk {8};
 
     // Set up the shared mem cache
-    const size_t cachesize {64};
-    __shared__ char _cache[
-        cachesize * (sizeof(ComplexLinearData<S>) + sizeof(std::array<S, 3>) + sizeof(S))
-    ];
-    auto subgrid_cache = reinterpret_cast<ComplexLinearData<S>*>(_cache);
-    auto lmn_cache = reinterpret_cast<std::array<S, 3>*>(subgrid_cache + cachesize);
-    auto thetaoffsets_cache = reinterpret_cast<S*>(lmn_cache + cachesize);
+    const size_t cachesize {128};
+    __shared__ char _cache[cachesize * sizeof(ComplexLinearData<S>)];
+    auto data_cache = reinterpret_cast<ComplexLinearData<S>*>(_cache);
 
     const size_t subgridsize = subgridspec.size();
+    const size_t rowstride = lambdas.size();
+
+    // Calculate warp properties
+    const unsigned int warpid = threadIdx.x / warpSize;
+    const unsigned int warprank = threadIdx.x % warpSize;
+    const unsigned int warpranknext = (warprank + 1) % warpSize;
 
     // y block index denotes workunit
     for (size_t wid {blockIdx.y}; wid < workunits.size(); wid += gridDim.y) {
@@ -60,112 +62,120 @@ void _degridder(
             w0 = workunit.w;
         }
 
-        // We process $nchunk visibilities at a time, going along a row.
-        // The true channel with of this workunit may not be an even multiple of $nchunk
-        // and thus we may calculcate some edge channels that are not part of this
-        // workunit. These will be discarded later.
-        const size_t nchans = cld<size_t>(chanend - chanstart, nchunk) * nchunk;
-        const size_t nvis = (rowend - rowstart) * nchans;
+        size_t nchans = chanend - chanstart;
+        size_t nrows = rowend - rowstart;
+        size_t nvis = nrows * nchans;
 
         for (
             size_t idx = blockIdx.x * blockDim.x * nchunk + threadIdx.x * nchunk;
-            idx < blockDim.x * nchunk * cld<size_t>(nvis, blockDim.x * nchunk);
+            idx < blockDim.x * nchunk * cld<size_t>(subgridsize, blockDim.x * nchunk);
             idx += blockDim.x * gridDim.x * nchunk
         ) {
-            const size_t irow = idx / nchans + rowstart;
-            const size_t ichan = idx % nchans + chanstart;
+            // Load pixel cells
+            std::array<ComplexLinearData<S>, nchunk> cells;
+            std::array<std::array<S, 3>, nchunk> lmns;
+            std::array<S, nchunk> thetaoffsets;
 
-            // Calculate inverse lambda values for each channel in our chunk
-            std::array<S, nchunk> invlambdas;
-            for (int i {}; i < nchunk && ichan + i < chanend; ++i) {
-                invlambdas[i] = 1 / lambdas[ichan + i];
+            for (int i {}; i < nchunk && idx + i < subgridsize; ++i) {
+                cells[i] = static_cast<ComplexLinearData<S>>(
+                    subgrids[subgridsize * wid + idx + i]
+                );
+
+                // Grab A terms
+                auto al = static_cast<ComplexLinearData<S>>(alefts[wid][idx + i]);
+                auto ar = static_cast<ComplexLinearData<S>>(arights[wid][idx + i]).adjoint();
+
+                // Apply Aterms, normalization, and taper
+                cells[i] = matmul(matmul(al, cells[i]), ar);
+                cells[i] *= subtaper[idx + i] / subgridsize;
+
+                auto [l, m] = subgridspec.linearToSky<S>(idx + i);
+                auto n = ndash(l, m);
+                lmns[i] = {l, m, n};
+
+                thetaoffsets[i] = -2 * ::pi_v<S> * (u0 * l + v0 * m + w0 * n);
             }
 
-            // Get u,vw for this datum
-            auto [u, v, w] = [&] () -> std::array<S, 3> {
-                auto [u, v, w] = uvws[irow];
-                return {static_cast<S>(u), static_cast<S>(v), static_cast<S>(w)};
-            }();
+            // Cycle over $warpSize visibilities until exhausted (rounded up to multiple
+            // of $warpSize)
+            const size_t N = cld<size_t>(nvis, warpSize) * warpSize;
+            for (size_t i {warprank}; i < N; i += warpSize) {
+                size_t irow = rowstart + i / nchans;
+                size_t ichan = chanstart + i % nchans;
 
-            // We force all data to have positive w values to reduce the number of w layers,
-            // since V(u, v, w) = V(-u, -v, -w)^H
-            // The data has already been partitioned making this assumption.
-            int signw = w < 0 ? -1 : 1;
-            u *= -2 * ::pi_v<S> * signw;
-            v *= -2 * ::pi_v<S> * signw;
-            w *= -2 * ::pi_v<S> * signw;
+                int wsign {};
+                S u {}, v {}, w {};
+                ComplexLinearData<S> datum {};
+                if (i < nvis) {
+                    auto [u_, v_, w_] = uvws[irow];
+                    u = u_; v = v_; w = w_;
 
-            std::array<ComplexLinearData<S>, nchunk> datums {};
+                    // We force all data to have positive w values to reduce the number of w layers,
+                    // since V(u, v, w) = V(-u, -v, -w)^H
+                    // The data has already been partitioned making this assumption.
+                    wsign = w < 0 ? -1 : 1;
 
-            for (size_t ipx {}; ipx < subgridsize; ipx += cachesize) {
-                const size_t N = min(cachesize, subgridsize - ipx);
-
-                // Populate cache
-                __syncthreads();
-                for (size_t j = threadIdx.x; j < N; j += blockDim.x) {
-                    // Load subgrid value; convert to instrumental values
-                    auto cell = static_cast<ComplexLinearData<S>>(
-                        subgrids[subgridsize * wid + ipx + j]
-                    );
-
-                    // Grab A terms
-                    auto al = static_cast<ComplexLinearData<S>>(alefts[wid][ipx + j]);
-                    auto ar = static_cast<ComplexLinearData<S>>(arights[wid][ipx + j]).adjoint();
-
-                    // Apply Aterms, normalization, and taper
-                    cell = matmul(matmul(al, cell), ar);
-                    cell *= subtaper[ipx + j] / subgridsize;
-
-                    subgrid_cache[j] = cell;
-
-                    // Precompute l, m, n and cache values
-                    auto [l, m] = subgridspec.linearToSky<S>(ipx + j);
-                    auto n = ndash(l, m);
-
-                    lmn_cache[j] = {l, m, n};
-
-                    // Precompute theta offset, which we an do since each block shares
-                    // the same workunit. [dimensionless]
-                    thetaoffsets_cache[j] = -2 * ::pi_v<S> * (u0 * l + v0 * m + w0 * n);
+                    S lambda = lambdas[ichan];
+                    u *= -2 * ::pi_v<S> * wsign / lambda;
+                    v *= -2 * ::pi_v<S> * wsign / lambda;
+                    w *= -2 * ::pi_v<S> * wsign / lambda;
                 }
-                __syncthreads();
 
-                // Cycle through cache
-                for (size_t j {}; j < N; ++j) {
-                    // These shared mem loads should be broadcast across the warp and so we
-                    // don't need to worry about bank conflicts
-                    const auto [l, m, n] = lmn_cache[j];
-                    const auto cell = subgrid_cache[j];
-
-                    const S theta {u * l + v * m + w * n};  // [meters]
-                    const S thetaoffset {thetaoffsets_cache[j]};  // [dimensionless]
-
+                // Reduce the data by daisy-chaining the visbilities around
+                // the warp group, each reducing its own set of pixels onto the datum
+                for (size_t j {}; j < warpSize; ++j) {
                     for (int k {}; k < nchunk; ++k) {
-                        const auto phase = cis(theta * invlambdas[k] - thetaoffset);
+                        auto [l, m, n] = lmns[k];
+                        auto phase = cis(u * l + v * m + w * n - thetaoffsets[k]);
 
                         // Equivalent of: data += cell * phase
                         // Written out explicitly to use fma operations
-                        cmac(datums[k].xx, cell.xx, phase);
-                        cmac(datums[k].yx, cell.yx, phase);
-                        cmac(datums[k].xy, cell.xy, phase);
-                        cmac(datums[k].yy, cell.yy, phase);
+                        cmac(datum.xx, cells[k].xx, phase);
+                        cmac(datum.yx, cells[k].yx, phase);
+                        cmac(datum.xy, cells[k].xy, phase);
+                        cmac(datum.yy, cells[k].yy, phase);
+                    }
+
+                    // Cyclically shuffle the visibility data around the warp
+                    assert(__activemask() == 0xffffffff);
+                    wsign = __shfl(wsign, warpranknext);
+                    u = __shfl(u, warpranknext);
+                    v = __shfl(v, warpranknext);
+                    w = __shfl(w, warpranknext);
+
+                    auto ptr = reinterpret_cast<S*>(&datum);
+                    for (int k {}; k < 4; ++k) {
+                        ptr[k] = __shfl(ptr[k], warpranknext);
                     }
                 }
-            }
 
-            if (irow < rowend) {
-                for (int i {}; i < nchunk && ichan + i < chanend; ++i) {
-                    // If w was negative, we need to take the adjoint before storing the datum value
-                    if (signw == -1) datums[i] = datums[i].adjoint();
+                // If we forced w positive, it's time to take the conjugate transpose
+                if (wsign == -1) datum = datum.adjoint();
 
+                // Write results out to shared memory...
+                __syncthreads();
+                data_cache[threadIdx.x] = datum;
+
+                // ...and then reduce across warps
+                __syncthreads();
+                for (size_t j {warpSize + threadIdx.x}; j < blockDim.x; j += warpSize) {
+                    datum += data_cache[j];
+                }
+
+                // Warp 0 is responsible for finally writing to global memory
+                if (i < nvis && warpid == 0) {
                     switch (degridop) {
                     case DegridOp::Add:
-                        data[irow * lambdas.size() + ichan + i]
-                            += static_cast<ComplexLinearData<float>>(datums[i]);
+                        atomicAdd(
+                            data.data() + irow * rowstride + ichan,
+                            static_cast<ComplexLinearData<float>>(datum)
+                        );
                         break;
                     case DegridOp::Subtract:
-                        data[irow * lambdas.size() + ichan + i]
-                            -= static_cast<ComplexLinearData<float>>(datums[i]);
+                        atomicSub(
+                            data.data() + irow * rowstride + ichan,
+                            static_cast<ComplexLinearData<float>>(datum)
+                        );
                         break;
                     }
                 }
@@ -193,8 +203,8 @@ void degridder(
     auto fn = _degridder<T, S>;
 
     // x-dimension distributes uvdata
-    uint32_t nthreadsx {64};
-    uint32_t nblocksx {1};
+    uint32_t nthreadsx {128};
+    uint32_t nblocksx = cld<size_t>(subgridspec.size(), 8 * nthreadsx);
 
     // y-dimension breaks the subgrid down into 8 blocks
     uint32_t nthreadsy {1};
