@@ -258,7 +258,7 @@ HostArray<T<S>, 2> invert(
                     }, wlayer);
 
                     // Add each subgrid from this w-layer
-                    adder(
+                    adder<T, S>(
                         wlayer, DeviceArray<size_t, 1>(idxs),
                         workunits_d, subgrids_d, gridspec, subgridspec
                     );

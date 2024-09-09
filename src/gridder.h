@@ -172,7 +172,7 @@ void _gridder(
                     );
 
                     // Calculate norm
-                    T norm = matmul(Al, Ar).norm();
+                    S norm = matmul(Al, Ar).norm();
 
                     // Finally, apply norm
                     output /= norm;

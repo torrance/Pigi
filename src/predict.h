@@ -200,7 +200,7 @@ void predict(
                     );
 
                     // Populate subgrid stack with subgrids from this wlayer
-                    splitter(
+                    splitter<T, S>(
                         subgrids_d, wlayer, DeviceArray<size_t, 1>(idxs),
                         workunits_d, gridspec, subgridspec
                     );
