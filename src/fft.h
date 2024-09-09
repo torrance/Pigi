@@ -117,7 +117,7 @@ hipfftHandle fftPlan<thrust::complex<double>>(const GridSpec gridspec, long long
 }
 
 template <>
-hipfftHandle fftPlan<ComplexLinearData<float>>(const GridSpec gridspec, long long) {
+hipfftHandle fftPlan<ComplexLinearData<float>>(const GridSpec gridspec, long long nbatch) {
     hipfftHandle plan {};
     HIPFFTCHECK( hipfftCreate(&plan) );
     HIPFFTCHECK( hipfftSetAutoAllocation(plan, true) );
@@ -127,16 +127,16 @@ hipfftHandle fftPlan<ComplexLinearData<float>>(const GridSpec gridspec, long lon
     long long rank[] {gridspec.Ny, gridspec.Nx}; // COL MAJOR
     HIPFFTCHECK( hipfftXtMakePlanMany(
         plan, 2, rank,
-        rank, 4, 1, HIP_C_32F,
-        rank, 4, 1, HIP_C_32F,
-        4, &worksize, HIP_C_32F
+        rank, 4, gridspec.size() * 4, HIP_C_32F,
+        rank, 4, gridspec.size() * 4, HIP_C_32F,
+        nbatch, &worksize, HIP_C_32F
     ) );
 
     return plan;
 }
 
 template<>
-hipfftHandle fftPlan<ComplexLinearData<double>>(const GridSpec gridspec, long long) {
+hipfftHandle fftPlan<ComplexLinearData<double>>(const GridSpec gridspec, long long nbatch) {
     hipfftHandle plan {};
     HIPFFTCHECK( hipfftCreate(&plan) );
     HIPFFTCHECK( hipfftSetAutoAllocation(plan, true) );
@@ -144,11 +144,12 @@ hipfftHandle fftPlan<ComplexLinearData<double>>(const GridSpec gridspec, long lo
 
     size_t worksize;
     long long rank[] {gridspec.Ny, gridspec.Nx}; // COL MAJOR
+
     HIPFFTCHECK( hipfftXtMakePlanMany(
         plan, 2, rank,
-        rank, 4, 1, HIP_C_64F,
-        rank, 4, 1, HIP_C_64F,
-        4, &worksize, HIP_C_64F
+        rank, 4, gridspec.size() * 4, HIP_C_64F,
+        rank, 4, gridspec.size() * 4, HIP_C_64F,
+        nbatch, &worksize, HIP_C_64F
     ) );
 
     return plan;
@@ -231,6 +232,34 @@ size_t fftEstimate<thrust::complex<double>>(const GridSpec gridspec, long long n
 }
 
 template<>
+size_t fftEstimate<ComplexLinearData<float>>(const GridSpec gridspec, long long nbatch) {
+    size_t worksize {};
+    int rank[] {(int) gridspec.Ny, (int) gridspec.Nx}; // COL MAJOR
+    HIPFFTCHECK( hipfftEstimateMany(
+        2, rank,
+        rank, 4, gridspec.size() * 4,
+        rank, 4, gridspec.size() * 4,
+        HIPFFT_C2C, nbatch, &worksize
+    ) );
+
+    return worksize;
+}
+
+template<>
+size_t fftEstimate<ComplexLinearData<double>>(const GridSpec gridspec, long long nbatch) {
+    size_t worksize {};
+    int rank[] {(int) gridspec.Ny, (int) gridspec.Nx}; // COL MAJOR
+    HIPFFTCHECK( hipfftEstimateMany(
+        2, rank,
+        rank, 4, gridspec.size() * 4,
+        rank, 4, gridspec.size() * 4,
+        HIPFFT_Z2Z, nbatch, &worksize
+    ) );
+
+    return worksize;
+}
+
+template<>
 size_t fftEstimate<StokesI<float>>(const GridSpec gridspec, long long nbatch) {
     size_t worksize {};
     int rank[] {(int) gridspec.Ny, (int) gridspec.Nx}; // COL MAJOR
@@ -282,25 +311,31 @@ void fftExec(hipfftHandle plan, DeviceSpan<thrust::complex<double>, N> grid, int
     fftshift(grid, FFTShift::post);
 }
 
-void fftExec(hipfftHandle plan, DeviceSpan<ComplexLinearData<float>, 2> grid, int direction) {
+template <int N>
+void fftExec(hipfftHandle plan, DeviceSpan<ComplexLinearData<float>, N> grid, int direction) {
     fftshift(grid, FFTShift::pre);
-    hipfftExecC2C(
-        plan,
-        (hipfftComplex*) grid.data(),
-        (hipfftComplex*) grid.data(),
-        direction
-    );
+    for (long long i {}; i < 4; ++i) {
+        hipfftExecC2C(
+            plan,
+            (hipfftComplex*) grid.data() + i,
+            (hipfftComplex*) grid.data() + i,
+            direction
+        );
+    }
     fftshift(grid, FFTShift::post);
 }
 
-void fftExec(hipfftHandle plan, DeviceSpan<ComplexLinearData<double>, 2> grid, int direction) {
+template <int N>
+void fftExec(hipfftHandle plan, DeviceSpan<ComplexLinearData<double>, N> grid, int direction) {
     fftshift(grid, FFTShift::pre);
-    hipfftExecZ2Z(
-        plan,
-        (hipfftDoubleComplex*) grid.data(),
-        (hipfftDoubleComplex*) grid.data(),
-        direction
-    );
+    for (long long i {}; i < 4; ++i) {
+        hipfftExecZ2Z(
+            plan,
+            (hipfftDoubleComplex*) grid.data() + i,
+            (hipfftDoubleComplex*) grid.data() + i,
+            direction
+        );
+    }
     fftshift(grid, FFTShift::post);
 }
 
