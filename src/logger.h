@@ -1,8 +1,10 @@
 #pragma once
 
+#include <ctime>
 #include <mutex>
 
 #include <fmt/color.h>
+#include <fmt/chrono.h>
 #include <fmt/format.h>
 
 class Logger {
@@ -47,7 +49,8 @@ public:
 
         std::lock_guard l(writelock);
         if (static_cast<int>(level) <= static_cast<int>(maxlevel)) {
-            fmt::print(fmt::fg(color), "[{}] ", threadname);
+            std::time_t t = std::time(nullptr);
+            fmt::print(fmt::fg(color), "[{} | {:%H:%M:%S}] ", threadname, fmt::localtime(t));
             fmt::println(msg, std::forward<Args>(args)...);
         }
     }
