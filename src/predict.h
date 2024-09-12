@@ -155,7 +155,7 @@ void predict(
                 long long nrows = rowend - rowstart;
 
                 Logger::debug(
-                    "Invert: batching rows {}-{}/{} ({} workunits)",
+                    "Predict: batching rows {}-{}/{} ({} workunits)",
                     rowstart, rowend, tbl.nrows(), nworkunits
                 );
 
