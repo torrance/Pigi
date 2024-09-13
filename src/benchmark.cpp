@@ -9,6 +9,7 @@
 #include <thread>
 #include <vector>
 
+#include <boost/mpi.hpp>
 #include <catch2/benchmark/catch_benchmark.hpp>
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/catch_template_test_macros.hpp>
@@ -22,6 +23,7 @@
 #include "gridspec.h"
 #include "invert.h"
 #include "memory.h"
+#include "mpi.h"
 #include "outputtypes.h"
 #include "predict.h"
 #include "taper.h"
@@ -279,5 +281,92 @@ TEST_CASE("Kernel size", "[kernelsize]") {
             );
             return 0;
         });
+    }
+}
+
+TEST_CASE("MPI", "[mpi]") {
+    if (TESTDATA.empty()) { SKIP("TESTDATA path not provided"); }
+
+    const size_t ntrials {3};
+
+    GridConfig gridconf {
+        .imgNx = 9000, .imgNy = 9000, .imgScalelm = std::sin(deg2rad(15. / 3600)),
+        .paddingfactor=1.5, .kernelsize = 160, .kernelpadding = 18
+    };
+
+    boost::mpi::environment env(boost::mpi::threading::multiple);
+    boost::mpi::communicator world;
+
+    if (world.size() <= 1) { SKIP("[mpi] test requires > 1 ranks"); }
+
+    auto local = world.split(world.rank() == 0);
+    boost::mpi::intercommunicator intercom(local, 0, world, world.rank() == 0);
+
+    if (world.rank() == 0) {
+        const size_t nworkers = intercom.remote_size();
+
+        // Wait for all workers to load data
+        for (size_t i {}; i < nworkers; ++i) intercom.recv(i, boost::mpi::any_tag);
+        Logger::info("All workers are ready; starting benchmark...");
+
+        HostArray<StokesI<float>, 2> img(gridconf.grid().shape());
+        simple_benchmark(fmt::format("Invert {} workers", nworkers), ntrials, [&] {
+            for (size_t i {}; i < nworkers; ++i) intercom.send(i, 0);
+            for (size_t i {}; i < nworkers; ++i) intercom.recv(i, 0, img);
+            return 0;
+        });
+
+        // Wait for all workers to be ready
+        for (size_t i {}; i < nworkers; ++i) intercom.recv(i, boost::mpi::any_tag);
+
+        simple_benchmark(fmt::format("Predict {} workers", nworkers), ntrials, [&] {
+            for (size_t i {}; i < nworkers; ++i) intercom.send(i, 0, img);
+            for (size_t i {}; i < nworkers; ++i) intercom.recv(i, 0);
+            return 0;
+        });
+
+    } else {
+        Logger::setName(fmt::format("Worker {}/{}", local.rank(), local.size()));
+
+        GPU::getInstance().setID(local.rank() % GPU::getInstance().getCount());
+        Logger::debug("Selecting default GPU to ID={}", GPU::getInstance().getID());
+
+        // Load data
+        const size_t nworkers = local.size();
+
+        // Assume 768 channels
+        const long long nchans = 768;
+        const long long chanwidth = cld<long long>(nchans, nworkers);
+        const long long chanlow = chanwidth * local.rank();
+        const long long chanhigh = std::min(chanlow + chanwidth, nchans);
+
+        DataTable tbl(TESTDATA, {.chanlow=chanlow, .chanhigh=chanhigh});
+        auto workunits = partition(tbl, gridconf);
+
+        auto beam = Beam::Uniform<double>().gridResponse(gridconf.subgrid(), {0, 0}, 0);
+        Aterms aterms(beam);
+
+        // Send ok to queen that we've loaded data
+        intercom.send(0, 0);
+
+        for (size_t i {}; i < ntrials; ++i) {
+            intercom.recv(0, boost::mpi::any_tag);
+            auto img = invert<StokesI, float>(
+                tbl, workunits, gridconf, aterms
+            );
+            intercom.send(0, 0, img);
+        }
+
+        // Send ok to queen
+        HostArray<StokesI<float>, 2> img(gridconf.grid().shape());
+        intercom.send(0, 0);
+
+        for (size_t i {}; i < ntrials; ++i) {
+            intercom.recv(0, 0, img);
+            predict<StokesI, float>(
+                tbl, workunits, img, gridconf, aterms, DegridOp::Add
+            );
+            intercom.send(0, 0);
+        }
     }
 }

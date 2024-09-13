@@ -94,5 +94,5 @@ target_link_libraries(test PRIVATE pthread ${Lcasa_casa} ${Lcasa_tables} ${Lcasa
 
 add_executable(benchmark src/benchmark.cpp)
 target_compile_options(benchmark PRIVATE ${hipcxxflags})
-target_include_directories(benchmark PRIVATE ${Ifmt} ${Igsl} ${Icfitsio} ${Iwcslib} ${Icasa} ${Ihyperbeam} ${Ihipfft} ${Ithrust} ${Irocprim})
-target_link_libraries(benchmark PRIVATE pthread ${Lcasa_casa} ${Lcasa_tables} ${Lcasa_measures} ${Lcasa_ms} ${Lgsl} ${Lcfitsio} ${Lwcslib} ${Lfmt} ${Lhipfft} ${Lhyperbeam} ${Lcufft} BLAS::BLAS Catch2::Catch2WithMain)
+target_include_directories(benchmark PRIVATE ${Ifmt} ${Igsl} ${Icfitsio} ${Iwcslib} ${Icasa} ${Ihyperbeam} ${Ihipfft} ${Ithrust} ${Irocprim} ${MPI_C_INCLUDE_DIRS} ${Boost_INCLUDE_DIRS})
+target_link_libraries(benchmark PRIVATE pthread ${Lcasa_casa} ${Lcasa_tables} ${Lcasa_measures} ${Lcasa_ms} ${Lgsl} ${Lcfitsio} ${Lwcslib} ${Lfmt} ${Lhipfft} ${Lhyperbeam} ${Lcufft} BLAS::BLAS Catch2::Catch2WithMain ${MPI_C_LIBRARIES} boost_mpi boost_serialization)
