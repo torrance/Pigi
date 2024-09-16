@@ -163,6 +163,11 @@ Aterms mkAterms(
 
                 Interval interval(t0, t1);
 
+                Logger::debug(
+                    "Generating MWA beam for time range {}-{} at {} MHz",
+                    t0, t1, freq
+                );
+
                 auto jones = Beam::MWA<double>(interval.mid(), delays).gridResponse(
                     gridspec, gridorigin, freq
                 );
