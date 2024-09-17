@@ -216,7 +216,50 @@ TEMPLATE_TEST_CASE("(De)gridder kernels", "[kernels]", float) {
     }
 }
 
-TEST_CASE("Image size", "[imagesize]") {
+// TEST_CASE("Image size", "[imagesize]") {
+//     if (TESTDATA.empty()) { SKIP("TESTDATA path not provided"); }
+
+//     DataTable tbl(TESTDATA, {.chanlow=0, .chanhigh=384});
+
+//     for (int i : {1, 2, 4, 8, 12, 16, 24, 32, 40, 48}) {
+//         GridConfig gridconf {
+//             .imgNx = 1000 * i, .imgNy = 1000 * i, .imgScalelm = std::sin(deg2rad(15. / 3600 / i)),
+//             .paddingfactor=1, .kernelsize = 96, .kernelpadding = 18
+//         };
+
+//         auto beam = Beam::Uniform<double>().gridResponse(gridconf.subgrid(), {0, 0}, 0);
+//         Aterms aterms(beam);
+
+//         auto workunits = partition(tbl, gridconf);
+//         fmt::println("Nworkunits: {}", workunits.size());
+
+//         simple_benchmark(fmt::format("Invert {} px", i * 1000), 3, [&] {
+//             MemTracker::getInstance().reset();
+//             MemTracker::getInstance().observe();
+//             MemTracker::getInstance().print();
+//             auto img = invert<StokesI, float>(
+//                 tbl, workunits, gridconf, aterms
+//             );
+//             MemTracker::getInstance().print();
+//             return 0;
+//         });
+
+//         HostArray<StokesI<float>, 2> skymap(gridconf.grid().shape());
+
+//         simple_benchmark(fmt::format("Predict {} px", i * 1000), 3, [&] {
+//             MemTracker::getInstance().reset();
+//             MemTracker::getInstance().observe();
+//             MemTracker::getInstance().print();
+//             predict<StokesI, float>(
+//                 tbl, workunits, skymap, gridconf, aterms, DegridOp::Add
+//             );
+//             MemTracker::getInstance().print();
+//             return 0;
+//         });
+//     }
+// }
+
+TEST_CASE("Workunits", "[workunits]") {
     if (TESTDATA.empty()) { SKIP("TESTDATA path not provided"); }
 
     DataTable tbl(TESTDATA, {.chanlow=0, .chanhigh=384});
