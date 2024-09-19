@@ -475,8 +475,8 @@ TEMPLATE_TEST_CASE_SIG(
 
     HostArray<double, 2> diff(img.shape());
     for (size_t i {}; auto& px : diff) {
-        px = expected[i].I.imag();
-        px -= static_cast<StokesI<double>>(img[i]).I.imag();
+        px = expected[i].I.real();
+        px -= img[i].I.real();
         ++i;
     }
     // save("diff.fits", diff, gridspec, {0, 0});
