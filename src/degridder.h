@@ -144,7 +144,7 @@ void _degridder(
                     w = __shfl(w, warpranknext);
 
                     auto ptr = reinterpret_cast<S*>(&datum);
-                    for (int k {}; k < 4; ++k) {
+                    for (int k {}; k < 8; ++k) {
                         ptr[k] = __shfl(ptr[k], warpranknext);
                     }
                 }
