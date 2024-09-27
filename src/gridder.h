@@ -12,7 +12,7 @@
 #include "util.h"
 #include "workunit.h"
 
-template <typename T, typename S>
+template <typename T, typename S, uint32_t cachesize, uint32_t nchunk>
 __global__ __launch_bounds__(128)
 void _gridder(
     DeviceSpan<T, 3> subgrids,
@@ -25,27 +25,22 @@ void _gridder(
     const DeviceSpan<S, 2> subtaper,
     const DeviceSpan<DeviceSpan<ComplexLinearData<double>, 2>, 1> alefts,
     const DeviceSpan<DeviceSpan<ComplexLinearData<double>, 2>, 1> arights,
-    const size_t rowoffset,
+    const uint32_t rowoffset,
     const bool makePSF
 ) {
-    // To increase the computational intensity of the kernel (just slightly),
-    // we compute $nchunk pixels at once.
-    const int nchunk {4};
-
     // Set up the shared mem cache
-    const size_t cachesize {128};
     __shared__ char _cache[
         cachesize * (sizeof(ComplexLinearData<float>) + sizeof(S))
     ];
     auto data_cache = reinterpret_cast<ComplexLinearData<float>*>(_cache);
     auto invlambdas_cache = reinterpret_cast<S*>(data_cache + cachesize);
 
-    const size_t subgridsize = subgridspec.size();
+    const uint32_t subgridsize = subgridspec.size();
 
     // y block index denotes workunit
-    for (size_t wid {blockIdx.y}; wid < workunits.size(); wid += gridDim.y) {
+    for (uint32_t wid {blockIdx.y}; wid < workunits.size(); wid += gridDim.y) {
         // Get workunit information
-        size_t rowstart, rowend, chanstart, chanend;
+        uint32_t rowstart, rowend, chanstart, chanend;
         S u0, v0, w0;
         {
             const auto workunit = workunits[wid];
@@ -58,15 +53,15 @@ void _gridder(
             w0 = workunit.w;
         }
 
-        const size_t rowstride = lambdas.size();
+        const uint32_t rowstride = lambdas.size();
 
         for (
-            size_t idx = blockIdx.x * blockDim.x * nchunk + threadIdx.x * nchunk;
-            idx < blockDim.x * nchunk * cld<size_t>(subgridsize, blockDim.x * nchunk);
+            uint32_t idx = blockIdx.x * blockDim.x * nchunk + threadIdx.x * nchunk;
+            idx < blockDim.x * nchunk * cld<uint32_t>(subgridsize, blockDim.x * nchunk);
             idx += blockDim.x * gridDim.x * nchunk
         ) {
             std::array<std::array<S, 3>, nchunk> lmns;
-            for (int i {}; i < nchunk; ++i) {
+            for (uint32_t i {}; i < nchunk; ++i) {
                 auto [l, m] = subgridspec.linearToSky<S>(idx + i);
                 S n {ndash(l, m)};
                 lmns[i] = {l, m, n};
@@ -74,7 +69,7 @@ void _gridder(
 
             std::array<ComplexLinearData<S>, nchunk> cells {};
 
-            for (size_t irow {rowstart}; irow < rowend; ++irow) {
+            for (uint32_t irow {rowstart}; irow < rowend; ++irow) {
                 auto uvw = uvws[irow];
                 S u = std::get<0>(uvw), v = std::get<1>(uvw), w = std::get<2>(uvw);
 
@@ -83,7 +78,7 @@ void _gridder(
                 // thetaoffset, on the other hand, can be fully computed at this point.
                 std::array<S, nchunk> thetas;
                 std::array<S, nchunk> thetaoffsets;
-                for (int i {}; i < nchunk; ++i) {
+                for (uint32_t i {}; i < nchunk; ++i) {
                     auto [l, m, n] = lmns[i];
                     thetas[i] = {2 * ::pi_v<S> * (u * l + v * m + w * n)};  // [meters]
                     thetaoffsets[i] = {2 * ::pi_v<S> * (u0 * l + v0 * m + w0 * n)};  // [dimensionless]
@@ -92,16 +87,16 @@ void _gridder(
                 // We force all data to have positive w values to reduce the number of w layers,
                 // since V(u, v, w) = V(-u, -v, -w)^H
                 // The data has already been partitioned making this assumption.
-                if (w < 0) for (int i {}; i < nchunk; ++i) {
+                if (w < 0) for (uint32_t i {}; i < nchunk; ++i) {
                     thetas[i] *= -1;
                 }
 
-                for (size_t ichan {chanstart}; ichan < chanend; ichan += cachesize) {
-                    const size_t N = min(cachesize, chanend - ichan);
+                for (uint32_t ichan {chanstart}; ichan < chanend; ichan += cachesize) {
+                    const uint32_t N = min(cachesize, chanend - ichan);
 
                     // Populate cache
                     __syncthreads();
-                    for (size_t j = threadIdx.x; j < N; j += blockDim.x) {
+                    for (uint32_t j = threadIdx.x; j < N; j += blockDim.x) {
                         // Copy global values to shared memory cache
                         data_cache[j] = data[irow * rowstride + ichan + j];
                         invlambdas_cache[j] = 1 / static_cast<S>(lambdas[ichan + j]);
@@ -130,14 +125,14 @@ void _gridder(
                     __syncthreads();
 
                     // Read through cache
-                    for (size_t j {}; j < N; ++j) {
+                    for (uint32_t j {}; j < N; ++j) {
                         // Retrieve value of uvdatum from the cache
                         // This shared mem load is broadcast across the warp and so we
                         // don't need to worry about bank conflicts
                         const auto datum = static_cast<ComplexLinearData<S>>(data_cache[j]);
                         const auto invlamda = invlambdas_cache[j];
 
-                        for (int i {}; i < nchunk; ++i) {
+                        for (uint32_t i {}; i < nchunk; ++i) {
                             const auto phase = cis(thetas[i] * invlamda - thetaoffsets[i]);
 
                             // Equivalent of: cell += uvdata.data * phase
@@ -151,7 +146,7 @@ void _gridder(
                 }
             }
 
-            for (int i {}; i < nchunk && idx + i < subgridsize; ++i) {
+            for (uint32_t i {}; i < nchunk && idx + i < subgridsize; ++i) {
                 T output;
                 if (makePSF) {
                     // No beam correction for PSF
@@ -199,20 +194,20 @@ void gridder(
     const DeviceSpan<S, 2> subtaper,
     const DeviceSpan<DeviceSpan<ComplexLinearData<double>, 2>, 1> alefts,
     const DeviceSpan<DeviceSpan<ComplexLinearData<double>, 2>, 1> arights,
-    const size_t rowoffset,
+    const uint32_t rowoffset,
     const bool makePSF
 ) {
     auto timer = Timer::get("invert::batch::gridder");
 
     // x-dimension corresponds to cells in the subgrid
     uint32_t nthreadsx {128}; // hardcoded to match the cache size
-    uint32_t nblocksx = cld<size_t>(subgridspec.size(), 4 * nthreadsx);
+    uint32_t nblocksx = cld<uint32_t>(subgridspec.size(), 4 * nthreadsx);
 
     // y-dimension corresponds to workunit index
     uint32_t nthreadsy {1};
-    uint32_t nblocksy = std::min<size_t>(workunits.size(), 65535);
+    uint32_t nblocksy = std::min<uint32_t>(workunits.size(), 65535);
 
-    auto fn = _gridder<T, S>;
+    auto fn = _gridder<T, S, 64, 4>;
     hipLaunchKernelGGL(
         fn, dim3(nblocksx, nblocksy, 1), dim3(nthreadsx, nthreadsy, 1),
         0, hipStreamPerThread,

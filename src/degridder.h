@@ -14,7 +14,7 @@
 
 enum class DegridOp {Subtract, Add};
 
-template <typename T, typename S>
+template <typename T, typename S, uint32_t cachesize, uint32_t nchunk>
 __global__ __launch_bounds__(128)
 void _degridder(
     DeviceSpan<ComplexLinearData<float>, 2> data,
@@ -26,30 +26,25 @@ void _degridder(
     const DeviceSpan<DeviceSpan<ComplexLinearData<double>, 2>, 1> alefts,
     const DeviceSpan<DeviceSpan<ComplexLinearData<double>, 2>, 1> arights,
     const GridSpec subgridspec,
-    const size_t rowoffset,
+    const uint32_t rowoffset,
     const DegridOp degridop
 ) {
-    // To increase the computational intensity of the kernel (just slightly),
-    // we compute $nchunk visibilities at once.
-    const int nchunk {8};
-
     // Set up the shared mem cache
-    const size_t cachesize {128};
     __shared__ char _cache[cachesize * sizeof(ComplexLinearData<S>)];
     auto data_cache = reinterpret_cast<ComplexLinearData<S>*>(_cache);
 
-    const size_t subgridsize = subgridspec.size();
-    const size_t rowstride = lambdas.size();
+    const uint32_t subgridsize = subgridspec.size();
+    const uint32_t rowstride = lambdas.size();
 
     // Calculate warp properties
-    const unsigned int warpid = threadIdx.x / warpSize;
-    const unsigned int warprank = threadIdx.x % warpSize;
-    const unsigned int warpranknext = (warprank + 1) % warpSize;
+    const uint32_t warpid = threadIdx.x / warpSize;
+    const uint32_t warprank = threadIdx.x % warpSize;
+    const uint32_t warpranknext = (warprank + 1) % warpSize;
 
     // y block index denotes workunit
-    for (size_t wid {blockIdx.y}; wid < workunits.size(); wid += gridDim.y) {
+    for (uint32_t wid {blockIdx.y}; wid < workunits.size(); wid += gridDim.y) {
         // Get workunit information
-        size_t rowstart, rowend, chanstart, chanend;
+        uint32_t rowstart, rowend, chanstart, chanend;
         S u0, v0, w0;
         {
             const auto workunit = workunits[wid];
@@ -62,13 +57,13 @@ void _degridder(
             w0 = workunit.w;
         }
 
-        size_t nchans = chanend - chanstart;
-        size_t nrows = rowend - rowstart;
-        size_t nvis = nrows * nchans;
+        uint32_t nchans = chanend - chanstart;
+        uint32_t nrows = rowend - rowstart;
+        uint32_t nvis = nrows * nchans;
 
         for (
-            size_t idx = blockIdx.x * blockDim.x * nchunk + threadIdx.x * nchunk;
-            idx < blockDim.x * nchunk * cld<size_t>(subgridsize, blockDim.x * nchunk);
+            uint32_t idx = blockIdx.x * blockDim.x * nchunk + threadIdx.x * nchunk;
+            idx < blockDim.x * nchunk * cld<uint32_t>(subgridsize, blockDim.x * nchunk);
             idx += blockDim.x * gridDim.x * nchunk
         ) {
             // Load pixel cells
@@ -76,7 +71,7 @@ void _degridder(
             std::array<std::array<S, 3>, nchunk> lmns;
             std::array<S, nchunk> thetaoffsets;
 
-            for (int i {}; i < nchunk && idx + i < subgridsize; ++i) {
+            for (uint32_t i {}; i < nchunk && idx + i < subgridsize; ++i) {
                 cells[i] = static_cast<ComplexLinearData<S>>(
                     subgrids[subgridsize * wid + idx + i]
                 );
@@ -98,12 +93,12 @@ void _degridder(
 
             // Cycle over $warpSize visibilities until exhausted (rounded up to multiple
             // of $warpSize)
-            const size_t N = cld<size_t>(nvis, warpSize) * warpSize;
-            for (size_t i {warprank}; i < N; i += warpSize) {
-                size_t irow = rowstart + i / nchans;
-                size_t ichan = chanstart + i % nchans;
+            const uint32_t N = cld<uint32_t>(nvis, warpSize) * warpSize;
+            for (uint32_t i {warprank}; i < N; i += warpSize) {
+                uint32_t irow = rowstart + i / nchans;
+                uint32_t ichan = chanstart + i % nchans;
 
-                int wsign {};
+                short wsign {};
                 S u {}, v {}, w {};
                 ComplexLinearData<S> datum {};
                 if (i < nvis) {
@@ -123,8 +118,8 @@ void _degridder(
 
                 // Reduce the data by daisy-chaining the visbilities around
                 // the warp group, each reducing its own set of pixels onto the datum
-                for (size_t j {}; j < warpSize; ++j) {
-                    for (int k {}; k < nchunk; ++k) {
+                for (uint32_t j {}; j < warpSize; ++j) {
+                    for (uint32_t k {}; k < nchunk; ++k) {
                         auto [l, m, n] = lmns[k];
                         auto phase = cis(u * l + v * m + w * n - thetaoffsets[k]);
 
@@ -144,7 +139,7 @@ void _degridder(
                     w = __shfl(w, warpranknext);
 
                     auto ptr = reinterpret_cast<S*>(&datum);
-                    for (int k {}; k < 8; ++k) {
+                    for (uint32_t k {}; k < 8; ++k) {
                         ptr[k] = __shfl(ptr[k], warpranknext);
                     }
                 }
@@ -158,7 +153,7 @@ void _degridder(
 
                 // ...and then reduce across warps
                 __syncthreads();
-                for (size_t j {warpSize + threadIdx.x}; j < blockDim.x; j += warpSize) {
+                for (uint32_t j {warpSize + threadIdx.x}; j < blockDim.x; j += warpSize) {
                     datum += data_cache[j];
                 }
 
@@ -195,20 +190,20 @@ void degridder(
     const DeviceSpan<DeviceSpan<ComplexLinearData<double>, 2>, 1> alefts,
     const DeviceSpan<DeviceSpan<ComplexLinearData<double>, 2>, 1> arights,
     const GridSpec subgridspec,
-    const size_t rowoffset,
+    const uint32_t rowoffset,
     const DegridOp degridop
 ) {
     auto timer = Timer::get("predict::batch::degridder");
 
-    auto fn = _degridder<T, S>;
+    auto fn = _degridder<T, S, 128, 8>;
 
     // x-dimension distributes uvdata
     uint32_t nthreadsx {128};
-    uint32_t nblocksx = cld<size_t>(subgridspec.size(), 8 * nthreadsx);
+    uint32_t nblocksx = cld<uint32_t>(subgridspec.size(), 8 * nthreadsx);
 
     // y-dimension breaks the subgrid down into 8 blocks
     uint32_t nthreadsy {1};
-    uint32_t nblocksy = std::min<size_t>(workunits.size(), 65535);
+    uint32_t nblocksy = std::min<uint32_t>(workunits.size(), 65535);
 
     hipLaunchKernelGGL(
         fn, dim3(nblocksx, nblocksy), dim3(nthreadsx, nthreadsy), 0, hipStreamPerThread,
