@@ -30,9 +30,9 @@ void _gridder(
 ) {
     // Set up the shared mem cache
     __shared__ char _cache[
-        cachesize * (sizeof(ComplexLinearData<float>) + sizeof(S))
+        cachesize * (sizeof(ComplexLinearData<S>) + sizeof(S))
     ];
-    auto data_cache = reinterpret_cast<ComplexLinearData<float>*>(_cache);
+    auto data_cache = reinterpret_cast<ComplexLinearData<S>*>(_cache);
     auto invlambdas_cache = reinterpret_cast<S*>(data_cache + cachesize);
 
     const uint32_t subgridsize = subgridspec.size();
@@ -98,7 +98,9 @@ void _gridder(
                     __syncthreads();
                     for (uint32_t j = threadIdx.x; j < N; j += blockDim.x) {
                         // Copy global values to shared memory cache
-                        data_cache[j] = data[irow * rowstride + ichan + j];
+                        data_cache[j] = static_cast<ComplexLinearData<S>>(
+                            data[irow * rowstride + ichan + j]
+                        );
                         invlambdas_cache[j] = 1 / static_cast<S>(lambdas[ichan + j]);
 
                         auto& datum = data_cache[j];
@@ -129,7 +131,7 @@ void _gridder(
                         // Retrieve value of uvdatum from the cache
                         // This shared mem load is broadcast across the warp and so we
                         // don't need to worry about bank conflicts
-                        const auto datum = static_cast<ComplexLinearData<S>>(data_cache[j]);
+                        const auto datum = data_cache[j];
                         const auto invlamda = invlambdas_cache[j];
 
                         for (uint32_t i {}; i < nchunk; ++i) {
