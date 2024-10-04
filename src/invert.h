@@ -70,7 +70,7 @@ HostArray<T<S>, 2> invert(
             maxmem / 1024. / 1024. / 1024.
         );
         if (maxmem < 1024llu * 1024 * 1024) Logger::warning(
-            "Memory per thead is less than 1 GB (free {:.3f} GB)",
+            "Memory per thread is less than 1 GB (free {:.3f} GB)",
             maxmem / 1024. / 1024. / 1024.
         );
 
