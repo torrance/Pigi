@@ -21,22 +21,26 @@ template <>
 double kbalpha<double>() { return 10; }
 
 template <typename T>
-HostArray<T, 2> kaiserbessel(const GridSpec gridspec, const double alpha = kbalpha<T>()) {
-    // Create one-dimensional tapers first. The 2D taper is a product of these 1D tapers.
-    std::vector<double> xDim(gridspec.Nx);
-    std::vector<double> yDim(gridspec.Ny);
+std::vector<T> kaiserbessel1D(const size_t length) {
+    auto alpha = kbalpha<T>();
+    T norm = std::cyl_bessel_i(0, ::pi_v<T> * alpha);
 
-    double pi {::pi_v<double>};
-    double norm = std::cyl_bessel_i(0, pi * alpha);
-
-    for (auto oneDim : {&xDim, &yDim}) {
-        for (size_t i {}; i < oneDim->size(); ++i) {
-            double x {static_cast<double>(i) / oneDim->size() - 0.5};
-            (*oneDim)[i] = std::cyl_bessel_i(
-                0, pi * alpha * std::sqrt(1 - 4 * x * x)
-            ) / norm;
-        }
+    std::vector<T> xs(length);
+    for (size_t i {}; i < length; ++i) {
+        double x {static_cast<T>(i) / length - 0.5};
+        xs[i] = std::cyl_bessel_i(
+            0, ::pi_v<T> * alpha * std::sqrt(1 - 4 * x * x)
+        ) / norm;
     }
+
+    return xs;
+}
+
+template <typename T>
+HostArray<T, 2> kaiserbessel2D(const GridSpec gridspec) {
+    // Create one-dimensional tapers first. The 2D taper is a product of these 1D tapers.
+    auto xDim = kaiserbessel1D<T>(gridspec.Nx);
+    auto yDim = kaiserbessel1D<T>(gridspec.Ny);
 
     // Create the full taper as the product of the 1D tapers.
     HostArray<T, 2> taper {gridspec.Nx, gridspec.Ny};
@@ -55,10 +59,10 @@ double psfw_c() {
 }
 
 template <>
-double psfw_c<float>() { return 4 * ::pi_v<double> / 2; }
+double psfw_c<float>() { return 0 * ::pi_v<double> / 2; }
 
 template <>
-double psfw_c<double>() { return 20 * ::pi_v<double> / 2; }
+double psfw_c<double>() { return 18 * ::pi_v<double> / 2; }
 
 template <typename T>
 std::vector<T> pswf1D(const size_t length) {
