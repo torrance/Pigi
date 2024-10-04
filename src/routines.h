@@ -326,9 +326,9 @@ void cleanWorker(
             );
 
             // Create psf
-            Logger::info("Constructing PSF...");
             auto psf = [&] {
                 std::lock_guard l(writelock);
+                Logger::info("Constructing PSF...");
                 return invert<thrust::complex, P>(tbl, workunits, gridconf, aterms, true);
             }();
             queen.send(0, fieldid, psf);
@@ -342,9 +342,9 @@ void cleanWorker(
             psf = resize(psf, gridconf.grid(), gridspecPsf);
 
             // Initial inversion
-            Logger::info("Constructing dirty image...");
             auto residual = [&] {
                 std::lock_guard l(writelock);
+                Logger::info("Constructing dirty image...");
                 return invert<StokesI, P>(tbl, workunits, gridconf, aterms);
             }();
             queen.send(0, fieldid, residual);
@@ -398,6 +398,7 @@ void cleanWorker(
                         minorComponents[j] /= beamPower[j];
                     }
 
+                    std::lock_guard l(writelock);
                     Logger::info(
                         "Removing clean components from data... (major cycle {})", i
                     );
