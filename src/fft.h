@@ -290,24 +290,24 @@ size_t fftEstimate<StokesI<double>>(const GridSpec gridspec, long long nbatch) {
 template <int N>
 void fftExec(hipfftHandle plan, DeviceSpan<thrust::complex<float>, N> grid, int direction) {
     fftshift(grid, FFTShift::pre);
-    hipfftExecC2C(
+    HIPFFTCHECK( hipfftExecC2C(
         plan,
         (hipfftComplex*) grid.data(),
         (hipfftComplex*) grid.data(),
         direction
-    );
+    ) );
     fftshift(grid, FFTShift::post);
 }
 
 template <int N>
 void fftExec(hipfftHandle plan, DeviceSpan<thrust::complex<double>, N> grid, int direction) {
     fftshift(grid, FFTShift::pre);
-    hipfftExecZ2Z(
+    HIPFFTCHECK( hipfftExecZ2Z(
         plan,
         (hipfftDoubleComplex*) grid.data(),
         (hipfftDoubleComplex*) grid.data(),
         direction
-    );
+    ) );
     fftshift(grid, FFTShift::post);
 }
 
@@ -315,12 +315,12 @@ template <int N>
 void fftExec(hipfftHandle plan, DeviceSpan<ComplexLinearData<float>, N> grid, int direction) {
     fftshift(grid, FFTShift::pre);
     for (long long i {}; i < 4; ++i) {
-        hipfftExecC2C(
+        HIPFFTCHECK( hipfftExecC2C(
             plan,
             (hipfftComplex*) grid.data() + i,
             (hipfftComplex*) grid.data() + i,
             direction
-        );
+        ) );
     }
     fftshift(grid, FFTShift::post);
 }
@@ -329,12 +329,12 @@ template <int N>
 void fftExec(hipfftHandle plan, DeviceSpan<ComplexLinearData<double>, N> grid, int direction) {
     fftshift(grid, FFTShift::pre);
     for (long long i {}; i < 4; ++i) {
-        hipfftExecZ2Z(
+        HIPFFTCHECK( hipfftExecZ2Z(
             plan,
             (hipfftDoubleComplex*) grid.data() + i,
             (hipfftDoubleComplex*) grid.data() + i,
             direction
-        );
+        ) );
     }
     fftshift(grid, FFTShift::post);
 }
@@ -342,23 +342,23 @@ void fftExec(hipfftHandle plan, DeviceSpan<ComplexLinearData<double>, N> grid, i
 template <int N>
 void fftExec(hipfftHandle plan, DeviceSpan<StokesI<float>, N> grid, int direction) {
     fftshift(grid, FFTShift::pre);
-    hipfftExecC2C(
+    HIPFFTCHECK( hipfftExecC2C(
         plan,
         (hipfftComplex*) grid.data(),
         (hipfftComplex*) grid.data(),
         direction
-    );
+    ) );
     fftshift(grid, FFTShift::post);
 }
 
 template <int N>
 void fftExec(hipfftHandle plan, DeviceSpan<StokesI<double>, N> grid, int direction) {
     fftshift(grid, FFTShift::pre);
-    hipfftExecZ2Z(
+    HIPFFTCHECK( hipfftExecZ2Z(
         plan,
         (hipfftDoubleComplex*) grid.data(),
         (hipfftDoubleComplex*) grid.data(),
         direction
-    );
+    ) );
     fftshift(grid, FFTShift::post);
 }
