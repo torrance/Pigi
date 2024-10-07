@@ -198,16 +198,15 @@ HostArray<T, 2> convolve(const HostSpan<T, 2> img, const HostSpan<S, 2> kernel) 
     auto kernelPadded = resize(kernel, gridspec, gridspecPadded);
 
     // Create fft plans
-    auto planImg = fftPlan<T>(gridspecPadded);
-    auto planKernel = fftPlan<S>(gridspecPadded);
+    auto plan = fftPlan<T>(gridspecPadded);
 
     // Send to device
     DeviceArray<T, 2> img_d {imgPadded};
     DeviceArray<S, 2> kernel_d {kernelPadded};
 
     // FT forward
-    fftExec(planImg, img_d, HIPFFT_FORWARD);
-    fftExec(planKernel, kernel_d, HIPFFT_FORWARD);
+    fftExec(plan, img_d, HIPFFT_FORWARD);
+    fftExec(plan, kernel_d, HIPFFT_FORWARD);
 
     // Multiply in FT domain and normalize
     map([=] __device__ (auto& img, auto kernel) {
@@ -215,13 +214,12 @@ HostArray<T, 2> convolve(const HostSpan<T, 2> img, const HostSpan<S, 2> kernel) 
     }, img_d, kernel_d);
 
     // FT backward
-    fftExec(planImg, img_d, HIPFFT_BACKWARD);
-
-    HIPFFTCHECK( hipfftDestroy(planImg) );
-    HIPFFTCHECK( hipfftDestroy(planKernel) );
+    fftExec(plan, img_d, HIPFFT_BACKWARD);
 
     // Copy back from device
     copy(imgPadded, img_d);
+
+    HIPFFTCHECK( hipfftDestroy(plan) );
 
     // Remove padding and return
     return resize(imgPadded, gridspecPadded, gridspec);
