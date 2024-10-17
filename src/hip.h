@@ -2,10 +2,11 @@
 
 #include <mutex>
 
-#include <fmt/format.h>
-
 #include <hip/hip_runtime.h>
 #include <hipfft/hipfft.h>
+#include <fmt/format.h>
+
+#include "logger.h"
 
 #define HIPCHECK(res) { hipcheck(res, __FILE__, __LINE__); }
 
@@ -59,16 +60,33 @@ public:
         return *this;
     }
 
-    int getCount() {
+    int getCount() const {
         int gpucount;
         HIPCHECK( hipGetDeviceCount(&gpucount) );
         return gpucount;
+    }
+
+    void setmem(size_t mem) {
+        if (mem > getmem()) Logger::warning(
+            "Setting GPU memory to more than available ({:.1f} GB > {:.1f} GB)",
+            mem / 1e9, getmem() / 1e9
+        );
+        this->mem = mem;
+    }
+
+    size_t getmem() const {
+        if (mem > 0) return mem;
+
+        hipDeviceProp_t prop {};
+        HIPCHECK( hipGetDeviceProperties(&prop, id) );
+        return prop.totalGlobalMem;
     }
 
 private:
     GPU() = default;
     std::recursive_mutex m;
     int id {};
+    size_t mem {};
 };
 
 template <typename T>

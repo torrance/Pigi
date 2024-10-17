@@ -243,6 +243,9 @@ void cleanWorker(
     GPU::getInstance().setID(rank % GPU::getInstance().getCount());
     Logger::debug("Selecting default GPU to ID={}", GPU::getInstance().getID());
 
+    GPU::getInstance().setmem(static_cast<size_t>(config.gpumem * 1e9));
+    Logger::debug("Maximum GPU mem = {:.1f} GB", GPU::getInstance().getmem() / 1e9);
+
     const auto gridconfs = config.gridconfs();
 
     // Calculate the channel bounds for each rank

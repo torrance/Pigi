@@ -44,6 +44,7 @@ namespace boost {
             ar & payload.fields;
             ar & payload.kernelsize;
             ar & payload.paddingfactor;
+            ar & payload.gpumem;
             ar & payload.majorgain;
             ar & payload.minorgain;
             ar & payload.cleanThreshold;

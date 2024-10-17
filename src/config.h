@@ -195,6 +195,7 @@ struct Config {
     int kernelsize {128};
     int kernelpadding {18};
     double paddingfactor {1.5};
+    double gpumem {0};
 
     // Clean parameters
     float majorgain {0.5};
@@ -238,6 +239,9 @@ struct Config {
         }
         if (paddingfactor < 1) {
             throw std::runtime_error("idg.paddingfactor must be >= 1");
+        }
+        if (gpumem < 0) {
+            throw std::runtime_error("idg.gpumem must be >= 0");
         }
         if (!(0 < majorgain && majorgain <= 1)) {
             throw std::runtime_error("clean.majorgain must be 0 < value <= 1");
@@ -301,6 +305,7 @@ struct Config {
             this->kernelpadding = find_or(tbl, "kernelpadding", this->kernelpadding);
             this->kernelsize = find_or(tbl, "kernelsize", this->kernelsize);
             this->paddingfactor = find_or(tbl, "paddingfactor", this->paddingfactor);
+            this->gpumem = find_or(tbl, "gpumem", this->gpumem);
         }
 
         if (v.contains("clean")) {
@@ -357,6 +362,11 @@ struct Config {
                     " by other errors in the data.",
                     " Options: [32, 64]",
                 }}},
+                {"gpumem", {this->gpumem, {
+                    " The maximum limit of GPU memory requested per worker. For best",
+                    " performance, set this as large as possible. If this is set to 0,",
+                    " Pigi will use all available memory. [0 <= float: GB]",
+                }}}
             }},
             {"beam", {
                 {"maxduration", {this->maxDuration, {

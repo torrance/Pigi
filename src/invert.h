@@ -60,18 +60,24 @@ HostArray<T<S>, 2> invert(
     {
         auto timer = Timer::get("invert::batching");
 
-        size_t maxmem = [] () -> size_t {
-            size_t free, total;
-            HIPCHECK( hipMemGetInfo(&free, &total));
-            return (free * 0.8) / 2;
-        }();
-        Logger::debug(
-            "Setting maxmem per thread to {:.3f} GB",
-            maxmem / 1024. / 1024. / 1024.
-        );
-        if (maxmem < 1024llu * 1024 * 1024) Logger::warning(
-            "Memory per thread is less than 1 GB (free {:.3f} GB)",
-            maxmem / 1024. / 1024. / 1024.
+        // Compute available memory after account for wlayer and wplan
+        long long maxmem = GPU::getInstance().getmem() * 0.9;
+        {
+            size_t worksize;
+            hipfftGetSize(wplan, &worksize);
+            maxmem -= worksize;
+        }
+        maxmem -= wlayer.size() * sizeof(T<S>);
+
+        // We have 2 threads doing the batching
+        maxmem /= 2;
+
+        // Hard minimum: 128 MB per thread
+        maxmem = std::max(maxmem, 128'000'000ll);
+
+        Logger::debug("Setting maxmem per thread to {:.3f} GB", maxmem / 1e9);
+        if (maxmem < 1'000'000'000) Logger::warning(
+            "Memory per thread is less than 1 GB ({:.3f} GB)", maxmem / 1e9
         );
 
         // Precompute memory
@@ -112,8 +118,8 @@ HostArray<T<S>, 2> invert(
             size_t mem = nworkunits * (workunitmem + fftmem) + nrows * rowmem;
 
             if (
-                mem > maxmem ||                       // maximum batch size
-                wkend == workunits.size()             // final iteration
+                std::cmp_greater(mem, maxmem) ||  // maximum batch size
+                wkend == workunits.size()         // final iteration
             ) {
                 batches.push({wkstart, wkend, rowstart, rowend});
                 wkstart = wkend;
