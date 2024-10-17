@@ -116,17 +116,13 @@ void cleanQueen(const Config& config, boost::mpi::intercommunicator hive) {
                     gridconf.grid(), config.phasecenter.value()
                 );
 
-                // Further crop psfs so that all pixels > 0.2 * (1 - majorgain)
-                // are included in cutout. We use this smaller window to speed up PSF fitting and
-                // cleaning.
-                gridspecPsf = cropPsf(
-                    psfCombined, gridconf.grid(), 0.2 * (1 - config.majorgain)
+                // Crop psfs to hardcoded 256 x 256 pixels. We use this smaller window to
+                // speed up PSF fitting and cleaning.
+                gridspecPsf = GridSpec::fromScaleLM(
+                    std::min(gridconf.grid().Nx, 256ll),
+                    std::min(gridconf.grid().Ny, 256ll),
+                    gridconf.grid().scalel
                 );
-
-                // Send gridspecPsf to workers; they will use this to crop their own psfs
-                for (const int src : srcs) {
-                    hive.send(src, fieldid, gridspecPsf);
-                }
 
                 for (auto& psf : psfs) {
                     psf = resize(psf, gridconf.grid(), gridspecPsf);
@@ -340,8 +336,13 @@ void cleanWorker(
                 gridconf.grid(), config.phasecenter.value()
             );
 
-            GridSpec gridspecPsf;
-            queen.recv(0, fieldid, gridspecPsf);
+            // Resize psf for cleaning to hardcoded 256 x 256 pixels to be used
+            // later for psf fitting
+            auto gridspecPsf = GridSpec::fromScaleLM(
+                std::min(gridconf.grid().Nx, 256ll),
+                std::min(gridconf.grid().Ny, 256ll),
+                gridconf.grid().scalel
+            );
             psf = resize(psf, gridconf.grid(), gridspecPsf);
 
             // Initial inversion
