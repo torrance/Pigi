@@ -55,18 +55,24 @@ public:
     };
 
     // Timer is a singleton
-    static StopWatch get(std::string label) {
-        static Timer instance;
-        return StopWatch(&instance.counters[label]);
-    }
-
     // Delete all other copy/move constructors
     Timer(const Timer&) = delete;
     Timer(Timer&&) = delete;
     Timer& operator=(const Timer&) = delete;
     Timer& operator=(Timer&&) = delete;
 
-    ~Timer() {
+    ~Timer() { print(); }
+
+    static StopWatch get(std::string label) {
+        return StopWatch(&Timer::getInstance().counters[label]);
+    }
+
+    static void reset() {
+        Timer::getInstance().print();
+        Timer::getInstance().counters.clear();
+    }
+
+    void print() {
         if (counters.empty()) return;
 
         // Sort labels
@@ -88,6 +94,11 @@ public:
 private:
     Timer() = default;
     std::unordered_map<std::string, Counter> counters;
+
+    static Timer& getInstance() {
+        static Timer instance;
+        return instance;
+    }
 };
 
 #else
@@ -101,6 +112,7 @@ public:
     };
 
     static StopWatch get(std::string) { return StopWatch(); }
+    static void reset() {}
 };
 
 #endif

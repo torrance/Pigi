@@ -262,32 +262,38 @@ TEMPLATE_TEST_CASE("(De)gridder kernels", "[kernels]", float) {
 TEST_CASE("Workunits", "[workunits]") {
     if (TESTDATA.empty()) { SKIP("TESTDATA path not provided"); }
 
-    DataTable tbl(TESTDATA, {.chanlow=0, .chanhigh=384});
+    DataTable tbl(TESTDATA, {});
 
-    for (int i : {1, 2, 4, 8, 12, 16, 24, 32, 40, 48}) {
+    for (float f: {1., 2., 3., 4., 7., 8., 8.75, 9.35, 9.5, 9.6, 9.62, 9.64}) {
         GridConfig gridconf {
-            .imgNx = 1000 * i, .imgNy = 1000 * i, .imgScalelm = std::sin(deg2rad(15. / 3600 / i)),
+            .imgNx = 2000, .imgNy = 2000, .imgScalelm = f * std::sin(deg2rad(15. / 3600)),
             .paddingfactor=1, .kernelsize = 96, .kernelpadding = 18
         };
 
         auto beam = Beam::Uniform<double>().gridResponse(gridconf.subgrid(), {0, 0}, 0);
         Aterms aterms(beam);
 
-        auto workunits = partition(tbl, gridconf);
-        fmt::println("Nworkunits: {}", workunits.size());
+        auto workunits = partition(tbl, gridconf, 0);
+        fmt::println("f: {} Nworkunits: {}", f, workunits.size());
 
-        simple_benchmark(fmt::format("Invert {} px", i * 1000), 5, [&] {
-            return invert<StokesI, float>(
+        Timer::reset();
+
+        simple_benchmark(fmt::format("Invert nworkunits={}", workunits.size()), 3, [&] {
+            auto img = invert<StokesI, float>(
                 tbl, workunits, gridconf, aterms
             );
+            Timer::reset();
+            return 0;
         });
 
         HostArray<StokesI<float>, 2> skymap(gridconf.grid().shape());
 
-        simple_benchmark(fmt::format("Predict {} px", i * 1000), 5, [&] {
+        Timer::reset();
+        simple_benchmark(fmt::format("Predict nworkunits={}", workunits.size()), 3, [&] {
             predict<StokesI, float>(
                 tbl, workunits, skymap, gridconf, aterms, DegridOp::Add
             );
+            Timer::reset();
             return 0;
         });
     }
