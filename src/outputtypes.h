@@ -110,12 +110,12 @@ struct alignas(16) LinearData {
     // Frobenius norm
     __host__ __device__
     inline auto norm() const{
-        return sqrt(
+        return sqrt((
             xx.real() * xx.real() + xx.imag() * xx.imag() +
             yx.real() * yx.real() + yx.imag() * yx.imag() +
             xy.real() * xy.real() + xy.imag() * xy.imag() +
             yy.real() * yy.real() + yy.imag() * yy.imag()
-        );
+        ) / 2);
     }
 
     inline auto isfinite() const {
