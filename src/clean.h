@@ -3,6 +3,7 @@
 #include <array>
 #include <cmath>
 #include <chrono>
+#include <execution>
 #include <optional>
 #include <ranges>
 #include <tuple>
@@ -124,25 +125,39 @@ auto _major(
             }
         }
 
-        // stddev = sqrt(variance) == sqrt(sum over N (val_N - mean)^2 / N)
-        // So we need caculate the mean and variance first
-        S mean {};
-        for (auto& val : imgCombined) { mean += val; }
-        mean /= imgCombined.size();
-
-        S variance {};
-        for (auto& val : imgCombined) { variance += std::pow(val - mean, 2); }
-        variance /= imgCombined.size();
-
-        // Finally we have the noise estimate
-        noise = std::sqrt(variance);
-
         // Find initial maxVal
         maxVal = std::abs(*std::max_element(
+            std::execution::par_unseq,
             imgCombined.begin(), imgCombined.end(), [] (auto& lhs, auto& rhs) {
                 return std::abs(lhs) < std::abs(rhs);
             }
         ));
+
+        // Calculate noise as median absolute deviation from the median (MADM).
+        // MADM is a robust estimator of noise in the presence of outliers.
+        // 1. First find median value
+        std::nth_element(
+            std::execution::par_unseq,
+            imgCombined.begin(),
+            imgCombined.begin() + imgCombined.size() / 2,
+            imgCombined.end()
+        );
+        S median = imgCombined[imgCombined.size() / 2];
+
+        // 2. Compute absolute deviation from this median
+        for (auto& val : imgCombined) val = std::abs(val - median);
+
+        // 3. Then find median value of this result
+        std::nth_element(
+            std::execution::par_unseq,
+            imgCombined.begin(),
+            imgCombined.begin() + imgCombined.size() / 2,
+            imgCombined.end()
+        );
+        S madm = imgCombined[imgCombined.size() / 2];
+
+        // 4. Gaussian noise = 1.4826 * MADM
+        noise = 1.4826 * madm;
     }
 
     // Set threshold as max of the possible methods
