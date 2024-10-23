@@ -114,32 +114,33 @@ TEST_CASE("FFT and central shifts", "[fft]") {
     }
 }
 
-// TEST_CASE("Toml configuration", "[toml]") {
-//     // For now, we just test that:
-//     // 1. the config object can be converted to toml
-//     // 2. the toml can be converted back to Config
-//     // 3. and all parameter values are retained
+TEST_CASE("Toml configuration", "[toml]") {
+    // For now, we just test that:
+    // 1. the config object can be converted to toml
+    // 2. the toml can be converted back to Config
+    // 3. and all parameter values are retained
 
-//     Config config1 {
-//         .loglevel = Logger::Level::debug,
-//         .chanlow = 33, .chanhigh = 56, .channelsOut = 5, .maxDuration = 32,
-//         .msets = {"/path1.fits", "/path2.fits"},
-//         .weight = "briggs", .robust = 1.3,
-//         .scale = 25, .phasecenter = RaDec{0.5, 0.5},
-//         .fields = {{.Nx = 1234, .Ny = 4568, .projectioncenter = RaDec{0.5, 0.5}}},
-//         .precision = 64, .kernelsize = 156, .kernelpadding = 9, .paddingfactor = 1.23,
-//         .majorgain = 0.354, .minorgain = 0.2343,
-//         .cleanThreshold = 543154, .autoThreshold = 431.54, .nMajor = 432, .nMinor = 5426543,
-//         .spectralparams = 123
-//     };
+    Config config1 {
+        .loglevel = Logger::Level::debug, .datacolumn = DataTable::DataColumn::corrected,
+        .chanlow = 33, .chanhigh = 56, .channelsOut = 5,
+        .msets = {"/path1.fits", "/path2.fits"}, .maxDuration = 32,
+        .phasecorrections = {"/phases1.fits", "/phases2.fits"},
+        .weight = "briggs", .robust = 1.3,
+        .scale = 25, .phasecenter = RaDec{0.5, 0.5},
+        .fields = {{.Nx = 1234, .Ny = 4568, .projectioncenter = RaDec{0.5, 0.5}}},
+        .precision = 64, .kernelsize = 156, .kernelpadding = 9, .paddingfactor = 1.23,
+        .gpumem = 25.6, .majorgain = 0.354, .minorgain = 0.2343,
+        .cleanThreshold = 543154, .autoThreshold = 431.54, .nMajor = 432, .nMinor = 5426543,
+        .spectralparams = 123
+    };
 
-//     auto configtext = std::istringstream(toml::format(
-//         toml::basic_value<toml::preserve_comments>(config1)
-//     ));
-//     Config config2 = toml::get<Config>(toml::parse(configtext));
+    auto configtext = std::istringstream(toml::format(
+        toml::basic_value<toml::preserve_comments>(config1)
+    ));
+    Config config2 = toml::expect<Config>(toml::parse(configtext)).unwrap();
 
-//     REQUIRE(config1 == config2);
-// }
+    REQUIRE(config1 == config2);
+}
 
 TEST_CASE("Coordinates", "[coordinates]") {
     RaDec gridorigin {.ra=deg2rad(156.), .dec=deg2rad(-42.)};
