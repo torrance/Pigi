@@ -25,6 +25,7 @@
 #include "memory.h"
 #include "mpi.h"
 #include "outputtypes.h"
+#include "partition.h"
 #include "predict.h"
 #include "taper.h"
 #include "workunit.h"
@@ -93,12 +94,15 @@ TEST_CASE("MSet reading and partitioning", "[io]") {
         .kernelsize = 96, .kernelpadding = 18
     };
 
+    auto beam = Beam::Uniform<double>().gridResponse(gridconf.subgrid(), {}, {});
+    auto aterms = Aterms(beam);
+
     auto tbl = simple_benchmark("MSet read", 1, [&] {
         return DataTable(TESTDATA, {.chanlow=0, .chanhigh=192});
     });
 
     auto workunits = simple_benchmark("Partition", 5, [&] {
-        return partition(tbl, gridconf, 30);
+        return partition(tbl, gridconf, aterms);
     });
 }
 
@@ -116,7 +120,7 @@ TEMPLATE_TEST_CASE("Invert", "[invert]", float, double) {
     Aterms aterms(beam);
 
     DataTable tbl(TESTDATA, {.chanlow=0, .chanhigh=384});
-    auto workunits = partition(tbl, gridconf);
+    auto workunits = partition(tbl, gridconf, aterms);
 
     simple_benchmark("Invert", 5, [&] {
         return invert<StokesI, TestType>(
@@ -139,7 +143,7 @@ TEMPLATE_TEST_CASE("Predict", "[predict]", float, double) {
     Aterms aterms(beam);
 
     DataTable tbl(TESTDATA, {.chanlow=0, .chanhigh=384});
-    auto workunits = partition(tbl, gridconf);
+    auto workunits = partition(tbl, gridconf, aterms);
 
     // Create skymap
     HostArray<StokesI<TestType>, 2> skymap {gridconf.grid().shape()};
@@ -163,16 +167,18 @@ TEMPLATE_TEST_CASE("(De)gridder kernels", "[kernels]", float) {
             .kernelsize = kpx, .kernelpadding = 12
         };
 
-        auto workunits = partition(tbl, gridconf);
-
         // Create uvws
         HostArray<std::array<double, 3>, 1> uvws_h(tbl.nrows());
         for (size_t i {}; auto m : tbl.metadata()) uvws_h[i++] = {m.u, m.v, m.w};
 
-        // Create aterms
+        // Create aterms and partition
         auto beam_h = Beam::Uniform<double>().gridResponse(
             gridconf.subgrid(), {0, 0}, 0
         );
+        Aterms aterms(beam_h);
+        auto workunits = partition(tbl, gridconf, aterms);
+
+        // Copy aterms to device
         DeviceArray<ComplexLinearData<double>, 2> beam_d(beam_h);
         HostArray<DeviceSpan<ComplexLinearData<double>, 2>, 1> aterms_h(workunits.size());
         for (auto& aterm : aterms_h) aterm = beam_d;
@@ -273,7 +279,7 @@ TEST_CASE("Workunits", "[workunits]") {
         auto beam = Beam::Uniform<double>().gridResponse(gridconf.subgrid(), {0, 0}, 0);
         Aterms aterms(beam);
 
-        auto workunits = partition(tbl, gridconf, 0);
+        auto workunits = partition(tbl, gridconf, aterms);
         fmt::println("f: {} Nworkunits: {}", f, workunits.size());
 
         Timer::reset();
@@ -313,7 +319,7 @@ TEST_CASE("Kernel size", "[kernelsize]") {
         auto beam = Beam::Uniform<double>().gridResponse(gridconf.subgrid(), {0, 0}, 0);
         Aterms aterms(beam);
 
-        auto workunits = partition(tbl, gridconf);
+        auto workunits = partition(tbl, gridconf, aterms);
         fmt::println("Nworkunits: {}", workunits.size());
 
         simple_benchmark(fmt::format("Invert kernelsize: {} nvis: {}", kernelsize, tbl.size()), 5, [&] {
@@ -389,11 +395,11 @@ TEST_CASE("MPI", "[mpi]") {
         const long long chanlow = chanwidth * local.rank();
         const long long chanhigh = std::min(chanlow + chanwidth, nchans);
 
-        DataTable tbl(TESTDATA, {.chanlow=chanlow, .chanhigh=chanhigh});
-        auto workunits = partition(tbl, gridconf);
-
         auto beam = Beam::Uniform<double>().gridResponse(gridconf.subgrid(), {0, 0}, 0);
         Aterms aterms(beam);
+
+        DataTable tbl(TESTDATA, {.chanlow=chanlow, .chanhigh=chanhigh});
+        auto workunits = partition(tbl, gridconf, aterms);
 
         // Send ok to queen that we've loaded data
         intercom.send(0, 0);

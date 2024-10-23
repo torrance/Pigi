@@ -20,6 +20,7 @@
 #include "invert.h"
 #include "logger.h"
 #include "mpi.h"
+#include "partition.h"
 #include "predict.h"
 #include "psf.h"
 #include "taper.h"
@@ -313,7 +314,7 @@ void cleanWorker(
             }();
 
             // Partition data
-            auto workunits = partition(tbl, gridconf, config.maxDuration);
+            auto workunits = partition(tbl, gridconf, aterms);
 
             Logger::info("Constructing average beam...");
             auto beamPower = aterms.template average<StokesI, P>(tbl, workunits, gridconf);

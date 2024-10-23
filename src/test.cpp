@@ -19,6 +19,7 @@
 #include "logger.h"
 #include "memory.h"
 #include "psf.h"
+#include "partition.h"
 #include "predict.h"
 #include "taper.h"
 #include "util.h"
@@ -268,7 +269,9 @@ TEST_CASE("Measurement Set & Partition", "[mset]") {
     };
 
     DataTable tbl(TESTDATA, {});
-    auto workunits = partition(tbl, gridconf);
+    auto beam = Beam::Uniform<double>().gridResponse(gridconf.subgrid(), {}, 0);
+    Aterms aterms(beam);
+    auto workunits = partition(tbl, gridconf, aterms);
 
     size_t n {};
     for (auto& workunit : workunits) {
@@ -372,7 +375,7 @@ TEST_CASE("Widefield inversion", "[widefield]") {
     );
 
     fmt::println("IDG imaging...");
-    auto workunits = partition(tbl, gridconf);
+    auto workunits = partition(tbl, gridconf, aterms);
     auto img = invert<StokesI, P>(tbl, workunits, gridconf, aterms);
 
     fmt::println("Direct DT imaging...");
@@ -462,7 +465,7 @@ TEMPLATE_TEST_CASE_SIG(
 
     auto aterm = beam.gridResponse(gridconf.subgrid(), gridorigin, freq);
     Aterms aterms(aterm);
-    auto workunits = partition(tbl, gridconf);
+    auto workunits = partition(tbl, gridconf, aterms);
     auto img = invert<StokesI, Q>(tbl, workunits, gridconf, aterms);
     // fits::save("image.fits", img, gridspec, {0, 0});
 
@@ -559,7 +562,7 @@ TEMPLATE_TEST_CASE_SIG(
         auto aterm = beam.gridResponse(gridconf.subgrid(), phaseCenter, freq);
         Aterms aterms(aterm);
 
-        auto workunits = partition(tbl, gridconf);
+        auto workunits = partition(tbl, gridconf, aterms);
 
         predict<StokesI, Q>(
             tbl, workunits, skymap, gridconf, aterms, DegridOp::Add
