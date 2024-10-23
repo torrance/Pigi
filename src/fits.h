@@ -3,12 +3,15 @@
 #include <array>
 #include <stdexcept>
 #include <string_view>
+#include <type_traits>
 
 #include <fitsio.h>
 #include <wcslib/wcslib.h>
 
 #include "memory.h"
 #include "outputtypes.h"
+
+namespace fits {
 
 template <typename S>
 int getbitpix();
@@ -137,3 +140,70 @@ void save(
     }
     save(fname, imgreal, gridspec, phasecenter);
 }
+
+template <typename S, int N>
+requires (std::is_same_v<S, float> || std::is_same_v<S, double>)
+HostArray<S, N> open(const std::string& path) {
+    // Open the file
+    int status {};
+    fitsfile* fptr {};
+    fits_open_image(&fptr, path.c_str(), READONLY, &status);
+
+    // Get file metadata
+    int bitpix, naxis;
+    std::array<long, N> naxes;
+    fits_get_img_param(fptr, N,  &bitpix, &naxis, naxes.data(), &status);
+
+    if (status !=  0) {
+        char fitsmsg[FLEN_STATUS] {};
+        fits_get_errstatus(status, fitsmsg);
+
+        auto msg = fmt::format("An error occurred opening {}: {}", path, fitsmsg);
+        throw std::runtime_error(msg);
+    }
+
+    // Validate file metadata fits our expectations
+    if (naxis != N) throw std::runtime_error(fmt::format(
+        "Opening {} failed: expected image with {} dimensions, got {}", path, N, naxis
+    ));
+
+    if (bitpix != -32 && bitpix != -64) throw std::runtime_error(fmt::format(
+        "Opening {} failed: expected image with single or double precision data, "
+        " got {}-bit integer data instead", path, bitpix
+    ));
+
+    // Create data array with axes that match FITS file
+    std::array<long long, N> dims;
+    for (size_t i {}; long n : naxes) dims[i++] = n;
+    HostArray<S, N> data(dims);
+
+    // Read data into array
+    int datatype = std::is_same_v<S, float> ? TFLOAT : TDOUBLE;
+    std::array<long, N> fpixel;
+    fpixel.fill(1);  // 1-indexed
+    long nelements = 1;
+    for (long n : naxes) nelements *= n;
+    S nulval {};
+    int anynul;
+
+    fits_read_pix(
+        fptr, datatype, fpixel.data(), nelements, &nulval,
+        data.data(), &anynul, &status
+    );
+
+    if (status != 0) {
+        char fitsmsg[FLEN_STATUS] {};
+        fits_get_errstatus(status, fitsmsg);
+
+        auto msg = fmt::format("An error occurred opening {}: {}", path, fitsmsg);
+        throw std::runtime_error(msg);
+    }
+
+    if (nulval != 0) throw std::runtime_error(fmt::format(
+        "Opening {} failed: NULL values detected in data", path
+    ));
+
+    return data;
+}
+
+}  // namespace fits

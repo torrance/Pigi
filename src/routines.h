@@ -90,7 +90,7 @@ void cleanQueen(const Config& config, boost::mpi::intercommunicator hive) {
                 }
                 beamPowerCombined /= StokesI<P>(hivesize);
 
-                save(
+                fits::save(
                     fmt::format("beam-field{:02d}.fits", fieldid + 1), beamPowerCombined,
                     gridconf.grid(), config.phasecenter.value()
                 );
@@ -111,7 +111,7 @@ void cleanQueen(const Config& config, boost::mpi::intercommunicator hive) {
                     psfCombined += psf;
                 }
                 psfCombined /= thrust::complex<P>(hivesize);
-                save(
+                fits::save(
                     fmt::format("psf-field{:02d}.fits", fieldid + 1), psfCombined,
                     gridconf.grid(), config.phasecenter.value()
                 );
@@ -148,7 +148,7 @@ void cleanQueen(const Config& config, boost::mpi::intercommunicator hive) {
                 }
                 dirtyCombined /= StokesI<P>(hivesize);
 
-                save(
+                fits::save(
                     fmt::format("dirty-field{:02d}.fits", fieldid + 1), dirtyCombined,
                     gridconf.grid(), config.phasecenter.value()
                 );
@@ -205,15 +205,15 @@ void cleanQueen(const Config& config, boost::mpi::intercommunicator hive) {
             imageCombined += residualCombined;
 
             Logger::info("Writing out files...");
-            save(
+            fits::save(
                 fmt::format("residual-field{:02d}.fits", fieldid + 1), residualCombined,
                 gridconf.grid(), config.phasecenter.value()
             );
-            save(
+            fits::save(
                 fmt::format("components-field{:02d}.fits", fieldid + 1), componentsCombined,
                 gridconf.grid(), config.phasecenter.value()
             );
-            save(
+            fits::save(
                 fmt::format("image-field{:02d}.fits", fieldid + 1), imageCombined,
                 gridconf.grid(), config.phasecenter.value()
             );
@@ -319,7 +319,7 @@ void cleanWorker(
             auto beamPower = aterms.template average<StokesI, P>(tbl, workunits, gridconf);
 
             queen.send(0, fieldid, beamPower);
-            if (hivesize > 1) save(
+            if (hivesize > 1) fits::save(
                 fmt::format("beam-field{:02d}-{:02d}.fits", fieldid + 1, rank + 1), beamPower,
                 gridconf.grid(), config.phasecenter.value()
             );
@@ -331,7 +331,7 @@ void cleanWorker(
                 return invert<thrust::complex, P>(tbl, workunits, gridconf, aterms, true);
             }();
             queen.send(0, fieldid, psf);
-            if (hivesize > 1) save(
+            if (hivesize > 1) fits::save(
                 fmt::format("psf-field{:02d}-{:02d}.fits", fieldid + 1, rank + 1), psf,
                 gridconf.grid(), config.phasecenter.value()
             );
@@ -353,7 +353,7 @@ void cleanWorker(
             }();
             queen.send(0, fieldid, residual);
 
-            if (hivesize > 1) save(fmt::format(
+            if (hivesize > 1) fits::save(fmt::format(
                 "dirty-field{:02d}-{:02d}.fits", fieldid + 1, rank + 1
             ), residual, gridconf.grid(), config.phasecenter.value());
 
@@ -432,10 +432,10 @@ void cleanWorker(
 
             // Write out data
             if (hivesize > 1) {
-                save(fmt::format(
+                fits::save(fmt::format(
                     "residual-field{:02d}-{:02d}.fits", fieldid + 1, rank + 1
                 ), residual, gridconf.grid(), config.phasecenter.value());
-                save(fmt::format(
+                fits::save(fmt::format(
                     "components-field{:02}-{:02d}.fits", fieldid + 1, rank + 1
                 ), components, gridconf.grid(), config.phasecenter.value());
 
@@ -448,7 +448,7 @@ void cleanWorker(
                 }();
                 image += residual;
 
-                save(fmt::format(
+                fits::save(fmt::format(
                     "image-field{:02}-{:02d}.fits", fieldid + 1, rank + 1
                 ), image, gridconf.grid(), config.phasecenter.value());
             }

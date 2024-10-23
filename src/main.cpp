@@ -39,29 +39,21 @@ int main(int argc, char** argv) {
         parser.options(desc).positional(pdesc);
 
         po::variables_map vm;
-
-        auto printheader = [] (auto& out) {
-            fmt::println(out, "Pigi: the parallel interferomentric GPU imager");
-            fmt::println(
-                out,
-                "Usage: [--help] [--config config.toml] [--makeconfig] [mset, [mset...]]\n"
-            );
-        };
-
         try {
             po::store(parser.run(), vm);
             po::notify(vm);
         } catch (const po::error& e) {
-            printheader(stderr);
-            std::cerr << e.what() << std::endl;
-
+            Logger::error("Command line argument error: {}", e.what());
             boost::mpi::broadcast(world, ok, 0);
             return -1;
         }
 
         if (vm.count("help")) {
-            printheader(stdout);
-            std::cout << desc << std::endl;
+            fmt::println("Pigi: the parallel interferomentric GPU imager");
+            fmt::println(
+                "Usage: [--help] [--config config.toml] [--makeconfig] [mset, [mset...]]"
+            );
+            std::cout << std::endl << desc << std::endl;
 
             boost::mpi::broadcast(world, ok, 0);
             return 0;
@@ -76,16 +68,12 @@ int main(int argc, char** argv) {
         }
 
         if (vm.count("config")) {
-            auto v = toml::expect<Config>(
-                toml::parse(vm["config"].as<std::string>())
-            );
-            if (v.is_ok()) {
+            try {
+                auto v = toml::expect<Config>(toml::parse(vm["config"].as<std::string>()));
                 config = v.unwrap();
-            } else {
-                printheader(stderr);
-                fmt::println(stderr, "An error occurred processing the configuration file");
-                fmt::println(stderr, "{}", v.unwrap_err());
-
+            } catch (const std::exception& e) {
+                Logger::error("An error occurred processing the configuration file");
+                Logger::error("{}", e.what());
                 boost::mpi::broadcast(world, ok, 0);
                 return -1;
             }
@@ -114,29 +102,34 @@ int main(int argc, char** argv) {
             config.chanhigh = tbl.chanhigh();
             config.phasecenter = tbl.phasecenter();
         } else {
-            printheader(stderr);
-            fmt::println(stderr, "No msets provided; doing nothing");
-
+            Logger::error("No msets provided; doing nothing");
             boost::mpi::broadcast(world, ok, 0);
             return -1;
+        }
+
+        // Ensure phasecorrections load, if they exist
+        for (const auto& path : config.phasecorrections) {
+            try {
+                fits::open<double, 3>(path);
+            } catch (const std::runtime_error& e) {
+                Logger::error("{}", e.what());
+                boost::mpi::broadcast(world, ok, 0);
+                return -1;
+            }
         }
 
         // Validate the configuration file
         try {
             config.validate();
         } catch (const std::runtime_error& e) {
-            printheader(stderr);
-            fmt::println(stderr, "An error occurred validating the configuration");
-            std::cerr << e.what() << std::endl;
-
+            Logger::error("An error occurred validating the configuration");
+            Logger::error("{}", e.what());
             boost::mpi::broadcast(world, ok, 0);
             return -1;
         }
 
         if (world.size() != config.channelsOut + 1) {
-            printheader(stderr);
-            fmt::println(
-                stderr,
+            Logger::error(
                 "Error: pigi must be started with (1 + channelsout={}) MPI processes; {} detected",
                 config.channelsOut, world.size()
             );

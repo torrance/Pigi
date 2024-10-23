@@ -400,9 +400,9 @@ TEST_CASE("Widefield inversion", "[widefield]") {
         diff[i] -= img[j];
     }
 
-    save("image.fits", img, gridconf.grid(), tbl.phasecenter());
-    save("expected.fits", expected, gridspec, tbl.phasecenter());
-    save("diff.fits", diff, gridspec, tbl.phasecenter());
+    fits::save("image.fits", img, gridconf.grid(), tbl.phasecenter());
+    fits::save("expected.fits", expected, gridspec, tbl.phasecenter());
+    fits::save("diff.fits", diff, gridspec, tbl.phasecenter());
 
     P maxdiff {-1};
     for (size_t i {}; i < diff.size(); ++i) {
@@ -463,7 +463,7 @@ TEMPLATE_TEST_CASE_SIG(
     Aterms aterms(aterm);
     auto workunits = partition(tbl, gridconf);
     auto img = invert<StokesI, Q>(tbl, workunits, gridconf, aterms);
-    // save("image.fits", img, gridspec, {0, 0});
+    // fits::save("image.fits", img, gridspec, {0, 0});
 
     // Calculate expected at double precision
     HostArray<StokesI<double>, 2> expected {gridspec.shape()};
@@ -471,7 +471,7 @@ TEMPLATE_TEST_CASE_SIG(
         auto jones = beam.gridResponse(gridspec, gridorigin, freq);
         idft<StokesI, double>(expected, tbl, jones, gridspec, true);
     }
-    // save("expected.fits", expected, gridspec, {0, 0});
+    // fits::save("expected.fits", expected, gridspec, {0, 0});
 
     HostArray<double, 2> diff(img.shape());
     for (size_t i {}; auto& px : diff) {
@@ -479,7 +479,7 @@ TEMPLATE_TEST_CASE_SIG(
         px -= img[i].I.real();
         ++i;
     }
-    // save("diff.fits", diff, gridspec, {0, 0});
+    // fits::save("diff.fits", diff, gridspec, {0, 0});
 
     double maxdiff {-1};
     double rms {};
@@ -598,7 +598,7 @@ TEMPLATE_TEST_CASE_SIG(
         Beam::Uniform<Q>().gridResponse(gridspec, phaseCenter, freq),
         gridspec
     );
-    // save("image.fits", imgMap, gridspec, {0, 0});
+    // fits::save("image.fits", imgMap, gridspec, {0, 0});
 
     HostArray<StokesI<double>, 2> expectedMap {gridspec.shape()};
     idft<StokesI, double>(
@@ -606,7 +606,7 @@ TEMPLATE_TEST_CASE_SIG(
         Beam::Uniform<double>().gridResponse(gridspec, phaseCenter, freq),
         gridspec
     );
-    // save("expected.fits", expectedMap, gridspec, {0, 0});
+    // fits::save("expected.fits", expectedMap, gridspec, {0, 0});
 
     double maxdiff {-1};
     for (size_t i {}; i < gridspec.size(); ++i) {

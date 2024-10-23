@@ -36,6 +36,7 @@ namespace boost {
             ar & payload.channelsOut;
             ar & payload.maxDuration;
             ar & payload.msets;
+            ar & payload.phasecorrections;
             ar & payload.datacolumn;
             ar & payload.weight;
             ar & payload.robust;
