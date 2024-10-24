@@ -21,7 +21,6 @@
 BOOST_IS_BITWISE_SERIALIZABLE(GridConfig);
 BOOST_IS_BITWISE_SERIALIZABLE(GridSpec);
 BOOST_IS_BITWISE_SERIALIZABLE(RaDec);
-BOOST_IS_BITWISE_SERIALIZABLE(Config::Field);
 BOOST_IS_BITWISE_SERIALIZABLE(clean::LMpx);
 BOOST_IS_BITWISE_SERIALIZABLE(DataTable::FreqRange);
 
@@ -36,7 +35,6 @@ namespace boost {
             ar & payload.channelsOut;
             ar & payload.maxDuration;
             ar & payload.msets;
-            ar & payload.phasecorrections;
             ar & payload.datacolumn;
             ar & payload.weight;
             ar & payload.robust;
@@ -52,6 +50,14 @@ namespace boost {
             ar & payload.autoThreshold;
             ar & payload.nMajor;
             ar & payload.nMinor;
+        }
+
+        template <typename Archive>
+        void serialize(Archive& ar, Config::Field& payload, const unsigned) {
+            ar & payload.Nx;
+            ar & payload.Ny;
+            ar & payload.projectioncenter;
+            ar & payload.phasecorrections;
         }
 
         template <typename Archive, typename T, int N>

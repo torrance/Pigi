@@ -108,13 +108,15 @@ int main(int argc, char** argv) {
         }
 
         // Ensure phasecorrections load, if they exist
-        for (const auto& path : config.phasecorrections) {
-            try {
-                fits::open<double, 3>(path);
-            } catch (const std::runtime_error& e) {
-                Logger::error("{}", e.what());
-                boost::mpi::broadcast(world, ok, 0);
-                return -1;
+        for (const auto& field : config.fields) {
+            for (const auto& path : field.phasecorrections) {
+                try {
+                    fits::open<double, 3>(path);
+                } catch (const std::runtime_error& e) {
+                    Logger::error("{}", e.what());
+                    boost::mpi::broadcast(world, ok, 0);
+                    return -1;
+                }
             }
         }
 

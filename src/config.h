@@ -116,6 +116,7 @@ struct Config {
         long Nx {1000};
         long Ny {1000};
         std::optional<RaDec> projectioncenter {};
+        std::vector<std::string> phasecorrections {};
 
         bool operator==(const Field&) const = default;
 
@@ -146,6 +147,9 @@ struct Config {
             if (v.contains("projectioncenter")) {
                 this->projectioncenter = toml::find<RaDec>(v, "projectioncenter");
             }
+            if (v.contains("phasecorrections")) {
+                this->phasecorrections = find_or(v, "phasecorrections", this->phasecorrections);
+            }
         }
 
         toml::basic_value<toml::preserve_comments> into_toml() const {
@@ -165,6 +169,11 @@ struct Config {
                     " phase center and can be omitted (or commented out) to use the phase",
                     " center value. [float: degree]",
                 })},
+                {"phasecorrections", {toml::value(this->phasecorrections), std::vector<std::string>{
+                    " Additional phase terms to be applied to each antenna during imaging.",
+                    " Must be a fits array of the form [time x nants x L x L], where L is",
+                    " the kernel size. [array of paths]"
+                }}},
             };
         }
     };
@@ -180,9 +189,8 @@ struct Config {
     int channelsOut {1};
     std::vector<std::string> msets {};
 
-    // Aterms
+    // Beam
     double maxDuration {};
-    std::vector<std::string> phasecorrections {};
 
     // Data weighting
     std::string weight {"uniform"};
@@ -325,7 +333,6 @@ struct Config {
         if (v.contains("beam")) {
             const auto tbl = toml::find(v, "beam");
             this->maxDuration = find_or(tbl, "maxduration", this->maxDuration);
-            this->phasecorrections = find_or(tbl, "phasecorrections", this->phasecorrections);
         }
 
         if (v.contains("image")) {
@@ -378,11 +385,6 @@ struct Config {
                     " Lower values will result in more accurate imaging, but will also fragment",
                     " the data set, resulting in longer imaging times. 0 indicates maximum",
                     " duration. [0 <= float: second]",
-                }}},
-                {"phasecorrections", {toml::value(this->phasecorrections), std::vector<std::string>{
-                    " Additional phase terms to be applied to each antenna during imaging.",
-                    " Must be a fits array of the form [time x nants x L x L], where L is",
-                    " the kernel size. [array of paths]"
                 }}},
             }},
             {"clean", {
