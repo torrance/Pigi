@@ -302,22 +302,18 @@ void cleanWorker(
                 "Using padded grid {} x {} px", gridconf.padded().Nx, gridconf.padded().Ny
             );
 
-            auto aterms = [&] {
-                // Segfaults occur without out this lock - due to Casacore issues
-                // TODO: Remove this lock and add at a lower level
-                std::lock_guard l(writelock);
-                return mkAterms(
-                    msets,
-                    gridconf.subgrid(), config.maxDuration,
-                    config.phasecenter.value(), tbl.midfreq()
-                );
-            }();
+            Aterms::CombinedCorrections<P> aterms(
+                msets,
+                gridconf.subgrid(), config.maxDuration,
+                config.phasecenter.value(), tbl.midfreq(),
+                config.fields[fieldid].phasecorrections
+            );
 
             // Partition data
             auto workunits = partition(tbl, gridconf, aterms);
 
             Logger::info("Constructing average beam...");
-            auto beamPower = aterms.template average<StokesI, P>(tbl, workunits, gridconf);
+            auto beamPower = aterms.template average<StokesI>(tbl, workunits, gridconf);
 
             queen.send(0, fieldid, beamPower);
             if (hivesize > 1) fits::save(

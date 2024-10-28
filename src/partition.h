@@ -10,8 +10,10 @@
 #include "timer.h"
 #include "workunit.h"
 
-std::vector<WorkUnit> partition(DataTable& tbl, GridConfig gridconf, const Aterms& aterms) {
+template <typename P>
+std::vector<WorkUnit> partition(DataTable& tbl, GridConfig gridconf, Aterms::Interface<P>& aterms) {
     auto timer = Timer::get("partition");
+    using aterm_t = Aterms::Interface<P>::aterm_t;
 
     // WorkUnit candidate
     // We use candidates as an adhoc structure to store WorkUnits-to-be, before we
@@ -22,11 +24,11 @@ std::vector<WorkUnit> partition(DataTable& tbl, GridConfig gridconf, const Aterm
         double w0, wmax;                             // in wavelengths
         size_t rowstart;
         size_t chanstart {}, chanend {};
-        Aterms::aterm_t aleft, aright;
+        aterm_t aleft, aright;
 
         WorkUnitCandidate(
             double upx, double vpx, double w0, double maxspanpx, double wmax,
-            size_t row, size_t chan, Aterms::aterm_t aleft, Aterms::aterm_t aright
+            size_t row, size_t chan, aterm_t aleft, aterm_t aright
         ) : ulowpx(std::floor(upx)), uhighpx(std::ceil(upx)),
             vlowpx(std::floor(vpx)), vhighpx(std::ceil(vpx)),
             maxspanpx(maxspanpx), w0(w0), wmax(wmax),
@@ -34,7 +36,7 @@ std::vector<WorkUnit> partition(DataTable& tbl, GridConfig gridconf, const Aterm
 
         bool add(
             double upx, double vpx, double w,
-            Aterms::aterm_t aleft, Aterms::aterm_t aright, size_t chan
+            aterm_t aleft, aterm_t aright, size_t chan
         ) {
             if (add(upx, vpx, w, aleft, aright)) {
                 chanend = std::max(chanend, chan);
@@ -46,7 +48,7 @@ std::vector<WorkUnit> partition(DataTable& tbl, GridConfig gridconf, const Aterm
 
         bool add(
             double upx, double vpx, double w,
-            Aterms::aterm_t aleft, Aterms::aterm_t aright
+            aterm_t aleft, aterm_t aright
         ) {
             // Ensure identical aterm is used
             if (aleft != this->aleft || aright != this->aright) return false;
@@ -154,8 +156,8 @@ std::vector<WorkUnit> partition(DataTable& tbl, GridConfig gridconf, const Aterm
         currentbaseline = tbl.metadata(irow).baseline;
 
         // Get left and right Aterms for this time and baseline pair
-        auto aleft = aterms.get(tbl.metadata(irow).time, currentbaseline.a);
-        auto aright = aterms.get(tbl.metadata(irow).time, currentbaseline.b);
+        aterm_t aleft = std::get<1>(aterms.get(tbl.metadata(irow).time, currentbaseline.a));
+        aterm_t aright = std::get<1>(aterms.get(tbl.metadata(irow).time, currentbaseline.b));
 
         // For each candidate, check that the first and last channel fit
         for (auto& candidate : candidates) {

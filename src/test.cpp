@@ -269,7 +269,7 @@ TEST_CASE("Measurement Set & Partition", "[mset]") {
 
     DataTable tbl(TESTDATA, {});
     auto beam = Beam::Uniform<double>().gridResponse(gridconf.subgrid(), {}, 0);
-    Aterms aterms(beam);
+    Aterms::StaticCorrections aterms(beam);
     auto workunits = partition(tbl, gridconf, aterms);
 
     size_t n {};
@@ -368,7 +368,7 @@ TEST_CASE("Widefield inversion", "[widefield]") {
     applyweights(weighter, tbl);
 
     // Create aterms
-    auto aterms = mkAterms(
+    Aterms::BeamCorrections<P> aterms(
         {casacore::MeasurementSet(TESTDATA)}, gridconf.subgrid(),
         99999999, tbl.phasecenter(), tbl.midfreq()
     );
@@ -384,14 +384,14 @@ TEST_CASE("Widefield inversion", "[widefield]") {
         gridconf.imgScalelm * oversample
     );
 
-    aterms = mkAterms(
+    aterms = Aterms::BeamCorrections<P>(
         {casacore::MeasurementSet(TESTDATA)}, gridspec,
         99999999, tbl.phasecenter(), tbl.midfreq()
     );
 
     HostArray<StokesI<P>, 2> expected {gridspec.shape()};
     auto jones = static_cast<HostArray<ComplexLinearData<P>, 2>>(
-        *aterms.get(tbl.midtime(), 0)
+        *std::get<1>(aterms.get(tbl.midtime(), 0))
     );
     idft<StokesI, P>(expected, tbl, jones, gridspec, true);
 
@@ -462,8 +462,9 @@ TEMPLATE_TEST_CASE_SIG(
     const Natural weighter(tbl, gridconf.padded());
     applyweights(weighter, tbl);
 
-    auto aterm = beam.gridResponse(gridconf.subgrid(), gridorigin, freq);
-    Aterms aterms(aterm);
+    Aterms::StaticCorrections<Q> aterms(HostArray<ComplexLinearData<Q>, 2>(
+        beam.gridResponse(gridconf.subgrid(), gridorigin, freq)
+    ));
     auto workunits = partition(tbl, gridconf, aterms);
     auto img = invert<StokesI, Q>(tbl, workunits, gridconf, aterms);
     // fits::save("image.fits", img, gridspec, {0, 0});
@@ -558,9 +559,9 @@ TEMPLATE_TEST_CASE_SIG(
 
     // Predict using IDG
     {
-        auto aterm = beam.gridResponse(gridconf.subgrid(), phaseCenter, freq);
-        Aterms aterms(aterm);
-
+        Aterms::StaticCorrections aterms(HostArray<ComplexLinearData<Q>, 2>(
+            beam.gridResponse(gridconf.subgrid(), phaseCenter, freq)
+        ));
         auto workunits = partition(tbl, gridconf, aterms);
 
         predict<StokesI, Q>(

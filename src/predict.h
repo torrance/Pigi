@@ -24,7 +24,7 @@ void predict(
     std::vector<WorkUnit>& workunits,
     const HostSpan<T<S>, 2> img,
     const GridConfig gridconf,
-    Aterms& aterms,
+    Aterms::Interface<S>& aterms,
     const DegridOp degridop
 ) {
     auto timer = Timer::get("predict");
@@ -227,22 +227,22 @@ void predict(
                 }  // loop: wlayers
 
                 // Create aterms arrays
-                HostArray<DeviceSpan<ComplexLinearData<double>, 2>, 1> alefts_h(nworkunits);
-                HostArray<DeviceSpan<ComplexLinearData<double>, 2>, 1> arights_h(nworkunits);
+                HostArray<DeviceSpan<ComplexLinearData<S>, 2>, 1> alefts_h(nworkunits);
+                HostArray<DeviceSpan<ComplexLinearData<S>, 2>, 1> arights_h(nworkunits);
 
                 // Now transfer across all required Aterms and update the Aleft, Aright values
                 // in workunits_h. We use a dictionary copy across only _unique_ Aterms, since
                 // these may be shared across workunits.
                 std::unordered_map<
-                    Aterms::aterm_t, DeviceArray<ComplexLinearData<double>, 2>
+                    typename Aterms::Interface<S>::aterm_t, DeviceArray<ComplexLinearData<S>, 2>
                 > aterm_map;
                 for (size_t i {}; auto w : workunits_h) {
                     auto [ant1, ant2] = w.baseline;
 
-                    Aterms::aterm_t aleft = aterms.get(w.time, ant1);
+                    auto [intervaleft, aleft] = aterms.get(w.time, ant1);
                     alefts_h[i] = (*aterm_map.try_emplace(aleft, *aleft).first).second;
 
-                    Aterms::aterm_t aright = aterms.get(w.time, ant2);
+                    auto [intervalright, aright] = aterms.get(w.time, ant2);
                     arights_h[i] = (*aterm_map.try_emplace(aright, *aright).first).second;
 
                     ++i;
@@ -262,8 +262,8 @@ void predict(
                 // Copy across data
                 DeviceArray<ComplexLinearData<float>, 2> data_d(data_h);
                 DeviceArray<std::array<double, 3>, 1> uvws_d(uvws_h);
-                DeviceArray<DeviceSpan<ComplexLinearData<double>, 2>, 1> alefts_d(alefts_h);
-                DeviceArray<DeviceSpan<ComplexLinearData<double>, 2>, 1> arights_d(arights_h);
+                DeviceArray<DeviceSpan<ComplexLinearData<S>, 2>, 1> alefts_d(alefts_h);
+                DeviceArray<DeviceSpan<ComplexLinearData<S>, 2>, 1> arights_d(arights_h);
 
                 delete timer;
 

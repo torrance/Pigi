@@ -95,7 +95,7 @@ TEST_CASE("MSet reading and partitioning", "[io]") {
     };
 
     auto beam = Beam::Uniform<double>().gridResponse(gridconf.subgrid(), {}, {});
-    auto aterms = Aterms(beam);
+    Aterms::StaticCorrections<double> aterms(beam);
 
     auto tbl = simple_benchmark("MSet read", 1, [&] {
         return DataTable(TESTDATA, {.chanlow=0, .chanhigh=192});
@@ -114,10 +114,10 @@ TEMPLATE_TEST_CASE("Invert", "[invert]", float, double) {
         .paddingfactor=1, .kernelsize = 96, .kernelpadding = 18
     };
 
-    auto beam = Beam::Uniform<double>().gridResponse(
+    auto beam = Beam::Uniform<TestType>().gridResponse(
         gridconf.subgrid(), {0, 0}, 0)
     ;
-    Aterms aterms(beam);
+    Aterms::StaticCorrections<TestType> aterms(beam);
 
     DataTable tbl(TESTDATA, {.chanlow=0, .chanhigh=384});
     auto workunits = partition(tbl, gridconf, aterms);
@@ -137,10 +137,10 @@ TEMPLATE_TEST_CASE("Predict", "[predict]", float, double) {
         .kernelsize = 96, .kernelpadding = 18
     };
 
-    auto beam = Beam::Uniform<double>().gridResponse(
+    auto beam = Beam::Uniform<TestType>().gridResponse(
         gridconf.subgrid(), {0, 0}, 0
     );
-    Aterms aterms(beam);
+    Aterms::StaticCorrections<TestType> aterms(beam);
 
     DataTable tbl(TESTDATA, {.chanlow=0, .chanhigh=384});
     auto workunits = partition(tbl, gridconf, aterms);
@@ -172,15 +172,15 @@ TEMPLATE_TEST_CASE("(De)gridder kernels", "[kernels]", float) {
         for (size_t i {}; auto m : tbl.metadata()) uvws_h[i++] = {m.u, m.v, m.w};
 
         // Create aterms and partition
-        auto beam_h = Beam::Uniform<double>().gridResponse(
+        auto beam_h = Beam::Uniform<float>().gridResponse(
             gridconf.subgrid(), {0, 0}, 0
         );
-        Aterms aterms(beam_h);
+        Aterms::StaticCorrections<float> aterms(beam_h);
         auto workunits = partition(tbl, gridconf, aterms);
 
         // Copy aterms to device
-        DeviceArray<ComplexLinearData<double>, 2> beam_d(beam_h);
-        HostArray<DeviceSpan<ComplexLinearData<double>, 2>, 1> aterms_h(workunits.size());
+        DeviceArray<ComplexLinearData<float>, 2> beam_d(beam_h);
+        HostArray<DeviceSpan<ComplexLinearData<float>, 2>, 1> aterms_h(workunits.size());
         for (auto& aterm : aterms_h) aterm = beam_d;
 
         // Copy to device
@@ -190,8 +190,8 @@ TEMPLATE_TEST_CASE("(De)gridder kernels", "[kernels]", float) {
         DeviceArray<WorkUnit, 1> workunits_d(workunits);
         DeviceArray<ComplexLinearData<float>, 2> data_d(tbl.data());
         DeviceArray<LinearData<float>, 2> weights_d(tbl.weights());
-        DeviceArray<DeviceSpan<ComplexLinearData<double>, 2>, 1> alefts_d(aterms_h);
-        DeviceArray<DeviceSpan<ComplexLinearData<double>, 2>, 1> arights_d(aterms_h);
+        DeviceArray<DeviceSpan<ComplexLinearData<float>, 2>, 1> alefts_d(aterms_h);
+        DeviceArray<DeviceSpan<ComplexLinearData<float>, 2>, 1> arights_d(aterms_h);
 
         // Allocate subgrid
         DeviceArray<StokesI<TestType>, 3> subgrids_d(std::array<long long, 3>{
@@ -276,8 +276,8 @@ TEST_CASE("Workunits", "[workunits]") {
             .paddingfactor=1, .kernelsize = 96, .kernelpadding = 18
         };
 
-        auto beam = Beam::Uniform<double>().gridResponse(gridconf.subgrid(), {0, 0}, 0);
-        Aterms aterms(beam);
+        auto beam = Beam::Uniform<float>().gridResponse(gridconf.subgrid(), {0, 0}, 0);
+        Aterms::StaticCorrections<float> aterms(beam);
 
         auto workunits = partition(tbl, gridconf, aterms);
         fmt::println("f: {} Nworkunits: {}", f, workunits.size());
@@ -316,8 +316,8 @@ TEST_CASE("Kernel size", "[kernelsize]") {
             .paddingfactor=1, .kernelsize = kernelsize, .kernelpadding = 12
         };
 
-        auto beam = Beam::Uniform<double>().gridResponse(gridconf.subgrid(), {0, 0}, 0);
-        Aterms aterms(beam);
+        auto beam = Beam::Uniform<float>().gridResponse(gridconf.subgrid(), {0, 0}, 0);
+        Aterms::StaticCorrections<float> aterms(beam);
 
         auto workunits = partition(tbl, gridconf, aterms);
         fmt::println("Nworkunits: {}", workunits.size());
@@ -395,8 +395,8 @@ TEST_CASE("MPI", "[mpi]") {
         const long long chanlow = chanwidth * local.rank();
         const long long chanhigh = std::min(chanlow + chanwidth, nchans);
 
-        auto beam = Beam::Uniform<double>().gridResponse(gridconf.subgrid(), {0, 0}, 0);
-        Aterms aterms(beam);
+        auto beam = Beam::Uniform<float>().gridResponse(gridconf.subgrid(), {0, 0}, 0);
+        Aterms::StaticCorrections<float> aterms(beam);
 
         DataTable tbl(TESTDATA, {.chanlow=chanlow, .chanhigh=chanhigh});
         auto workunits = partition(tbl, gridconf, aterms);

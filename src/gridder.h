@@ -23,8 +23,8 @@ void _gridder(
     const GridSpec subgridspec,
     const DeviceSpan<double, 1> lambdas,
     const DeviceSpan<S, 2> subtaper,
-    const DeviceSpan<DeviceSpan<ComplexLinearData<double>, 2>, 1> alefts,
-    const DeviceSpan<DeviceSpan<ComplexLinearData<double>, 2>, 1> arights,
+    const DeviceSpan<DeviceSpan<ComplexLinearData<S>, 2>, 1> alefts,
+    const DeviceSpan<DeviceSpan<ComplexLinearData<S>, 2>, 1> arights,
     const uint32_t rowoffset,
     const bool makePSF
 ) {
@@ -155,12 +155,8 @@ void _gridder(
                     output = static_cast<T>(cells[i]);
                 } else {
                     // Grab A terms and apply beam corrections and normalization
-                    const auto Al = static_cast<ComplexLinearData<S>>(
-                        alefts[wid][idx + i]
-                    ).inv();
-                    const auto Ar = static_cast<ComplexLinearData<S>>(
-                        arights[wid][idx + i]
-                    ).inv().adjoint();
+                    const auto Al = alefts[wid][idx + i].inv();
+                    const auto Ar = arights[wid][idx + i].inv().adjoint();
 
                     // Apply beam to cell: inv(Aleft) * cell * inv(Aright)^H
                     // Then conversion from LinearData to output T
@@ -194,8 +190,8 @@ void gridder(
     const GridSpec subgridspec,
     const DeviceSpan<double, 1> lambdas,
     const DeviceSpan<S, 2> subtaper,
-    const DeviceSpan<DeviceSpan<ComplexLinearData<double>, 2>, 1> alefts,
-    const DeviceSpan<DeviceSpan<ComplexLinearData<double>, 2>, 1> arights,
+    const DeviceSpan<DeviceSpan<ComplexLinearData<S>, 2>, 1> alefts,
+    const DeviceSpan<DeviceSpan<ComplexLinearData<S>, 2>, 1> arights,
     const uint32_t rowoffset,
     const bool makePSF
 ) {

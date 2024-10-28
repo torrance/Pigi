@@ -45,7 +45,12 @@ auto RaDecTolm(const RaDec& radec, const RaDec& origin) {
     return std::make_tuple(l, m);
 }
 
+// Casacore doesn't seem to be threadsafe when doing coordinate conversions
+thread_local std::mutex casacorelock;
+
 AzEl radecToAzel(const RaDec& radec, const double& mjd, const LongLat& origin) {
+    std::lock_guard l(casacorelock);
+
     // Create observation frame from time and origin
     casacore::MPosition pos(
         {{6378, "km"}, {origin.lon, "rad"}, {origin.lat, "rad"}}, casacore::MPosition::ITRF

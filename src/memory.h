@@ -134,6 +134,25 @@ public:
     __host__ __device__ inline T operator[](size_t i) const { return ptr[i]; }
     __host__ __device__ inline T& operator[](size_t i) { return ptr[i]; }
 
+    Span<T, N - 1, Pointer> operator()(long long i) requires (N > 1) {
+        // Check bounds
+        if (i < 0 || i > dims[0]) throw std::out_of_range(fmt::format(
+            "Attempting to index {} into Span with outer dimension length {}", i, dims[0]
+        ));
+
+        // Create new dims with trucated outer dimension
+        std::array<long long, N - 1> newdims {};
+        for (int j {}; j < N - 1; ++j) newdims[j] = dims[j + 1];
+
+        // Compute offset based on stride
+        size_t offset = i;
+        offset = std::apply([&] (auto... dims) {
+            return (offset * ... * static_cast<size_t>(dims));
+        }, newdims);
+
+        return Span<T, N - 1, Pointer>(newdims, ptr + offset);
+    }
+
     __host__ __device__  T* data() { return ptr; }
     __host__ __device__  const T* data() const { return ptr; }
 

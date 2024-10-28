@@ -257,7 +257,7 @@ struct StokesI {
         return *this;
     }
 
-    static StokesI<T> beamPower(ComplexLinearData<T>& Aleft, ComplexLinearData<T>& Aright) {
+    static StokesI<T> beamPower(const ComplexLinearData<T>& Aleft, const ComplexLinearData<T>& Aright) {
         return StokesI<T>(1 / matmul(Aleft.inv(), Aright.inv().adjoint()).norm());
     }
 };

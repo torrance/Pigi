@@ -23,8 +23,8 @@ void _degridder(
     const DeviceSpan<std::array<double, 3>, 1> uvws,
     const DeviceSpan<double, 1> lambdas,
     const DeviceSpan<S, 2> subtaper,
-    const DeviceSpan<DeviceSpan<ComplexLinearData<double>, 2>, 1> alefts,
-    const DeviceSpan<DeviceSpan<ComplexLinearData<double>, 2>, 1> arights,
+    const DeviceSpan<DeviceSpan<ComplexLinearData<S>, 2>, 1> alefts,
+    const DeviceSpan<DeviceSpan<ComplexLinearData<S>, 2>, 1> arights,
     const GridSpec subgridspec,
     const uint32_t rowoffset,
     const DegridOp degridop
@@ -75,8 +75,8 @@ void _degridder(
                 );
 
                 // Grab A terms
-                auto al = static_cast<ComplexLinearData<S>>(alefts[wid][idx + i]);
-                auto ar = static_cast<ComplexLinearData<S>>(arights[wid][idx + i]).adjoint();
+                auto al = alefts[wid][idx + i];
+                auto ar = arights[wid][idx + i].adjoint();
 
                 // Apply Aterms, normalization, and taper
                 cells[i] = matmul(matmul(al, cells[i]), ar);
@@ -188,8 +188,8 @@ void degridder(
     const DeviceSpan<std::array<double, 3>, 1> uvws,
     const DeviceSpan<double, 1> lambdas,
     const DeviceSpan<S, 2> subtaper,
-    const DeviceSpan<DeviceSpan<ComplexLinearData<double>, 2>, 1> alefts,
-    const DeviceSpan<DeviceSpan<ComplexLinearData<double>, 2>, 1> arights,
+    const DeviceSpan<DeviceSpan<ComplexLinearData<S>, 2>, 1> alefts,
+    const DeviceSpan<DeviceSpan<ComplexLinearData<S>, 2>, 1> arights,
     const GridSpec subgridspec,
     const uint32_t rowoffset,
     const DegridOp degridop
