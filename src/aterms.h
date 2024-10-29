@@ -242,6 +242,10 @@ public:
             std::array<long, 4> naxes;
             fits_get_img_param(fptr, 4,  &bitpix, &naxis, naxes.data(), &status);
 
+            // Reorder naxes column major -> row major
+            std::swap(naxes[0], naxes[3]);
+            std::swap(naxes[1], naxes[2]);
+
             if (status !=  0) {
                 char fitsmsg[FLEN_STATUS] {};
                 fits_get_errstatus(status, fitsmsg);
@@ -258,7 +262,7 @@ public:
 
             Logger::verbose(
                 "Loaded phase correction file {} with dimensions {}x{}x{}x{}",
-                path, naxes[3], naxes[2], naxes[1], naxes[0]
+                path, naxes[0], naxes[1], naxes[2], naxes[3]
             );
 
             // Ensure all axes match with the exception of the first
@@ -303,8 +307,9 @@ public:
             }
 
             for (long i {}; i < naxes[0]; ++i) {
+                // crpix1 is 1 indexed!
                 intervals.push_back(Interval {
-                    crval1 + (i - crpix1) * cdelt1, crval1 + (i + 1 - crpix1) * cdelt1
+                    crval1 + (i + 1 - crpix1) * cdelt1, crval1 + (i + 2 - crpix1) * cdelt1
                 });
             }
 
@@ -314,9 +319,7 @@ public:
 
         // Create data array with axes that match all FITS files
         std::array<long long, 4> dims;
-
-        // Switch order of axes
-        for (size_t i {}; i < naxess.front().size(); ++i) dims[i] = naxess.front()[3 - i];
+        for (size_t i {}; i < naxess.front().size(); ++i) dims[i] = naxess.front()[i];
         dims[0] = intervals.size();
         data = HostArray<S, 4>(dims);
 
@@ -333,8 +336,8 @@ public:
             int anynul;
 
             fits_read_pix(
-                fptr, datatype, fpixel.data() + offset, nelements, &nulval,
-                data.data(), &anynul, &status
+                fptr, datatype, fpixel.data(), nelements, &nulval,
+                data.data() + offset, &anynul, &status
             );
 
             offset += nelements;
@@ -358,14 +361,14 @@ public:
     std::tuple<Interval, aterm_t> get(const double mjd, const int antid) override {
         for (size_t i {}; i < intervals.size(); ++i) {
             if (intervals[i].contains(mjd)) {
-                auto phases = data(i)(antid);
+                HostSpan<S, 2> phases = data(i)(antid);
                 auto phasecorrections = std::make_shared<HostArray<ComplexLinearData<S>, 2>>(
                     phases.shape()
                 );
 
                 for (size_t j {}; j < phases.size(); ++j) {
                     thrust::complex<S> phasor {
-                        std::cos(phases[i]), std::sin(phases[i])
+                        std::cos(phases[j]), std::sin(phases[j])
                     };
 
                     (*phasecorrections)[j].xx = phasor;
@@ -380,7 +383,7 @@ public:
 
 private:
     std::vector<Interval> intervals;
-    HostArray<S, 4> data;
+    HostArray<S, 4> data;  // [time x ants x Nx x Ny]
 };
 
 template <typename S>
