@@ -24,15 +24,16 @@ std::vector<WorkUnit> partition(DataTable& tbl, GridConfig gridconf, Aterms::Int
         double w0, wmax;                             // in wavelengths
         size_t rowstart;
         size_t chanstart {}, chanend {};
+        DataTable::Baseline baseline;
         aterm_t aleft, aright;
 
         WorkUnitCandidate(
             double upx, double vpx, double w0, double maxspanpx, double wmax,
-            size_t row, size_t chan, aterm_t aleft, aterm_t aright
+            size_t row, size_t chan, DataTable::Baseline baseline, aterm_t aleft, aterm_t aright
         ) : ulowpx(std::floor(upx)), uhighpx(std::ceil(upx)),
             vlowpx(std::floor(vpx)), vhighpx(std::ceil(vpx)),
-            maxspanpx(maxspanpx), w0(w0), wmax(wmax),
-            rowstart(row), chanstart(chan), chanend(chan), aleft(aleft), aright(aright) {}
+            maxspanpx(maxspanpx), w0(w0), wmax(wmax), rowstart(row), chanstart(chan),
+            chanend(chan), baseline(baseline), aleft(aleft), aright(aright) {}
 
         bool add(
             double upx, double vpx, double w,
@@ -146,16 +147,13 @@ std::vector<WorkUnit> partition(DataTable& tbl, GridConfig gridconf, Aterms::Int
     std::vector<WorkUnitCandidate> candidates;
 
     // Set up other mutable state used during the loop
-    DataTable::Baseline currentbaseline;
     bool createnew {true};
 
     const auto lambdas = tbl.lambdas();
 
     for (size_t irow {}; irow < tbl.nrows(); ++irow) {
-        // Set current baseline
-        currentbaseline = tbl.metadata(irow).baseline;
-
         // Get left and right Aterms for this time and baseline pair
+        auto currentbaseline = tbl.metadata(irow).baseline;
         aterm_t aleft = std::get<1>(aterms.get(tbl.metadata(irow).time, currentbaseline.a));
         aterm_t aright = std::get<1>(aterms.get(tbl.metadata(irow).time, currentbaseline.b));
 
@@ -202,7 +200,7 @@ std::vector<WorkUnit> partition(DataTable& tbl, GridConfig gridconf, Aterms::Int
                 }();
 
                 workunits.push_back(WorkUnit(
-                    meantime, meanfreq, currentbaseline,
+                    meantime, meanfreq, c.baseline,
                     upx, vpx, u, v, c.w0,
                     c.rowstart, irow, c.chanstart, c.chanend + 1
                 ));
@@ -228,7 +226,8 @@ std::vector<WorkUnit> partition(DataTable& tbl, GridConfig gridconf, Aterms::Int
                     w = (std::floor(w / wstep) + 0.5) * wstep;
 
                     candidates.push_back(WorkUnitCandidate(
-                        upx, vpx, w, 0.8 * maxspanpx, wstep / 2, irow, ichan, aleft, aright
+                        upx, vpx, w, 0.8 * maxspanpx, wstep / 2,
+                        irow, ichan, currentbaseline, aleft, aright
                     ));
                 }
             }
@@ -263,7 +262,7 @@ std::vector<WorkUnit> partition(DataTable& tbl, GridConfig gridconf, Aterms::Int
         }();
 
         workunits.push_back(WorkUnit(
-            meantime, meanfreq, currentbaseline,
+            meantime, meanfreq, c.baseline,
             upx, vpx, u, v, c.w0,
             c.rowstart, tbl.nrows(), c.chanstart, c.chanend + 1
         ));
