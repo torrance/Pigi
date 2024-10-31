@@ -90,22 +90,14 @@ struct GridSpec {
     __host__ __device__
     inline auto linearToSky(const size_t idx) const {
         auto [lpx, mpx] = linearToGrid(idx);
-
-        return std::make_tuple(
-            (lpx - Nx / 2) * static_cast<S>(scalel) + static_cast<S>(deltal),
-            (mpx - Ny / 2) * static_cast<S>(scalem) + static_cast<S>(deltam)
-        );
+        return gridToLM<S>(lpx, mpx);
     }
 
     template <typename S>
     __host__ __device__
     inline auto linearToUV(const size_t idx) const {
         auto [upx, vpx] = linearToGrid(idx);
-
-        return std::make_tuple(
-            (upx - Nx / 2) * static_cast<S>(scaleu),
-            (vpx - Ny / 2) * static_cast<S>(scalev)
-        );
+        return gridToUV<S>(upx, vpx);
     }
 
     template <typename S>
@@ -120,8 +112,17 @@ struct GridSpec {
     __host__ __device__
     inline auto gridToUV(auto upx, auto vpx) const {
         return std::make_tuple(
-            static_cast<S>((upx - Nx / 2) * scaleu),
-            static_cast<S>((vpx - Ny / 2) * scalev)
+            (static_cast<S>(upx) - Nx / 2) * static_cast<S>(scaleu),
+            (static_cast<S>(vpx) - Ny / 2) * static_cast<S>(scalev)
+        );
+    }
+
+    template <typename S>
+    __host__ __device__
+    inline auto gridToLM(auto lpx, auto mpx) const {
+        return std::make_tuple(
+            (lpx - Nx / 2) * static_cast<S>(scalel) + static_cast<S>(deltal),
+            (mpx - Ny / 2) * static_cast<S>(scalem) + static_cast<S>(deltam)
         );
     }
 };

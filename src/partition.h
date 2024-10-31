@@ -117,8 +117,8 @@ std::vector<WorkUnit> partition(DataTable& tbl, GridConfig gridconf, Aterms::Int
             auto maxn = std::sqrt(1 - maxl * maxl - maxm * maxm);
 
             // Consider sampling density in both dl, and dm directions
-            wmax = std::min(wmax, maxn / (12 * std::abs(maxl) * subgridspec.scalel));
-            wmax = std::min(wmax, maxn / (12 * std::abs(maxm) * subgridspec.scalem));
+            wmax = std::min(wmax, maxn / std::abs(12 * maxl * subgridspec.scalel));
+            wmax = std::min(wmax, maxn / std::abs(12 * maxm * subgridspec.scalem));
         }
 
         return wmax;

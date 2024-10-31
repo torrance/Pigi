@@ -223,7 +223,7 @@ public:
                     auto uvwIter = uvwCol.begin();
                     for (size_t i {}; i < nsubrows; ++i) {
                         double u = *uvwIter; ++uvwIter;
-                        double v = -*uvwIter; ++uvwIter;  // Invert V
+                        double v = -*uvwIter; ++uvwIter;  // Invert V [why??]
                         double w = *uvwIter; ++uvwIter;
 
                         m_metadata[irow + i] = RowMetadata{
