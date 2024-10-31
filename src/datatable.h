@@ -110,8 +110,8 @@ public:
                 "Found {} fields in {}; expected 1", field.nrow(), fname
             ));
 
-            // Set phase center if unset
-            if (!config.phasecenter) {
+            // Set phase center if unset using first mset's phasecenter
+            if (i == 0 && !config.phasecenter) {
                 auto phasecenter = casacore::MSFieldColumns(field)
                     .phaseDir().get(0).tovector();
 
@@ -320,6 +320,8 @@ public:
                 }
 
                 // Ensure all phase centers are set to m_phasecenter
+                // We have to do this per mset, rather than once at the end,
+                // since each mset might be initialized with a different phase center.
                 {
                     auto timer = Timer::get("dataload::phaserotate");
 
