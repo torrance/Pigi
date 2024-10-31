@@ -84,13 +84,6 @@ void _gridder(
                     thetaoffsets[i] = {2 * ::pi_v<S> * (u0 * l + v0 * m + w0 * n)};  // [dimensionless]
                 }
 
-                // We force all data to have positive w values to reduce the number of w layers,
-                // since V(u, v, w) = V(-u, -v, -w)^H
-                // The data has already been partitioned making this assumption.
-                if (w < 0) for (uint32_t i {}; i < nchunk; ++i) {
-                    thetas[i] *= -1;
-                }
-
                 for (uint32_t ichan {chanstart}; ichan < chanend; ichan += cachesize) {
                     const uint32_t N = min(cachesize, chanend - ichan);
 
@@ -120,9 +113,6 @@ void _gridder(
 
                         // Apply weights to data
                         datum *= weights[irow * rowstride + ichan + j];
-
-                        // If we've forced w to be positive, we need to take the adjoint here
-                        if (w < 0) datum = datum.adjoint();
                     }
                     __syncthreads();
 

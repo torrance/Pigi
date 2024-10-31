@@ -179,6 +179,8 @@ void predict(
                     widxs[workunit.w].push_back(i - wkstart);
                 }
 
+                Logger::verbose("Processing {} w-layers in this prediction batch", widxs.size());
+
                 // ...and process each wlayer serially
                 for (std::lock_guard l(wlock); auto& [w0, idxs] : widxs) {
                     auto timer = Timer::get("predict::wlayers");

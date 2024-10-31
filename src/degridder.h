@@ -95,17 +95,12 @@ void _degridder(
                 auto uvw = uvws[irow];
                 S u = std::get<0>(uvw), v = std::get<1>(uvw), w = std::get<2>(uvw);
 
-                // We force all data to have positive w values to reduce the number of w layers,
-                // since V(u, v, w) = V(-u, -v, -w)^H
-                // The data has already been partitioned making this assumption.
-                short wsign = w < 0 ? -1 : 1;
-
                 // Precompute theta in _meters_ By doing this here, we can compute the true
                 // theta by a multiplication (by inverse lambda) in the host path.
                 std::array<S, nchunk> thetas;
                 for (uint32_t i {}; i < nchunk; ++i) {
                     auto [l, m, n] = lmns[i];
-                    thetas[i] = -2 * ::pi_v<S> * (u * l + v * m + w * n) * wsign;  // [meters]
+                    thetas[i] = -2 * ::pi_v<S> * (u * l + v * m + w * n);  // [meters]
                 }
 
                 // Cycle over $warpsize visibilities from the channel until exhausted
@@ -143,9 +138,6 @@ void _degridder(
                             ptr[k] = __shfl(ptr[k], warpranknext, warpsize);
                         }
                     }
-
-                    // If we forced w positive, it's time to take the conjugate transpose
-                    if (wsign == -1) datum = datum.adjoint();
 
                     // Write results out to shared memory...
                     __syncthreads();

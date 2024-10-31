@@ -338,6 +338,9 @@ public:
                 irow += nsubrows;
             }
         }
+
+        Logger::verbose("Forcing visibility data to have positive w values...");
+        forcewpositive();
     }
 
     size_t size() const { return m_nrows * m_nchans; }
@@ -346,6 +349,36 @@ public:
 
     long long chanlow() const { return m_chanlow; }
     long long chanhigh() const { return m_chanhigh; }
+
+    DataTable& forcewpositive() {
+        // All visibilities with negative w values can be transformed to have postive
+        // w values by swapping the order of the correlation. i.e. antenna 1 x 2 => 2 x 1.
+        // This gives V(u, v, w)^H = V(-u, -v, -w)
+        for (size_t irow {}; irow < m_nrows; ++irow) {
+            auto& m = m_metadata[irow];
+            if (m.w < 0) {
+                // Swap antenna order
+                std::swap(m.baseline.a, m.baseline.b);
+
+                // Set all u,v,w as inverse
+                m.u *= -1;
+                m.v *= -1;
+                m.w *= -1;
+
+                // Finally apply adjoint to visibility datum
+                auto datarow = data({irow, irow});
+                auto weightsrow = weights({irow, irow});
+                for (size_t ichan {}; ichan < m_nchans; ++ichan) {
+                    datarow[ichan] = datarow[ichan].adjoint();
+                    // We also need to transpose the weights.
+                    // Note that for for real values, trans() = adjoint()
+                    weightsrow[ichan] = weightsrow[ichan].adjoint();
+                }
+            }
+        }
+
+        return *this;
+    }
 
     RaDec phasecenter() const { return m_phasecenter; }
 
