@@ -206,8 +206,8 @@ auto _major(
 
     for (size_t fieldid {}; fieldid < psfss.size(); ++fieldid) {
         psfGridspecs[fieldid] = {
-            .Nx=psfss.at(fieldid).at(0).size(0),
-            .Ny=psfss.at(fieldid).at(0).size(1)
+            .Nx=psfss.at(fieldid).at(0).size(1),
+            .Ny=psfss.at(fieldid).at(0).size(0)
         };
 
         HostArray<ChannelValues, 2> psfDense {psfGridspecs[fieldid].shape()};

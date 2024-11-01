@@ -47,7 +47,7 @@ public:
     }
 
     HostArray<thrust::complex<P>, 2> draw(GridSpec gridspec) {
-        HostArray<thrust::complex<P>, 2> psf {gridspec.Nx, gridspec.Ny};
+        HostArray<thrust::complex<P>, 2> psf {gridspec.Ny, gridspec.Nx};
 
         // Convert major, minor from radians to pixels
         // and FWHM to sigma

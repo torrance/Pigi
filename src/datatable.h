@@ -188,8 +188,8 @@ public:
 
         // Allocate data arrays
         m_metadata.resize(m_nrows);
-        m_weights = HostArray<LinearData<float>, 2>(m_nchans, m_nrows);
-        m_data = HostArray<ComplexLinearData<float>, 2>(m_nchans, m_nrows);
+        m_weights = HostArray<LinearData<float>, 2>(m_nrows, m_nchans);
+        m_data = HostArray<ComplexLinearData<float>, 2>(m_nrows, m_nchans);
 
         // We iterate through the measurement by baseline
         casacore::Block<casacore::String> colnames(2);
@@ -446,9 +446,9 @@ public:
     HostSpan<ComplexLinearData<float>, 2> data() {
         return {
             std::array<long long, 2>{
-                static_cast<long long>(m_nchans),
-                static_cast<long long>(m_nrows)
-	    },
+                static_cast<long long>(m_nrows),
+                static_cast<long long>(m_nchans)
+            },
             m_data.data()
         };
     }
@@ -457,9 +457,9 @@ public:
         auto& [rowstart, rowend] = rowslice;
         return {
             std::array<long long, 2>{
-                static_cast<long long>(m_nchans),
-                static_cast<long long>(rowend - rowstart)
-	    },
+                static_cast<long long>(rowend - rowstart),
+                static_cast<long long>(m_nchans)
+	        },
             m_data.data() + rowstart * m_nchans
         };
     }
@@ -471,9 +471,9 @@ public:
     HostSpan<LinearData<float>, 2> weights() {
         return {
             std::array<long long, 2>{
-                static_cast<long long>(m_nchans),
-                static_cast<long long>(m_nrows)
-	    },
+                static_cast<long long>(m_nrows),
+                static_cast<long long>(m_nchans)
+            },
             m_weights.data()
         };
     }
@@ -482,9 +482,9 @@ public:
         auto& [rowstart, rowend] = rowslice;
         return {
             std::array<long long, 2>{
-                static_cast<long long>(m_nchans),
-                static_cast<long long>(rowend - rowstart)
-	    },
+                static_cast<long long>(rowend - rowstart),
+                static_cast<long long>(m_nchans)
+            },
             m_weights.data() + rowstart * m_nchans
         };
     }

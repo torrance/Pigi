@@ -195,7 +195,7 @@ TEMPLATE_TEST_CASE("(De)gridder kernels", "[kernels]", float) {
 
         // Allocate subgrid
         DeviceArray<StokesI<TestType>, 3> subgrids_d(std::array<long long, 3>{
-            gridconf.subgrid().Nx, gridconf.subgrid().Ny, (long long) workunits.size()
+            (long long) workunits.size(), gridconf.subgrid().Ny, gridconf.subgrid().Nx
         });
 
         HIPCHECK( hipDeviceSynchronize() );

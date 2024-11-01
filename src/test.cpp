@@ -99,7 +99,7 @@ TEST_CASE("FFT and central shifts", "[fft]") {
         for (auto Ny : {1022, 1024, 1026, 1028}) {
             GridSpec gridspec {.Nx=Nx, .Ny=Ny};
 
-            HostArray<thrust::complex<double>, 2> arr(gridspec.Nx, gridspec.Ny);
+            HostArray<thrust::complex<double>, 2> arr(gridspec.Ny, gridspec.Nx);
             arr[gridspec.gridToLinear(gridspec.Nx / 2, gridspec.Ny / 2)] = 1;
             DeviceArray<thrust::complex<double>, 2> arr_d {arr};
 
@@ -692,9 +692,9 @@ TEST_CASE("Clean", "[clean]") {
     auto fittedPSF = PSF<double>(dirtyPSF, gridspec).draw(gridspec);
 
     // Combine the convolved, component images to produce a restored image
-    HostArray<StokesI<double>, 2> restoredSum {gridspec.Nx, gridspec.Ny};
+    HostArray<StokesI<double>, 2> restoredSum {gridspec.Ny, gridspec.Nx};
     for (auto& component : components) {
-        HostArray<StokesI<double>, 2> componentMap {gridspec.Nx, gridspec.Ny};
+        HostArray<StokesI<double>, 2> componentMap {gridspec.Ny, gridspec.Nx};
         for (auto& [lmpx, val] : component) {
             auto [lpx, mpx] = lmpx;
             auto idx = gridspec.LMpxToLinear(lpx, mpx);

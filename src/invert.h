@@ -33,7 +33,7 @@ HostArray<T<S>, 2> invert(
 
     // Allocate wlayer which is shared by all threads to append visibilities as
     // they are gridded. wlayer is shared since it may be very large.
-    DeviceArray<T<S>, 2> wlayer(gridspec.Nx, gridspec.Ny);
+    DeviceArray<T<S>, 2> wlayer(gridspec.shape());
     double wold {0};  // track the associated w value of w-layer
 
     // Use a lock_guard to guarantee exclusive access during wlayer processing.
@@ -192,7 +192,7 @@ HostArray<T<S>, 2> invert(
                 DeviceArray<DeviceSpan<ComplexLinearData<S>, 2>, 1> arights_d(arights_h);
 
                 // Allocate subgrid stack
-                DeviceArray<T<S>, 3> subgrids_d({subgridspec.Nx, subgridspec.Ny, nworkunits});
+                DeviceArray<T<S>, 3> subgrids_d({nworkunits, subgridspec.Ny, subgridspec.Nx});
 
                 delete timer;
 

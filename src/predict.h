@@ -170,7 +170,7 @@ void predict(
                 DeviceArray<WorkUnit, 1> workunits_d(workunits_h);
 
                 // Allocate subgrid stack
-                DeviceArray<T<S>, 3> subgrids_d({subgridspec.Nx, subgridspec.Ny, nworkunits});
+                DeviceArray<T<S>, 3> subgrids_d({nworkunits, subgridspec.Ny, subgridspec.Nx});
 
                 // Group subgrids into w layers
                 std::unordered_map<double, std::vector<size_t>> widxs;

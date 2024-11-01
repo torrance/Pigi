@@ -43,8 +43,9 @@ void save(
     fitsfile* fptr {};
     fits_create_file(&fptr, fpath.c_str(), &status);
 
+    // FITS stores naxes in COLUMN MAJOR order
     std::array<long, 2> naxes {
-        static_cast<long>(arr.size(0)), static_cast<long>(arr.size(1))
+        static_cast<long>(arr.size(1)), static_cast<long>(arr.size(0))
     };
     fits_create_img(fptr, getbitpix<S>(), 2, naxes.data(), &status);
 

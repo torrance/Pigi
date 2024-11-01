@@ -38,7 +38,7 @@ enum class FFTShift { pre, post };
 template<typename T, int N>
 void fftshift(DeviceSpan<T, N> grid, FFTShift stage) requires (N == 2 || N == 3) {
     // Create dummy GridSpec so that we have access to linearToGrid() method
-    GridSpec gridspec {.Nx=grid.size(0), .Ny=grid.size(1)};
+    GridSpec gridspec {.Nx=grid.size(N - 1), .Ny=grid.size(N - 2)};
 
     // In Fourier domain where the power is centered, the checkerboard pattern must
     // be centered with +1 on the central pixel. However, in the image domain, this
@@ -52,7 +52,7 @@ void fftshift(DeviceSpan<T, N> grid, FFTShift stage) requires (N == 2 || N == 3)
     }
 
     // In the batched case, each iteration along the third axis is an independent grid
-    size_t nbatch = N == 2 ? 1 : grid.size(2);
+    size_t nbatch = N == 2 ? 1 : grid.size(0);
 
     auto fn = _fftshift<T, N>;
 
@@ -86,7 +86,7 @@ hipfftHandle fftPlan<thrust::complex<float>>(const GridSpec gridspec, long long 
     HIPFFTCHECK( hipfftSetStream(plan, hipStreamPerThread) );
 
     size_t worksize;
-    long long rank[] {gridspec.Ny, gridspec.Nx}; // COL MAJOR
+    long long rank[] {gridspec.Ny, gridspec.Nx};
     HIPFFTCHECK( hipfftXtMakePlanMany(
         plan, 2, rank,
         rank, 1, gridspec.size(), HIP_C_32F,
@@ -105,7 +105,7 @@ hipfftHandle fftPlan<thrust::complex<double>>(const GridSpec gridspec, long long
     HIPFFTCHECK( hipfftSetStream(plan, hipStreamPerThread) );
 
     size_t worksize;
-    long long rank[] {gridspec.Ny, gridspec.Nx}; // COL MAJOR
+    long long rank[] {gridspec.Ny, gridspec.Nx};
     HIPFFTCHECK( hipfftXtMakePlanMany(
         plan, 2, rank,
         rank, 1, gridspec.size(), HIP_C_64F,
@@ -124,7 +124,7 @@ hipfftHandle fftPlan<ComplexLinearData<float>>(const GridSpec gridspec, long lon
     HIPFFTCHECK( hipfftSetStream(plan, hipStreamPerThread) );
 
     size_t worksize;
-    long long rank[] {gridspec.Ny, gridspec.Nx}; // COL MAJOR
+    long long rank[] {gridspec.Ny, gridspec.Nx};
     HIPFFTCHECK( hipfftXtMakePlanMany(
         plan, 2, rank,
         rank, 4, gridspec.size() * 4, HIP_C_32F,
@@ -143,7 +143,7 @@ hipfftHandle fftPlan<ComplexLinearData<double>>(const GridSpec gridspec, long lo
     HIPFFTCHECK( hipfftSetStream(plan, hipStreamPerThread) );
 
     size_t worksize;
-    long long rank[] {gridspec.Ny, gridspec.Nx}; // COL MAJOR
+    long long rank[] {gridspec.Ny, gridspec.Nx};
 
     HIPFFTCHECK( hipfftXtMakePlanMany(
         plan, 2, rank,
@@ -163,7 +163,7 @@ hipfftHandle fftPlan<StokesI<float>>(const GridSpec gridspec, long long nbatch) 
     HIPFFTCHECK( hipfftSetStream(plan, hipStreamPerThread) );
 
     size_t worksize;
-    long long rank[] {gridspec.Ny, gridspec.Nx}; // COL MAJOR
+    long long rank[] {gridspec.Ny, gridspec.Nx};
     HIPFFTCHECK( hipfftXtMakePlanMany(
         plan, 2, rank,
         rank, 1, gridspec.size(), HIP_C_32F,
@@ -182,7 +182,7 @@ hipfftHandle fftPlan<StokesI<double>>(const GridSpec gridspec, long long nbatch)
     HIPFFTCHECK( hipfftSetStream(plan, hipStreamPerThread) );
 
     size_t worksize;
-    long long rank[] {gridspec.Ny, gridspec.Nx}; // COL MAJOR
+    long long rank[] {gridspec.Ny, gridspec.Nx};
     HIPFFTCHECK( hipfftXtMakePlanMany(
         plan, 2, rank,
         rank, 1, gridspec.size(), HIP_C_64F,
@@ -206,7 +206,7 @@ size_t fftEstimate(const GridSpec gridspec, long long nbatch=1) {
 template<>
 size_t fftEstimate<thrust::complex<float>>(const GridSpec gridspec, long long nbatch) {
     size_t worksize {};
-    int rank[] {(int) gridspec.Ny, (int) gridspec.Nx}; // COL MAJOR
+    int rank[] {(int) gridspec.Ny, (int) gridspec.Nx};
     HIPFFTCHECK( hipfftEstimateMany(
         2, rank,
         rank, 1, gridspec.size(),
@@ -220,7 +220,7 @@ size_t fftEstimate<thrust::complex<float>>(const GridSpec gridspec, long long nb
 template<>
 size_t fftEstimate<thrust::complex<double>>(const GridSpec gridspec, long long nbatch) {
     size_t worksize {};
-    int rank[] {(int) gridspec.Ny, (int) gridspec.Nx}; // COL MAJOR
+    int rank[] {(int) gridspec.Ny, (int) gridspec.Nx};
     HIPFFTCHECK( hipfftEstimateMany(
         2, rank,
         rank, 1, gridspec.size(),
@@ -234,7 +234,7 @@ size_t fftEstimate<thrust::complex<double>>(const GridSpec gridspec, long long n
 template<>
 size_t fftEstimate<ComplexLinearData<float>>(const GridSpec gridspec, long long nbatch) {
     size_t worksize {};
-    int rank[] {(int) gridspec.Ny, (int) gridspec.Nx}; // COL MAJOR
+    int rank[] {(int) gridspec.Ny, (int) gridspec.Nx};
     HIPFFTCHECK( hipfftEstimateMany(
         2, rank,
         rank, 4, gridspec.size() * 4,
@@ -248,7 +248,7 @@ size_t fftEstimate<ComplexLinearData<float>>(const GridSpec gridspec, long long 
 template<>
 size_t fftEstimate<ComplexLinearData<double>>(const GridSpec gridspec, long long nbatch) {
     size_t worksize {};
-    int rank[] {(int) gridspec.Ny, (int) gridspec.Nx}; // COL MAJOR
+    int rank[] {(int) gridspec.Ny, (int) gridspec.Nx};
     HIPFFTCHECK( hipfftEstimateMany(
         2, rank,
         rank, 4, gridspec.size() * 4,
@@ -262,7 +262,7 @@ size_t fftEstimate<ComplexLinearData<double>>(const GridSpec gridspec, long long
 template<>
 size_t fftEstimate<StokesI<float>>(const GridSpec gridspec, long long nbatch) {
     size_t worksize {};
-    int rank[] {(int) gridspec.Ny, (int) gridspec.Nx}; // COL MAJOR
+    int rank[] {(int) gridspec.Ny, (int) gridspec.Nx};
     HIPFFTCHECK( hipfftEstimateMany(
         2, rank,
         rank, 1, gridspec.size(),
@@ -276,7 +276,7 @@ size_t fftEstimate<StokesI<float>>(const GridSpec gridspec, long long nbatch) {
 template<>
 size_t fftEstimate<StokesI<double>>(const GridSpec gridspec, long long nbatch) {
     size_t worksize {};
-    int rank[] {(int) gridspec.Ny, (int) gridspec.Nx}; // COL MAJOR
+    int rank[] {(int) gridspec.Ny, (int) gridspec.Nx};
     HIPFFTCHECK( hipfftEstimateMany(
         2, rank,
         rank, 1, gridspec.size(),

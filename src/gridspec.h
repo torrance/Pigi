@@ -45,19 +45,19 @@ struct GridSpec {
     }
 
     inline std::array<long long, 2> shape() const {
-        return {Nx, Ny};
+        return {Ny, Nx};  // Row major ordering
     }
 
     __host__ __device__
     inline auto linearToGrid(const size_t idx) const {
-        // COLUMN MAJOR ordering
+        // Y is the major axis
         auto xpx { static_cast<long long>(idx) % Nx };
         auto ypx { static_cast<long long>(idx) / Nx };
         return std::make_tuple(xpx, ypx);
     }
 
     inline auto linearToLMpx(const size_t idx) const {
-        // COLUMN MAJOR ordering
+        // Y is the major axis
         auto lpx { static_cast<long long>(idx) % Nx };
         auto mpx { static_cast<long long>(idx) / Nx };
 
@@ -81,7 +81,7 @@ struct GridSpec {
 
     __host__ __device__
     inline size_t gridToLinear(const long long x, const long long y) const {
-        // COLUMN MAJOR ordering
+        // Y is the major axis
         return static_cast<size_t>(x) +
                static_cast<size_t>(y) * static_cast<size_t>(Nx);
     }

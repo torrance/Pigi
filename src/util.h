@@ -155,7 +155,7 @@ constexpr inline T rad2deg(const T& x) { return x * 180 / ::pi_v<T>; }
 
 template <typename T, typename Pointer>
 auto resize(Span<T, 2, Pointer> src, GridSpec srcGridspec, GridSpec dstGridspec) {
-    Array<T, 2, Pointer> dst {{dstGridspec.Nx, dstGridspec.Ny}, false};
+    Array<T, 2, Pointer> dst {{dstGridspec.Ny, dstGridspec.Nx}, false};
 
     long long edgeX {(dstGridspec.Nx - srcGridspec.Nx) / 2};
     long long edgeY {(dstGridspec.Ny - srcGridspec.Ny) / 2};
@@ -169,7 +169,7 @@ auto resize(Span<T, 2, Pointer> src, GridSpec srcGridspec, GridSpec dstGridspec)
 
     // Determine y-bounds of dst array
     const long long ymin = std::max(0ll, edgeY);
-    const long long ymax = dst.size(1) - std::max(0ll, edgeY);
+    const long long ymax = dst.size(0) - std::max(0ll, edgeY);
 
     // Copy row by row
     for (long long nyDst {ymin}; nyDst < ymax; ++nyDst) {
@@ -191,8 +191,8 @@ HostArray<T, 2> convolve(const HostSpan<T, 2> img, const HostSpan<S, 2> kernel) 
     shapecheck(img, kernel);
 
     // Pad img and kernel with zeros
-    GridSpec gridspec {.Nx=img.size(0), .Ny=img.size(1)};
-    GridSpec gridspecPadded {2 * img.size(0), 2 * img.size(1), 0, 0};
+    GridSpec gridspec {.Nx=img.size(1), .Ny=img.size(0)};
+    GridSpec gridspecPadded {.Nx=2 * img.size(1), .Ny=2 * img.size(0)};
 
     auto imgPadded = resize(img, gridspec, gridspecPadded);
     auto kernelPadded = resize(kernel, gridspec, gridspecPadded);

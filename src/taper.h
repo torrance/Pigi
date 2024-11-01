@@ -43,7 +43,7 @@ HostArray<T, 2> kaiserbessel2D(const GridSpec gridspec) {
     auto yDim = kaiserbessel1D<T>(gridspec.Ny);
 
     // Create the full taper as the product of the 1D tapers.
-    HostArray<T, 2> taper {gridspec.Nx, gridspec.Ny};
+    HostArray<T, 2> taper {gridspec.Ny, gridspec.Nx};
     for (size_t i {}; i < taper.size(); ++i) {
         auto [xpx, ypx] = gridspec.linearToGrid(i);
         taper[i] = xDim[xpx] * yDim[ypx];
@@ -103,7 +103,7 @@ HostArray<T, 2> pswf2D(const GridSpec gridspec) {
     auto yDim = pswf1D<T>(gridspec.Ny);
 
     // Create the full taper as the product of the 1D tapers.
-    HostArray<T, 2> taper {gridspec.Nx, gridspec.Ny};
+    HostArray<T, 2> taper {gridspec.Ny, gridspec.Nx};
     for (size_t i {}; i < taper.size(); ++i) {
         auto [xpx, ypx] = gridspec.linearToGrid(i);
         taper[i] = xDim[xpx] * yDim[ypx];
