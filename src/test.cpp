@@ -160,7 +160,10 @@ TEST_CASE("Coordinates", "[coordinates]") {
     int N {8000};
     gridorigin = {.ra=deg2rad(17.4208333333333), .dec=deg2rad(-45.7819444444444)};
 
-    auto radec = lmToRaDec((lpx - N / 2) * scalelm, (mpx - N / 2) * scalelm, gridorigin);
+    auto gridspec = GridSpec::fromScaleLM(N, N, scalelm);
+    auto [l0, m0] = gridspec.gridToLM<double>(lpx, mpx);
+
+    auto radec = lmToRaDec(l0, m0, gridorigin);
     {
         // Calculcated using Astropy
         RaDec expected {.ra=deg2rad(20.12114593), .dec=deg2rad(-39.48407916)};
@@ -169,9 +172,9 @@ TEST_CASE("Coordinates", "[coordinates]") {
         REQUIRE(std::abs(radec.dec - expected.dec) < 1e-5);
     }
 
-    auto [l, m] = RaDecTolm(radec, gridorigin);
-    REQUIRE(std::abs(l - (lpx - N / 2) * scalelm) < 1e-9);
-    REQUIRE(std::abs(m - (mpx - N / 2) * scalelm) < 1e-9);
+    auto [l1, m1] = RaDecTolm(radec, gridorigin);
+    REQUIRE(std::abs(l0 - l1) < 1e-9);
+    REQUIRE(std::abs(m0 - m1) < 1e-9);
 }
 
 TEST_CASE("GridSpec", "[gridspec]") {
