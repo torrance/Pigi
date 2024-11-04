@@ -222,15 +222,16 @@ class PhaseCorrections : public Aterms::Interface<S> {
 public:
     using typename Interface<S>::aterm_t;
 
-    PhaseCorrections(const std::vector<std::string>& paths) {
+    PhaseCorrections(const std::vector<std::string>& paths, const double freq) {
         if (paths.empty()) return;
 
         // We expect each PhaseCorrection fits file to have 4 dimensions:
         // [time x antenna x Nx x Ny]
 
         // Open each file
+        std::vector<long> freqids;
         std::vector<fitsfile*> fptrs;
-        std::vector<std::array<long, 4>> naxess;
+        std::vector<std::array<long, 5>> naxess;
 
         for (auto& path : paths) {
             int status {};
@@ -239,12 +240,12 @@ public:
 
             // Get file metadata
             int bitpix, naxis;
-            std::array<long, 4> naxes;
-            fits_get_img_param(fptr, 4,  &bitpix, &naxis, naxes.data(), &status);
+            std::array<long, 5> naxes;
+            fits_get_img_param(fptr, 5,  &bitpix, &naxis, naxes.data(), &status);
 
             // Reorder naxes column major -> row major
-            std::swap(naxes[0], naxes[3]);
-            std::swap(naxes[1], naxes[2]);
+            std::swap(naxes[0], naxes[4]);
+            std::swap(naxes[1], naxes[3]);
 
             if (status !=  0) {
                 char fitsmsg[FLEN_STATUS] {};
@@ -255,21 +256,21 @@ public:
             }
 
             // Rrequire FITS data has 4 dimensions
-            if (naxis != 4) throw std::runtime_error(fmt::format(
-                "Opening {} failed: expected phasecorrection file with 4 dimensions, got {}",
+            if (naxis != 5) throw std::runtime_error(fmt::format(
+                "Opening {} failed: expected phasecorrection file with 5 dimensions, got {}",
                 path, naxis
             ));
 
             Logger::verbose(
-                "Loaded phase correction file {} with dimensions {}x{}x{}x{}",
-                path, naxes[0], naxes[1], naxes[2], naxes[3]
+                "Loaded phase correction file {} with dimensions {}x{}x{}x{}x{}",
+                path, naxes[0], naxes[1], naxes[2], naxes[3], naxes[4]
             );
 
-            // Ensure all axes match with the exception of the first
+            // Ensure all axes match with the exception of the time and frequency
             if (!naxess.empty() && !(
-                naxes[1] == naxess.front()[1] &&
                 naxes[2] == naxess.front()[2] &&
-                naxes[3] == naxess.front()[3]
+                naxes[3] == naxess.front()[3] &&
+                naxes[4] == naxess.front()[4]
             )) throw std::runtime_error(fmt::format(
                 "Phase correction FITS axes are inconsistently sized"
             ));
@@ -279,24 +280,43 @@ public:
                 " got {}-bit integer data instead", path, bitpix
             ));
 
-            // Validate outer axis is: time [s]
+            // Validate naxis=1 is: time [s]
             char value[FLEN_CARD] {};
-            fits_read_key(fptr, TSTRING, "CTYPE1", value, nullptr, &status);
+            fits_read_key(fptr, TSTRING, "CTYPE5", value, nullptr, &status);
             if (std::string_view(value) != "TIME") throw std::runtime_error(fmt::format(
-                "Opening {} failed: expected CTYPE1=TIME, got '{}'", path, value
+                "Opening {} failed: expected CTYPE5=TIME, got '{}'", path, value
             ));
-            fits_read_key(fptr, TSTRING, "CUNIT1", value, nullptr, &status);
+            fits_read_key(fptr, TSTRING, "CUNIT5", value, nullptr, &status);
             if (std::string_view(value) != "s") throw std::runtime_error(fmt::format(
-                "Opening {} failed: expected CUNIT1=s, got '{}'", path, value
+                "Opening {} failed: expected CUNIT5=s, got '{}'", path, value
             ));
 
-            // Get intervals from headers
-            int crpix1;
-            fits_read_key(fptr, TINT, "CRPIX1", &crpix1, nullptr, &status);
-            double crval1;
-            fits_read_key(fptr, TDOUBLE, "CRVAL1", &crval1, nullptr, &status);
-            double cdelt1;
-            fits_read_key(fptr, TDOUBLE, "CDELT1", &cdelt1, nullptr, &status);
+            // Read time headers
+            int crpix5;
+            fits_read_key(fptr, TINT, "CRPIX5", &crpix5, nullptr, &status);
+            double crval5;
+            fits_read_key(fptr, TDOUBLE, "CRVAL5", &crval5, nullptr, &status);
+            double cdelt5;
+            fits_read_key(fptr, TDOUBLE, "CDELT5", &cdelt5, nullptr, &status);
+
+            // Validate naxis=2 is: freq [Hz]
+            fits_read_key(fptr, TSTRING, "CTYPE4", value, nullptr, &status);
+            if (std::string_view(value) != "FREQ") throw std::runtime_error(fmt::format(
+                "Opening {} failed: expected CTYPE4=FREQ, got '{}'", path, value
+            ));
+            fits_read_key(fptr, TSTRING, "CUNIT4", value, nullptr, &status);
+            if (std::string_view(value) != "Hz") throw std::runtime_error(fmt::format(
+                "Opening {} failed: expected CUNIT4=Hz, got '{}'", path, value
+            ));
+
+            // Read freq headers
+            int crpix4;
+            fits_read_key(fptr, TINT, "CRPIX4", &crpix4, nullptr, &status);
+            double crval4;
+            fits_read_key(fptr, TDOUBLE, "CRVAL4", &crval4, nullptr, &status);
+            double cdelt4;
+            fits_read_key(fptr, TDOUBLE, "CDELT4", &cdelt4, nullptr, &status);
+
 
             if (status !=  0) {
                 char fitsmsg[FLEN_STATUS] {};
@@ -306,53 +326,86 @@ public:
                 throw std::runtime_error(msg);
             }
 
+            // Create time intervals
             for (long i {}; i < naxes[0]; ++i) {
-                // crpix1 is 1 indexed!
+                // crpix is 1 indexed!
                 intervals.push_back(Interval {
-                    crval1 + (i + 1 - crpix1) * cdelt1, crval1 + (i + 2 - crpix1) * cdelt1
+                    crval5 + (i + 1 - crpix5) * cdelt5, crval5 + (i + 2 - crpix5) * cdelt5
                 });
+                Logger::verbose(
+                    "Phase correction file {}: found time interval {}-{}",
+                    path, intervals.back().start, intervals.back().end
+                );
             }
 
+            // Determine freqid
+            long freqid {-1};
+            for (long i {}; i < naxes[1]; ++i) {
+                double lowfreq = crval4 + (i + 1 - crpix4) * cdelt4;
+                double hifreq = crval4 + (i + 2 - crpix4) * cdelt4;
+                if (lowfreq <= freq && freq < hifreq) {
+                    freqid = i;
+                    break;
+                }
+            }
+            if (freqid == -1) throw std::runtime_error(fmt::format(
+                "Opening {} failed: no correction for frequency {:.2f} MHz found",
+                path, freq / 1e6
+            ));
+            Logger::verbose(
+                "PhaseCorrection file {}: Using freqid={} for frequency {} Hz",
+                path, freqid, freq
+            );
+
+            freqids.push_back(freqid);
             fptrs.push_back(fptr);
             naxess.push_back(naxes);
         }
 
         // Create data array with axes that match all FITS files
-        std::array<long long, 4> dims;
-        for (size_t i {}; i < naxess.front().size(); ++i) dims[i] = naxess.front()[i];
-        dims[0] = intervals.size();
+        std::array<long long, 4> dims {
+            static_cast<long long>(intervals.size()), naxess[0][2], naxess[0][3], naxess[0][4]
+        };
         data = HostArray<S, 4>(dims);
+        Logger::verbose(
+            "Allocating {}x{}x{}x{} memory for phase corrections",
+            dims[0], dims[1], dims[2], dims[3]
+        );
 
         // Read data into array for each file
-        for (size_t i {}, offset {}; i < fptrs.size(); ++i) {
+        for (size_t i {}, offset {}; i < paths.size(); ++i) {
             fitsfile* fptr = fptrs[i];
-            int status {};
+            long freqid = freqids[i];
+            auto naxes = naxess[i];
 
             int datatype = std::is_same_v<S, float> ? TFLOAT : TDOUBLE;
-            std::array<long, 4> fpixel {1, 1, 1, 1};  // 1-indexed
-            long nelements = 1;
-            for (long n : naxess[i]) nelements *= n;
             S nulval {};
             int anynul;
+            int status {};
 
-            fits_read_pix(
-                fptr, datatype, fpixel.data(), nelements, &nulval,
-                data.data() + offset, &anynul, &status
-            );
+            long nelements = naxes[2] * naxes[3] * naxes[4];  // ants x Nx x Ny
 
-            offset += nelements;
+            for (long tid {}; tid < naxes[0]; ++tid) {
+                std::array<long, 5> fpixel {1, 1, 1, freqid + 1, tid + 1};  // 1-indexed
 
-            if (nulval != 0) throw std::runtime_error(fmt::format(
-                "Opening {} failed: NULL values detected in data", paths[i]
-            ));
+                fits_read_pix(
+                    fptr, datatype, fpixel.data(), nelements, &nulval,
+                    data.data() + offset, &anynul, &status
+                );
+
+                offset += nelements;
+
+                if (nulval != 0) throw std::runtime_error(fmt::format(
+                    "Opening {} failed: NULL values detected in data", paths[i]
+                ));
+            }
 
             fits_close_file(fptr, &status);
-
             if (status != 0) {
                 char fitsmsg[FLEN_STATUS] {};
                 fits_get_errstatus(status, fitsmsg);
 
-                auto msg = fmt::format("An error occurred opening {}: {}", paths[i], fitsmsg);
+                auto msg = fmt::format("An error occurred reading {}: {}", paths[i], fitsmsg);
                 throw std::runtime_error(msg);
             }
         }
@@ -401,7 +454,7 @@ public:
         const std::vector<std::string>& phasecorrectionpaths
     ) : beamcorrections(msets, gridspec, maxDuration, gridorigin, freq) {
         if (!phasecorrectionpaths.empty()) {
-            phasecorrections = PhaseCorrections<S>(phasecorrectionpaths);
+            phasecorrections = PhaseCorrections<S>(phasecorrectionpaths, freq);
         }
     }
 
