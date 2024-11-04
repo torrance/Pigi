@@ -194,7 +194,7 @@ void predict(
                             auto idx, auto& wlayer
                         ) {
                             auto [l, m] = gridspec.linearToSky<S>(idx);
-                            wlayer *= cispi(-2 * (w0 - wold) * ndash(l, m));
+                            wlayer *= cispi(2 * (w0 - wold) * ndash(l, m));
                         }, Iota(), wlayer)
                     );
 
@@ -204,7 +204,7 @@ void predict(
                     // FFT wlayer from sky -> visibility domain
                     PIGI_TIMER(
                         "predict::wlayers::fft",
-                        fftExec(wplan, wlayer, HIPFFT_FORWARD);
+                        fftExec(wplan, wlayer, HIPFFT_BACKWARD);
                     );
 
                     // Populate subgrid stack with subgrids from this wlayer
@@ -216,7 +216,7 @@ void predict(
                     // FFT wlayer from visibility -> sky domain
                     PIGI_TIMER(
                         "predict::wlayers::fft",
-                        fftExec(wplan, wlayer, HIPFFT_BACKWARD);
+                        fftExec(wplan, wlayer, HIPFFT_FORWARD);
                     );
 
                     // Normalize the inverse FFT
@@ -280,7 +280,7 @@ void predict(
                     ] __device__ (auto idx, auto& subgrid) {
                         idx %= stride;
                         auto [u, v] = subgridspec.linearToUV<S>(idx);
-                        subgrid *= cispi(2 * (u * deltal + v * deltam));
+                        subgrid *= cispi(-2 * (u * deltal + v * deltam));
                     }, Iota(), subgrids_d);
                 );
 
@@ -288,7 +288,7 @@ void predict(
                 PIGI_TIMER(
                     "predict::batch::subgridfft",
                     auto subplan = fftPlan<T<S>>(subgridspec, nworkunits);
-                    fftExec(subplan, subgrids_d, HIPFFT_BACKWARD);
+                    fftExec(subplan, subgrids_d, HIPFFT_FORWARD);
                     hipfftDestroy(subplan);
                 );
 

@@ -141,10 +141,8 @@ void atomicAdd(thrust::complex<T>* const x, const thrust::complex<T>& y) {
 template <typename T>
 __host__ __device__
 inline T ndash(const T l, const T m) {
-    auto r2 = std::min<T>(
-        l*l + m*m, 1
-    );
-    return r2 / (1 + sqrt(1 - r2));
+    auto r2 = std::min<T>(l*l + m*m, 1);
+    return -r2 / (1 + sqrt(1 - r2));
 }
 
 template <typename T> requires(std::is_floating_point<T>::value)

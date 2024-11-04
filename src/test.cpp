@@ -592,7 +592,7 @@ TEMPLATE_TEST_CASE_SIG(
                 auto [u, v, w] = expectedtbl.uvw(irow, ichan);
 
                 ComplexLinearData<double> datum(cell);
-                datum *= cispi(-2 * (u * l + v * m + w * n));
+                datum *= cispi(2 * (u * l + v * m + w * n));
                 expectedtbl.data(irow, ichan) += datum;
             }
         }

@@ -80,8 +80,8 @@ void _gridder(
                 std::array<S, nchunk> thetaoffsets;
                 for (uint32_t i {}; i < nchunk; ++i) {
                     auto [l, m, n] = lmns[i];
-                    thetas[i] = {2 * ::pi_v<S> * (u * l + v * m + w * n)};  // [meters]
-                    thetaoffsets[i] = {2 * ::pi_v<S> * (u0 * l + v0 * m + w0 * n)};  // [dimensionless]
+                    thetas[i] = {-2 * ::pi_v<S> * (u * l + v * m + w * n)};  // [meters]
+                    thetaoffsets[i] = {-2 * ::pi_v<S> * (u0 * l + v0 * m + w0 * n)};  // [dimensionless]
                 }
 
                 for (uint32_t ichan {chanstart}; ichan < chanend; ichan += cachesize) {
@@ -104,7 +104,7 @@ void _gridder(
                             // Predict PSF into projection center
                             S deltal = subgridspec.deltal, deltam = subgridspec.deltam;
                             S deltan = ndash<S>(deltal, deltam);
-                            S phase =  -2 * ::pi_v<S> * invlambdas_cache[j] * (
+                            S phase =  2 * ::pi_v<S> * invlambdas_cache[j] * (
                                 u * deltal + v * deltam + w * deltan
                             );
                             auto val = cis(phase);

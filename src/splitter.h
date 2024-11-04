@@ -44,7 +44,7 @@ void _splitter(
 
                 // Remove deltal, deltam shift from visibilities
                 auto [u, v] = gridspec.gridToUV<S>(upx, vpx);
-                val *= cispi(-2 * (u * gridspec.deltal + v * gridspec.deltam));
+                val *= cispi(2 * (u * gridspec.deltal + v * gridspec.deltam));
 
                 subgrids[subgridspec.size() * widx + idx] = val;
             }

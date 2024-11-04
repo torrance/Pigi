@@ -44,7 +44,7 @@ void _adder(
 
                 // Apply deltal, deltam shift to visibilities
                 auto px = subgrids[subgridspec.size() * widx + idx];
-                px *= cispi(2 * (u * gridspec.deltal + v * gridspec.deltam));
+                px *= cispi(-2 * (u * gridspec.deltal + v * gridspec.deltam));
 
                 atomicAdd(grid.data() + grididx, px);
             }

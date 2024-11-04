@@ -62,14 +62,14 @@ struct GridSpec {
         auto mpx { static_cast<long long>(idx) / Nx };
 
         // Apply offset
-        lpx += deltalpx - Nx / 2;
+        lpx -= deltalpx - Nx / 2;
         mpx += deltampx - Ny / 2;
 
         return std::make_tuple(lpx, mpx);
     }
 
     inline std::optional<size_t> LMpxToLinear(long long lpx, long long mpx) const {
-        lpx -= deltalpx - Nx / 2;
+        lpx += deltalpx - Nx / 2;
         mpx -= deltampx - Ny / 2;
 
         if (0 <= lpx && lpx < Nx && 0 <= mpx && mpx < Ny) {
@@ -103,8 +103,8 @@ struct GridSpec {
     template <typename S>
     inline auto UVtoGrid(S u, S v) const {
         return std::make_tuple(
-            static_cast<S>(u / scaleu + Nx / 2),
-            static_cast<S>(v / scalev + Ny / 2)
+            static_cast<S>(Nx / 2 - u / scaleu),
+            static_cast<S>(Ny / 2 + v / scalev)
         );
     }
 
@@ -112,7 +112,7 @@ struct GridSpec {
     __host__ __device__
     inline auto gridToUV(auto upx, auto vpx) const {
         return std::make_tuple(
-            (static_cast<S>(upx) - Nx / 2) * static_cast<S>(scaleu),
+            (Nx / 2 - static_cast<S>(upx)) * static_cast<S>(scaleu),
             (static_cast<S>(vpx) - Ny / 2) * static_cast<S>(scalev)
         );
     }
@@ -121,8 +121,8 @@ struct GridSpec {
     __host__ __device__
     inline auto gridToLM(auto lpx, auto mpx) const {
         return std::make_tuple(
-            (lpx - Nx / 2) * static_cast<S>(scalel) + static_cast<S>(deltal),
-            (mpx - Ny / 2) * static_cast<S>(scalem) + static_cast<S>(deltam)
+            static_cast<S>(deltal) - (lpx - Nx / 2) * static_cast<S>(scalel),
+            static_cast<S>(deltam) + (mpx - Ny / 2) * static_cast<S>(scalem)
         );
     }
 };

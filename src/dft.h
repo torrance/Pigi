@@ -40,7 +40,7 @@ __global__ void _idft(
 
         for (size_t irow {}; irow < nrows; ++irow) {
             auto [u, v, w] = uvws[irow];
-            S theta = 2 * ::pi_v<S> * (u * l + v * m + w * n);  // [meters]
+            S theta = -2 * ::pi_v<S> * (u * l + v * m + w * n);  // [meters]
 
             for (size_t ichan {}; ichan < nchans; ichan += cachesize) {
                 const size_t N = min(cachesize, nchans - ichan);

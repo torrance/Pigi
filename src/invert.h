@@ -206,7 +206,7 @@ HostArray<T<S>, 2> invert(
                 PIGI_TIMER(
                     "invert::batch::subgridfft",
                     auto subplan = fftPlan<T<S>>(subgridspec, nworkunits);
-                    fftExec(subplan, subgrids_d, HIPFFT_FORWARD);
+                    fftExec(subplan, subgrids_d, HIPFFT_BACKWARD);
                     hipfftDestroy(subplan);
                 );
 
@@ -221,7 +221,7 @@ HostArray<T<S>, 2> invert(
                     ] __device__ (auto idx, auto& px) {
                         idx %= stride;
                         auto [u, v] = subgridspec.linearToUV<S>(idx);
-                        px *= cispi(-2 * (u * deltal + v * deltam));
+                        px *= cispi(2 * (u * deltal + v * deltam));
                     }, Iota(), subgrids_d)
                 );
 
@@ -247,7 +247,7 @@ HostArray<T<S>, 2> invert(
                             auto idx, auto& wlayer
                         ) {
                             auto [l, m] = gridspec.linearToSky<S>(idx);
-                            wlayer *= cispi(-2 * (w0 - wold) * ndash(l, m));
+                            wlayer *= cispi(2 * (w0 - wold) * ndash(l, m));
                         }, Iota(), wlayer)
                     );
 
@@ -257,7 +257,7 @@ HostArray<T<S>, 2> invert(
                     // FFT wlayer from sky -> visibility domain
                     PIGI_TIMER(
                         "invert::wlayers::fft",
-                        fftExec(wplan, wlayer, HIPFFT_FORWARD);
+                        fftExec(wplan, wlayer, HIPFFT_BACKWARD);
                     );
 
                     // Normalize the FFT
@@ -274,7 +274,7 @@ HostArray<T<S>, 2> invert(
                     // FFT wlayer from visibility -> sky domain
                     PIGI_TIMER(
                         "invert::wlayers::fft",
-                        fftExec(wplan, wlayer, HIPFFT_BACKWARD);
+                        fftExec(wplan, wlayer, HIPFFT_FORWARD);
                     );
 
                     // Ensure all work is complete before releasing the wlock
@@ -306,7 +306,7 @@ HostArray<T<S>, 2> invert(
         ) {
             auto [lpx, mpx] = gridspec.linearToGrid(idx);
             auto [l, m] = gridspec.linearToSky<S>(idx);
-            px *= cispi(2 * wold * ndash(l, m)) / (taperxs[lpx] * taperys[mpx]);
+            px *= cispi(-2 * wold * ndash(l, m)) / (taperxs[lpx] * taperys[mpx]);
         }, Iota(), wlayer);
     }
 

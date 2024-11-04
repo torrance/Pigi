@@ -86,7 +86,7 @@ void _degridder(
                 auto n = ndash(l, m);
                 lmns[i] = {l, m, n};
 
-                thetaoffsets[i] = -2 * ::pi_v<S> * (u0 * l + v0 * m + w0 * n);
+                thetaoffsets[i] = 2 * ::pi_v<S> * (u0 * l + v0 * m + w0 * n);
             }
 
             const uint32_t N = cld<uint32_t>(nchans, warpsize) * warpsize;
@@ -100,7 +100,7 @@ void _degridder(
                 std::array<S, nchunk> thetas;
                 for (uint32_t i {}; i < nchunk; ++i) {
                     auto [l, m, n] = lmns[i];
-                    thetas[i] = -2 * ::pi_v<S> * (u * l + v * m + w * n);  // [meters]
+                    thetas[i] = 2 * ::pi_v<S> * (u * l + v * m + w * n);  // [meters]
                 }
 
                 // Cycle over $warpsize visibilities from the channel until exhausted

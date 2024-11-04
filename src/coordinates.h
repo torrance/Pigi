@@ -32,16 +32,16 @@ RaDec lmToRaDec(const double l, const double m, const RaDec& origin) {
     // and for NaN to propagate
     auto n = std::sqrt(1 - l * l - m * m);
 
-    auto ra = origin.ra - std::atan2(l, n * std::cos(origin.dec) - m * std::sin(origin.dec));
+    auto ra = origin.ra + std::atan2(l, n * std::cos(origin.dec) - m * std::sin(origin.dec));
     auto dec = std::asin(m * std::cos(origin.dec) + n * std::sin(origin.dec));
 
     return {ra, dec};
 }
 
 auto RaDecTolm(const RaDec& radec, const RaDec& origin) {
-    double l = std::cos(radec.dec) * std::sin(origin.ra - radec.ra);
+    double l = std::cos(radec.dec) * std::sin(radec.ra - origin.ra);
     double m = std::sin(radec.dec) * std::cos(origin.dec) -
-               std::cos(radec.dec) * std::sin(origin.dec) * std::cos(origin.ra - radec.ra);
+               std::cos(radec.dec) * std::sin(origin.dec) * std::cos(radec.ra - origin.ra);
     return std::make_tuple(l, m);
 }
 
