@@ -534,17 +534,17 @@ private:
 
         const double uprime = (
             + u * cos_deltara
-            - v * sin_decfrom * sin_deltara
+            + v * sin_decfrom * sin_deltara
             - w * cos_decfrom * sin_deltara
         );
         const double vprime = (
-            + u * sin_decto * sin_deltara
+            - u * sin_decto * sin_deltara
             + v * (sin_decfrom * sin_decto * cos_deltara + cos_decfrom * cos_decto)
-            - w * (sin_decfrom * cos_decto - cos_decfrom * sin_decto * cos_deltara)
+            + w * (sin_decfrom * cos_decto - cos_decfrom * sin_decto * cos_deltara)
         );
         const double wprime = (
             + u * cos_decto * sin_deltara
-            - v * (cos_decfrom * sin_decto - sin_decfrom * cos_decto * cos_deltara)
+            + v * (cos_decfrom * sin_decto - sin_decfrom * cos_decto * cos_deltara)
             + w * (sin_decfrom * sin_decto + cos_decfrom * cos_decto * cos_deltara)
         );
 
