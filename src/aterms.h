@@ -126,7 +126,11 @@ public:
         const RaDec& gridorigin,
         const double freq
     ) {
+        // Set default value for maxDuration if <0
         if (maxDuration <= 0) maxDuration = std::numeric_limits<double>::infinity();
+
+        // maxDuration has units [seconds] Convert to days
+        maxDuration /= 86400.;
 
         // For now, require all msets be the same telescope
         std::string telescope;
