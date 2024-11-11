@@ -302,12 +302,27 @@ void cleanWorker(
                 "Using padded grid {} x {} px", gridconf.padded().Nx, gridconf.padded().Ny
             );
 
-            Aterms::CombinedCorrections<P> aterms(
-                msets,
-                gridconf.subgrid(), config.maxDuration,
-                config.phasecenter.value(), tbl.midfreq(),
-                config.fields[fieldid].phasecorrections
-            );
+            auto aterms = [&] {
+                auto beamcorrections = std::make_shared<Aterms::BeamCorrections<P>>(
+                    msets, gridconf.subgrid(), config.maxDuration,
+                    config.phasecenter.value(), tbl.midfreq()
+                );
+
+                if (config.fields[fieldid].phasecorrections.empty()) {
+                    // Early return if no PhaseCorrections exist
+                    return Aterms::CombinedCorrections<P>(
+                        std::static_pointer_cast<Aterms::Interface<P>>(beamcorrections)
+                    );
+                }
+
+                auto phasecorrections = std::make_shared<Aterms::PhaseCorrections<P>>(
+                    config.fields[fieldid].phasecorrections, tbl.midfreq()
+                );
+                return Aterms::CombinedCorrections<P>(
+                    std::static_pointer_cast<Aterms::Interface<P>>(beamcorrections),
+                    std::static_pointer_cast<Aterms::Interface<P>>(phasecorrections)
+                );
+            }();
 
             // Partition data
             auto workunits = partition(tbl, gridconf, aterms);
