@@ -136,7 +136,7 @@ public:
 
     Span<T, N - 1, Pointer> operator()(long long i) requires (N > 1) {
         // Check bounds
-        if (i < 0 || i > dims[0]) throw std::out_of_range(fmt::format(
+        if (i < 0 || i >= dims[0]) throw std::out_of_range(fmt::format(
             "Attempting to index {} into Span with outer dimension length {}", i, dims[0]
         ));
 
