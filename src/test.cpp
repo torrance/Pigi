@@ -465,13 +465,6 @@ TEMPLATE_TEST_CASE_SIG(
     const Natural weighter(tbl, gridconf.padded());
     applyweights(weighter, tbl);
 
-    Aterms::StaticCorrections<Q> aterms(HostArray<ComplexLinearData<Q>, 2>(
-        beam.gridResponse(gridconf.subgrid(), gridorigin, freq)
-    ));
-    auto workunits = partition(tbl, gridconf, aterms);
-    auto img = invert<StokesI, Q>(tbl, workunits, gridconf, aterms);
-    // fits::save("image.fits", img, gridspec, {0, 0});
-
     // Calculate expected at double precision
     HostArray<StokesI<double>, 2> expected {gridspec.shape()};
     {
@@ -480,13 +473,67 @@ TEMPLATE_TEST_CASE_SIG(
     }
     // fits::save("expected.fits", expected, gridspec, {0, 0});
 
+    // Now apply phase shift to visibilities
+    // Each let theta = 0.1 x antid
+    double midtime = tbl.midtime();
+    for (size_t irow {}; irow < tbl.nrows(); ++irow) {
+        auto m = tbl.metadata(irow);
+        double f = m.time < midtime ? 0.1 : -0.3;
+        thrust::complex<float> theta = cispi(f * (m.baseline.a - m.baseline.b));
+        for (size_t ichan {}; ichan < tbl.nchans(); ++ichan) {
+            tbl.data(irow, ichan) *= theta;
+        }
+    }
+
+    // Construct A terms
+    auto aterms = [&] {
+        // First: make phase corrections
+        std::vector<Interval> intervals {
+            Interval{0, midtime},
+            Interval{midtime, std::numeric_limits<double>::infinity()}
+        };
+        HostArray<Q, 4> phases(
+            std::array<long long, 4>{2, 128, gridconf.kernelsize, gridconf.kernelsize}
+        );
+        for (int antid {}; antid < 128; ++antid) {
+            phases(0)(antid).fill(0.1 * ::pi_v<double> * antid);
+            phases(1)(antid).fill(-0.3 * ::pi_v<double> * antid);
+        }
+        auto phasecorrections = std::make_shared<Aterms::PhaseCorrections<Q>>(
+            intervals, phases
+        );
+
+        // Then: beam corrections
+        auto beamcorrections = std::make_shared<Aterms::StaticCorrections<Q>>(
+            HostArray<ComplexLinearData<Q>, 2>(
+                beam.gridResponse(gridconf.subgrid(), gridorigin, freq)
+            )
+        );
+
+        // Finally: merge into combined corrections object
+        return Aterms::CombinedCorrections<Q>(
+            std::static_pointer_cast<Aterms::Interface<Q>>(beamcorrections),
+            std::static_pointer_cast<Aterms::Interface<Q>>(phasecorrections)
+        );
+    }();
+
+    auto workunits = partition(tbl, gridconf, aterms);
+    auto img = invert<StokesI, Q>(tbl, workunits, gridconf, aterms);
+    // fits::save("image.fits", img, gridspec, {0, 0});
+
+    double rmsexpected {};
     HostArray<double, 2> diff(img.shape());
     for (size_t i {}; auto& px : diff) {
         px = expected[i].I.real();
         px -= img[i].I.real();
         ++i;
+
+        rmsexpected += expected[i].I.real() * expected[i].I.real();
     }
     // fits::save("diff.fits", diff, gridspec, {0, 0});
+
+    rmsexpected = std::sqrt(rmsexpected / gridspec.size());
+    fmt::println("Original RMS: {:g}", rmsexpected);
 
     double maxdiff {-1};
     double rms {};

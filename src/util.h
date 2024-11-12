@@ -107,6 +107,32 @@ struct fmt::formatter<std::array<T, 2>> {
     }
 };
 
+template <typename T>
+struct fmt::formatter<std::array<T, 3>> {
+    template <typename ParseContext>
+    constexpr auto parse(ParseContext& ctx) { return ctx.begin(); }
+
+    template <typename FormatContext>
+    auto format(const std::array<T, 3>& value, FormatContext& ctx) {
+        return fmt::format_to(
+            ctx.out(), "{},{},{}", value[0], value[1], value[2]
+        );
+    }
+};
+
+template <typename T>
+struct fmt::formatter<std::array<T, 4>> {
+    template <typename ParseContext>
+    constexpr auto parse(ParseContext& ctx) { return ctx.begin(); }
+
+    template <typename FormatContext>
+    auto format(const std::array<T, 4>& value, FormatContext& ctx) {
+        return fmt::format_to(
+            ctx.out(), "{},{},{},{}", value[0], value[1], value[2], value[3]
+        );
+    }
+};
+
 template <typename P>
 __host__ __device__
 P abs(thrust::complex<P> x) { return thrust::abs(x); }

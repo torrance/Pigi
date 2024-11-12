@@ -91,6 +91,71 @@ public:
 
 template <typename S>
 requires (std::is_same_v<S, float> || std::is_same_v<S, double>)
+class CombinedCorrections : public Aterms::Interface<S> {
+public:
+    using typename Interface<S>::aterm_t;
+
+    template <typename ...Ts>
+    CombinedCorrections(std::shared_ptr<Aterms::Interface<S>> x, Ts... xs) {
+        corrections.push_back(x);
+        (corrections.push_back(xs), ...);
+        Logger::verbose("CombinedCorrections created with {} layers", corrections.size());
+    }
+
+    std::tuple<Interval, aterm_t> get(const double mjd, const int antid) override {
+        // First, check existing cache of beams
+        for (auto& [interval, aterm] : aterms[antid]) {
+            if (interval.contains(mjd)) return {interval, aterm};
+        }
+
+        // Otherwise, we need to construct a beam for this antid, interval combination
+        // These functions will throw exceptions if no correction exists for the given
+        // time and antenna
+
+        // Initialize interval and combined arrays with first entry
+        auto [interval, correction] = corrections.at(0)->get(mjd, antid);
+        auto combined = std::make_shared<HostArray<ComplexLinearData<S>, 2>>(
+            *correction
+        );
+
+        // Conjoin remaining corrections
+        for (size_t i {1}; i < corrections.size(); ++i) {
+            auto [_interval, _correction] = corrections[i]->get(mjd, antid);
+
+            // Test for consistent shapes
+            if (combined->shape() != _correction->shape()) throw std::runtime_error(
+                fmt::format(
+                    "Inconsistent correction arrays: ({} x {}) vs. ({} x {})",
+                    combined->size(0), combined->size(1),
+                    _correction->size(0), _correction->size(1)
+                )
+            );
+
+            for (size_t j {}; j < combined->size(); ++j) {
+                (*combined)[j] = matmul((*combined)[j], (*_correction)[j]);
+            }
+
+            // Create a new interval that is the intersection beam and
+            // phasecorrection intervals
+            interval = {
+                std::max(interval.start, _interval.start),
+                std::min(interval.end, _interval.end)
+            };
+        }
+
+        // Cache result
+        aterms[antid].push_back({interval, combined});
+
+        return {interval, combined};
+    }
+
+private:
+    std::vector<std::shared_ptr<Aterms::Interface<S>>> corrections;
+    std::unordered_map<int, std::vector<std::tuple<Interval, aterm_t>>> aterms {};
+};
+
+template <typename S>
+requires (std::is_same_v<S, float> || std::is_same_v<S, double>)
 class StaticCorrections : public Aterms::Interface<S> {
 public:
     using typename Interface<S>::aterm_t;
@@ -225,6 +290,9 @@ requires (std::is_same_v<S, float> || std::is_same_v<S, double>)
 class PhaseCorrections : public Aterms::Interface<S> {
 public:
     using typename Interface<S>::aterm_t;
+
+    PhaseCorrections(std::vector<Interval>& intervals, const HostSpan<S, 4> phases)
+        : intervals(intervals), data(phases) {};
 
     PhaseCorrections(const std::vector<std::string>& paths, const double freq) {
         if (paths.empty()) return;
@@ -441,71 +509,6 @@ public:
 private:
     std::vector<Interval> intervals;
     HostArray<S, 4> data;  // [time x ants x Nx x Ny]
-};
-
-template <typename S>
-requires (std::is_same_v<S, float> || std::is_same_v<S, double>)
-class CombinedCorrections : public Aterms::Interface<S> {
-public:
-    using typename Interface<S>::aterm_t;
-
-    template <typename ...Ts>
-    CombinedCorrections(std::shared_ptr<Aterms::Interface<S>> x, Ts... xs) {
-        corrections.push_back(x);
-        (corrections.push_back(xs), ...);
-        Logger::verbose("CombinedCorrections created with {} layers", corrections.size());
-    }
-
-    std::tuple<Interval, aterm_t> get(const double mjd, const int antid) override {
-        // First, check existing cache of beams
-        for (auto& [interval, aterm] : aterms[antid]) {
-            if (interval.contains(mjd)) return {interval, aterm};
-        }
-
-        // Otherwise, we need to construct a beam for this antid, interval combination
-        // These functions will throw exceptions if no correction exists for the given
-        // time and antenna
-
-        // Initialize interval and combined arrays with first entry
-        auto [interval, correction] = corrections.at(0)->get(mjd, antid);
-        auto combined = std::make_shared<HostArray<ComplexLinearData<S>, 2>>(
-            *correction
-        );
-
-        // Conjoin remaining corrections
-        for (size_t i {1}; i < corrections.size(); ++i) {
-            auto [_interval, _correction] = corrections[i]->get(mjd, antid);
-
-            // Test for consistent shapes
-            if (combined->shape() != _correction->shape()) throw std::runtime_error(
-                fmt::format(
-                    "Inconsistent correction arrays: ({} x {}) vs. ({} x {})",
-                    combined->size(0), combined->size(1),
-                    _correction->size(0), _correction->size(1)
-                )
-            );
-
-            for (size_t j {}; j < combined->size(); ++j) {
-                (*combined)[j] = matmul((*combined)[j], (*_correction)[j]);
-            }
-
-            // Create a new interval that is the intersection beam and
-            // phasecorrection intervals
-            interval = {
-                std::max(interval.start, _interval.start),
-                std::min(interval.end, _interval.end)
-            };
-        }
-
-        // Cache result
-        aterms[antid].push_back({interval, combined});
-
-        return {interval, combined};
-    }
-
-private:
-    std::vector<std::shared_ptr<Aterms::Interface<S>>> corrections;
-    std::unordered_map<int, std::vector<std::tuple<Interval, aterm_t>>> aterms {};
 };
 
 } // namespace Aterms
