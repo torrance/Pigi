@@ -107,17 +107,6 @@ int main(int argc, char** argv) {
             return -1;
         }
 
-        // Ensure phasecorrections load, if they exist
-        for (const auto& field : config.fields) {
-            try {
-                Aterms::PhaseCorrections<double>(field.phasecorrections);
-            } catch (const std::runtime_error& e) {
-                Logger::error("{}", e.what());
-                boost::mpi::broadcast(world, ok, 0);
-                return -1;
-            }
-        }
-
         // Validate the configuration file
         try {
             config.validate();
