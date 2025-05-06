@@ -7,6 +7,7 @@ From: ubuntu:22.04
 %environment
 
 export LD_LIBRARY_PATH="/opt/rocm/lib:$LD_LIBRARY_PATH"
+export HIP_PLATFORM={{ platform }}
 
 %post
 
@@ -33,29 +34,17 @@ DEBIAN_FRONTEND=noninteractive apt install -y \
     cmake \
     libblas-dev \
     liblapack-dev \
+    libboost-all-dev \
     locales
-
-# libmpi.so will be already present if we use the Pawsey base image
-if ! (ldconfig -v 2>/dev/null | grep libmpi.so); then
-    DEBIAN_FRONTEND=noninteractive apt install -y libmpich-dev
-fi
 
 # Set locale
 sed -i -e 's/# en_US.UTF-8 UTF-8/en_US.UTF-8 UTF-8/' /etc/locale.gen
 dpkg-reconfigure --frontend=noninteractive locales
 update-locale LANG=en_US.UTF-8
 
-# Install libboost
-# We can't use debian packages as we need to build against mpich
-wget https://archives.boost.io/release/1.85.0/source/boost_1_85_0.tar.gz
-tar -xzf boost_1_85_0.tar.gz && cd boost_1_85_0
-sh bootstrap.sh
-echo "using mpi ;" >> project-config.jam
-./b2 --with-mpi --with-program_options --with-serialization --prefix=/usr/local install
-
 # Install Catch2
 cd $HOME
-git clone -b v3.5.3 https://github.com/catchorg/Catch2.git
+git clone -b v3.8.1 https://github.com/catchorg/Catch2.git
 mkdir -p Catch2/build
 cd Catch2/build
 cmake -DCMAKE_INSTALL_PREFIX=/usr/local ..
@@ -91,7 +80,7 @@ rm WSRT_Measures.ztar
 # Install casacore
 # We currently require strictly > 3.5 for C++20 support
 cd $HOME
-git clone https://github.com/casacore/casacore
+git clone --branch v3.7.1 https://github.com/casacore/casacore
 mkdir -p casacore/build
 cd casacore/build
 cmake -DDATA_DIR=/usr/local/share/casacore/data \
@@ -108,42 +97,21 @@ if [ "$HIP_PLATFORM" = "nvidia" ]; then
       cd $HOME
       wget https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2204/x86_64/cuda-keyring_1.1-1_all.deb
       dpkg -i cuda-keyring_1.1-1_all.deb
-      # sudo add-apt-repository contrib
       apt update
       apt install -y cuda-toolkit
 
-      # https://rocm.docs.amd.com/projects/HIP/en/latest/developer_guide/build.html
-      export ROCM_BRANCH=rocm-6.1.x
-      cd $HOME
-      git clone -b "$ROCM_BRANCH" https://github.com/ROCm-Developer-Tools/hip.git
-      git clone -b "$ROCM_BRANCH" https://github.com/ROCm-Developer-Tools/clr.git
-      git clone -b "rocm-6.0.x" https://github.com/ROCm-Developer-Tools/HIPCC.git
-      git clone -b "$ROCM_BRANCH" https://github.com/ROCm/hipother.git
-      export HIP_DIR="$HOME/hip"
-      export CLR_DIR="$HOME/clr"
-      export HIPCC_DIR="$HOME/HIPCC"
-      export HIPNV_DIR="$HOME/hipother/hipnv"
+      # Install amdgpu-install dependencies
+      apt install rsync libpopt0
 
-      # Build HIPCC runtime
-      cd "$HIPCC_DIR"
-      mkdir -p build && cd build && cmake .. && make -j
-
-      # Build HIP
-      cd "$CLR_DIR"
-      mkdir -p build && cd build
-      cmake -DHIP_COMMON_DIR=$HIP_DIR \
-            -DHIP_PLATFORM=nvidia \
-            -DCMAKE_INSTALL_PREFIX=/usr/local \
-            -DHIPCC_BIN_DIR=$HIPCC_DIR/build \
-            -DHIPNV_DIR=$HIPNV_DIR \
-            -DHIP_CATCH_TEST=0 \
-            -DCLR_BUILD_HIP=ON \
-            -DCLR_BUILD_OCL=OFF ..
-      make -j && make install
+      wget https://repo.radeon.com/amdgpu-install/6.2.4/ubuntu/jammy/amdgpu-install_6.2.60204-1_all.deb
+      dpkg -i amdgpu-install_6.2.60204-1_all.deb
+      apt update
+      apt install -y hip-runtime-nvidia
+      apt install -y hip-runtime-nvidia  # This is not a typo: run a second time
 
       # Install hipfft
       cd $HOME
-      git clone -b rocm-6.1.0 https://github.com/ROCm/hipFFT.git
+      git clone -b release/rocm-rel-6.2 https://github.com/ROCm/hipFFT.git
       mkdir -p hipFFT/build && cd hipFFT/build
       HIP_PLATFORM=nvidia cmake -DCMAKE_CXX_COMPILER=g++ \
                               -DCMAKE_BUILD_TYPE=Release \

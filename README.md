@@ -8,11 +8,27 @@ This work is funded by the Curtin Institute for Data Science and the Pawsey Supe
 
 ## Installing
 
-Pigi uses CMake to build, and so the usual CMake incantation is required:
+HIP is a tricky environment to set up correctly (in addition to all the other dependencies of Pigi), so have made an Apptainer/Singularity definition file available to build the required environment.
+
+Download the [`singuarity.def`](https://github.com/torrance/Pigi/blob/main/singularity.def) build script and create your container:
+
+    singularity build --fakeroot --build-arg platform=nvidia|amd singularity.sif singularity.def
+
+(Substitute either `nvidia` or `amd` for the platform depending on your system.)
+
+Once your container is build you will need to build Pigi. Enter a Singularity shell, being sure to make the GPU available to your session. For NVIDIA:
+
+    singularity shell --nvccli singularity.sif
+
+Or for AMD:
+
+    singularity shell --rocm singularity.sif
+
+Navigate to the Pigi directory and from here build Pigi using the usual CMake incantations:
 
     mkdir build && cd build
     CMake ..
-    make
+    make main
 
 ## Testing and Benchmarking
 
@@ -50,3 +66,23 @@ Of note, it is possible to run specific tests or benchmarks. You can see a full 
 From this selection, you can pass in a subset of tests to run. To run just the `invert` benchmark, for example, run:
 
     TESTDATA=/my/path/1215555160.ms ./benchmark [invert]
+
+## Running
+
+`Pigi` is run by passing in a configuration file in a `TOML` format along with one or more measurement sets:
+
+    mpirun -n 2 pigi --config path/to/config.toml data1.ms [data2.ms, ...]
+
+`Pigi` is _always_ run using `mpi`, and requires `(n + 1)` processes, where `n` is the `channels-out` parameter.
+
+A template configuration file can be created using the command:
+
+    pigi --makeconfig > config.toml
+
+You will need to change some of the default values in this file, especially the phase and projection centers.
+
+### Singularity
+
+If you have installed `Pigi` using a singularity container, you can use the `exec` command. For example, for NVIDIA:
+
+    singularity exec --nvccli singularity.sif mpirun -n path/to/pigi --config path/to/config.toml data1.ms [data2.ms, ...]
