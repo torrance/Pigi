@@ -4,6 +4,11 @@ find_program(CMAKE_CXX_COMPILER "hipcc" PATHS "/opt/rocm/bin")
 
 set(CMAKE_CXX_STANDARD "20")
 set(CMAKE_CXX_EXTENSIONS OFF)
+set(GPUARCH "unset" CACHE STRING "The GPU architecture")
+
+if (${GPUARCH} STREQUAL "unset")
+    message(FATAL_ERROR "GPUARCH must be defined, e.g. -DGPUARCH=sm_91")
+endif()
 
 # Find hipconfig
 find_program(hipconfig hipconfig REQUIRED HINTS /opt/rocm/bin)
@@ -23,9 +28,9 @@ endif()
 
 # Set (platform dependent) CXX compiler flags
 if(${platform} STREQUAL amd)
-    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${warnings}")
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${warnings} --offload-arch=${GPUARCH}")
 elseif(${platform} STREQUAL nvidia)
-    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} --extended-lambda --expt-relaxed-constexpr -arch=native -Xcompiler \"${warnings}\"")
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} --restrict --extended-lambda --expt-relaxed-constexpr -lineinfo -arch=${GPUARCH} -Xcompiler \"${warnings}\"")
     set(hipcxxflags "${hipcxxflags} --x cu")
     set(CMAKE_SHARED_LIBRARY_RUNTIME_CXX_FLAG "-Xlinker=-rpath,")
 endif()
@@ -92,7 +97,7 @@ target_compile_options(pigi-test PRIVATE ${hipcxxflags})
 target_include_directories(pigi-test PRIVATE ${Ifmt} ${Igsl} ${Icfitsio} ${Iwcslib} ${Icasa} ${Ihyperbeam} ${Itoml11} ${Ihipfft} ${Ithrust} ${Irocprim})
 target_link_libraries(pigi-test PRIVATE pthread ${Lcasa_casa} ${Lcasa_tables} ${Lcasa_measures} ${Lcasa_ms} ${Lgsl} ${Lcfitsio} ${Lwcslib} ${Lfmt} ${Lhipfft} ${Lhyperbeam} ${Lcufft} BLAS::BLAS Catch2::Catch2WithMain)
 
-add_executable(pigi-benchmark src/benchmark.cpp EXCLUDE_FROM_ALL)
+add_executable(pigi-benchmark src/benchmark.cpp)
 target_compile_options(pigi-benchmark PRIVATE ${hipcxxflags})
 target_include_directories(pigi-benchmark PRIVATE ${Ifmt} ${Igsl} ${Icfitsio} ${Iwcslib} ${Icasa} ${Ihyperbeam} ${Ihipfft} ${Ithrust} ${Irocprim} ${MPI_C_INCLUDE_DIRS} ${Boost_INCLUDE_DIRS})
 target_link_libraries(pigi-benchmark PRIVATE pthread ${Lcasa_casa} ${Lcasa_tables} ${Lcasa_measures} ${Lcasa_ms} ${Lgsl} ${Lcfitsio} ${Lwcslib} ${Lfmt} ${Lhipfft} ${Lhyperbeam} ${Lcufft} BLAS::BLAS Catch2::Catch2WithMain ${MPI_C_LIBRARIES} boost_mpi boost_serialization)

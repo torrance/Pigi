@@ -1,12 +1,7 @@
 # Singularity definition file
-# Build: singularity build --nvccli --fakeroot --build-arg platform=nvidia singularity.sif singularity.def
-# Build: singularity build --rocm --fakeroot --build-arg platform=amd singularity.sif singularity.def
+# Build: singularity build --fakeroot --build-arg platform=nvidia|amd --build-arg arch=GPUARCH pigi.sif singularity.def
 bootstrap: docker
 From: ubuntu:22.04
-
-%arguments
-platform=nvidia
-pigi=true
 
 %environment
 
@@ -137,15 +132,13 @@ if [ "$HIP_PLATFORM" = "amd" ]; then
       apt update && apt install -y rocm-hip-sdk
 fi
 
-if [[ $pigi = true]]; then
-      # Finally install Pigi
-      cd $HOME
-      git clone --recurse-submodules https://github.com/torrance/Pigi.git
+# Finally install Pigi
+cd $HOME
+git clone --recurse-submodules https://github.com/torrance/Pigi.git
 
-      mkdir -p Pigi/build && cd Pigi/build
-      cmake ..
-      make -j && make install
-fi
+mkdir -p Pigi/build && cd Pigi/build
+cmake -DGPUARCH={{ arch }} ..
+make -j && make install
 
 # Clean up root
 rm -rf /root/*

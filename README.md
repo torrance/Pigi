@@ -15,16 +15,21 @@ HIP is a tricky environment to set up correctly (in addition to all the other de
 Download the [`singuarity.def`](https://github.com/torrance/Pigi/blob/main/singularity.def) build script and create your container:
 
     # NVIDIA
-    singularity build --nvccli --fakeroot --build-arg platform=nvidia pig.sif singularity.def
+    singularity build --fakeroot --build-arg platform=nvidia pig.sif --build-arg arch=??? singularity.def
 
     # Or: AMD
-    singularity build --rocm --fakeroot --build-arg platform=amd pigi.sif singularity.def
+    singularity build --fakeroot --build-arg platform=amd pigi.sif --build-arg arch=??? singularity.def
+
+Note that you will need to provide the GPU architecture for your device as the `arch` argument.
+
+* For NVIDIA, this argument will be passed to `nvcc`'s [`--arch` argument](https://docs.nvidia.com/cuda/cuda-compiler-driver-nvcc/index.html#gpu-architecture-arch) and will need to be a valid [virtual or real architecture](https://developer.nvidia.com/cuda-gpus). e.g. `--build-arg arch=sm_80` for an A100.
+* For AMD  this option is passed to `hipcc`'s `--offload-arch` and will need to be a valid [processor name](https://llvm.org/docs/AMDGPUUsage.html#processors). e.g. `--build-arg arch=gfx90a` for an Instinct MI250.
 
 ### Advanced: Using CMake
 
 Pigi uses a standard CMake build process that can be built using the normal series of incantatations:
 
-    cmake -DCMAKE_INSTALL_PREFIX=/usr/local ..
+    cmake -DCMAKE_INSTALL_PREFIX=/usr/local -DGPUARCH=??? ..
     make -j
     make install
 
@@ -60,9 +65,11 @@ Run `pigi-test` with the `TESTDATA` environment variable set to the location of 
 
     TESTDATA=/my/path/1215555160.ms pigi-test
 
-Or, using Singularity:
+Or, using Singularity on NVIDIA:
 
     TESTDATA=/my/path/1215555160.ms singularity exec --nvccli pigi.sif pigi-test
+
+For AMD, use the `--rocm` flag instead of `--nvccli`.
 
 ### Other options
 
@@ -95,3 +102,5 @@ You will need to change some of the default values in this file, especially the 
 If you have installed `Pigi` using a singularity container, you can use the `exec` command. For example, for NVIDIA:
 
     singularity exec --nvccli pigi.sif mpirun -n pigi --config path/to/config.toml data1.ms [data2.ms, ...]
+
+For AMD, use the `--rocm` flag instead of `--nvccli`.
