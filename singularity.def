@@ -5,7 +5,7 @@ From: ubuntu:22.04
 
 %environment
 
-export LD_LIBRARY_PATH="/opt/rocm/lib:$LD_LIBRARY_PATH"
+export LD_LIBRARY_PATH="/opt/rocm/lib:/usr/local/lib:$LD_LIBRARY_PATH"
 export HIP_PLATFORM={{ platform }}
 
 %post
