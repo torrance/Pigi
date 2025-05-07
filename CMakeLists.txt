@@ -102,4 +102,4 @@ target_compile_options(pigi-benchmark PRIVATE ${hipcxxflags})
 target_include_directories(pigi-benchmark PRIVATE ${Ifmt} ${Igsl} ${Icfitsio} ${Iwcslib} ${Icasa} ${Ihyperbeam} ${Ihipfft} ${Ithrust} ${Irocprim} ${MPI_C_INCLUDE_DIRS} ${Boost_INCLUDE_DIRS})
 target_link_libraries(pigi-benchmark PRIVATE pthread ${Lcasa_casa} ${Lcasa_tables} ${Lcasa_measures} ${Lcasa_ms} ${Lgsl} ${Lcfitsio} ${Lwcslib} ${Lfmt} ${Lhipfft} ${Lhyperbeam} ${Lcufft} BLAS::BLAS Catch2::Catch2WithMain ${MPI_C_LIBRARIES} boost_mpi boost_serialization)
 
-install(TARGETS pigi pigi-test DESTINATION bin)
+install(TARGETS pigi pigi-test pigi-benchmark DESTINATION bin)

@@ -1,0 +1,16 @@
+# Singularity definition file
+# Build: singularity build --fakeroot --build-arg arch=GPUARCH pigi.sif singularity-rebuild.def
+bootstrap: localimage
+From: base.sif
+
+%post
+
+cd $HOME
+git clone --recurse-submodules https://github.com/torrance/Pigi.git
+
+mkdir -p Pigi/build && cd Pigi/build
+cmake -DGPUARCH={{ arch }} ..
+make -j && make install
+
+# Clean up root
+rm -rf /root/*
