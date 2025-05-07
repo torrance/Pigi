@@ -6,7 +6,7 @@ set(CMAKE_CXX_STANDARD "20")
 set(CMAKE_CXX_EXTENSIONS OFF)
 
 # Find hipconfig
-find_program(hipconfig hipconfig REQUIRED)
+find_program(hipconfig hipconfig REQUIRED HINTS /opt/rocm/bin)
 
 # Determine GPU platform
 execute_process(COMMAND ${hipconfig} -P OUTPUT_VARIABLE platform)

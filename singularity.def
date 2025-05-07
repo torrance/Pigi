@@ -11,12 +11,14 @@ export HIP_PLATFORM={{ platform }}
 
 %post
 
+export DEBIAN_FRONTEND=noninteractive
+
 # Either: nvidia|amd
 export HIP_PLATFORM={{ platform }}
 
 # Install build/runtime dependencies
 apt update && apt upgrade -y
-DEBIAN_FRONTEND=noninteractive apt install -y \
+apt install -y \
     wget \
     curl \
     unzip \
