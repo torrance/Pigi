@@ -282,7 +282,7 @@ void cleanWorker(
     }
     applyweights(*weighter, tbl);
 
-    std::mutex writelock;
+    std::mutex threadlock;
     std::barrier barrier(gridconfs.size(), [] {});
 
     // The rest of the work done by workers is threaded: one thread per field
@@ -303,6 +303,7 @@ void cleanWorker(
             );
 
             auto aterms = [&] {
+                std::lock_guard l(threadlock);  // Casacore seems to not be threadsafe
                 auto beamcorrections = std::make_shared<Aterms::BeamCorrections<P>>(
                     msets, gridconf.subgrid(), config.maxDuration,
                     config.phasecenter.value(), tbl.midfreq()
@@ -338,7 +339,7 @@ void cleanWorker(
 
             // Create psf
             auto psf = [&] {
-                std::lock_guard l(writelock);
+                std::lock_guard l(threadlock);
                 Logger::info("Constructing PSF...");
                 return invert<thrust::complex, P>(tbl, workunits, gridconf, aterms, true);
             }();
@@ -359,7 +360,7 @@ void cleanWorker(
 
             // Initial inversion
             auto residual = [&] {
-                std::lock_guard l(writelock);
+                std::lock_guard l(threadlock);
                 Logger::info("Constructing dirty image...");
                 return invert<StokesI, P>(tbl, workunits, gridconf, aterms);
             }();
@@ -414,7 +415,7 @@ void cleanWorker(
                         minorComponents[j] /= beamPower[j];
                     }
 
-                    std::lock_guard l(writelock);
+                    std::lock_guard l(threadlock);
                     Logger::info(
                         "Removing clean components from data... (major cycle {})", i
                     );
@@ -430,7 +431,7 @@ void cleanWorker(
 
                 // Invert
                 residual = [&] {
-                    std::lock_guard l(writelock);
+                    std::lock_guard l(threadlock);
                     Logger::info("Constructing residual image... (major cycle {})", i);
                     return invert<StokesI, P>(tbl, workunits, gridconf, aterms);
                 }();
@@ -452,7 +453,7 @@ void cleanWorker(
                 ), components, gridconf.grid(), config.phasecenter.value());
 
                 auto image = [&] {
-                    std::lock_guard l(writelock);
+                    std::lock_guard l(threadlock);
                     return convolve(
                         components,
                         PSF<P>(psf, gridspecPsf).draw(gridconf.grid())
